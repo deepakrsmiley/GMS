@@ -1,0 +1,251 @@
+/**
+ * opPaperPrint.css — A4 OP consultation paper layout.
+ * Print visibility is also enforced inline in OPPaperTemplate (@media print)
+ * so the slip always appears in the browser print preview.
+ */
+
+/* Keep in viewport (Chrome print needs this) but invisible on screen */
+@media screen {
+  #op-paper-print-root {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 210mm;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    z-index: -1 !important;
+  }
+}
+
+.op-paper-root {
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 6mm 8mm 10mm;
+  background: #ffffff;
+  color: #111111;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.op-paper-root *,
+.op-paper-root *::before,
+.op-paper-root *::after {
+  box-sizing: border-box;
+}
+
+/* ── Header / branding ──────────────────────────────────────────────── */
+.op-header {
+  width: 100%;
+}
+
+.op-header-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.op-logo {
+  height: 58px;
+  width: auto;
+  max-width: 90px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.op-logo-fallback {
+  height: 52px;
+  width: 52px;
+  border: 1.5px solid #222;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.op-header-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.op-hospital-name {
+  font-family: 'Times New Roman', Times, Georgia, serif;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: #0a0a0a;
+}
+
+.op-taglines {
+  text-align: right;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #1a1a1a;
+  padding-top: 4px;
+  flex-shrink: 0;
+  max-width: 46%;
+}
+
+.op-header-rule {
+  border: 0;
+  border-top: 1.25px solid #222;
+  margin: 6px 0 4px;
+}
+
+.op-header-contact {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 11px;
+  color: #222;
+  line-height: 1.35;
+}
+
+.op-header-address {
+  flex: 1;
+  min-width: 0;
+}
+
+.op-header-phone {
+  flex-shrink: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.op-rule {
+  border: 0;
+  border-top: 1px solid #333;
+  margin: 6px 0;
+}
+
+/* ── Patient fields ─────────────────────────────────────────────────── */
+.op-patient-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 8px 20px;
+  align-items: start;
+}
+
+.op-patient-left,
+.op-patient-right {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.op-barcode-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 2px;
+  min-height: 36px;
+  color: #111;
+}
+
+.op-barcode-svg {
+  display: block;
+  max-width: 150px;
+  height: 36px;
+}
+
+.op-field {
+  display: grid;
+  grid-template-columns: 108px 8px 1fr;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.op-field-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #222;
+}
+
+.op-field-colon {
+  font-weight: 700;
+  color: #222;
+}
+
+.op-field-value {
+  font-weight: 700;
+  color: #111;
+  word-break: break-word;
+}
+
+/* ── Vitals row ─────────────────────────────────────────────────────── */
+.op-vitals {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+  border: 1px solid #666;
+}
+
+.op-vital {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  padding: 5px 4px;
+  min-height: 28px;
+  border-right: 1px solid #999;
+  font-size: 10.5px;
+}
+
+.op-vital:last-child {
+  border-right: 0;
+}
+
+.op-vital-label {
+  font-weight: 700;
+  color: #222;
+}
+
+.op-vital-colon {
+  font-weight: 700;
+  color: #222;
+}
+
+.op-vital-value {
+  font-weight: 600;
+  color: #111;
+}
+
+/* ── Clinical writing area ──────────────────────────────────────────── */
+.op-clinical {
+  min-height: 165mm;
+  flex: 1;
+}
+
+.op-clinical-blank {
+  min-height: 165mm;
+  width: 100%;
+}
+
+.op-clinical-filled {
+  font-size: 12px;
+  line-height: 1.55;
+  padding-top: 4px;
+}
+
+.op-note {
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
