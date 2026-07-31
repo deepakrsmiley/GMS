@@ -18,6 +18,7 @@ import Modal from '../components/common/Modal';
 import { getSocket } from '../services/socket';
 import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
+import { hasRole } from '../utils/roles';
 
 const statusConfig = {
   waiting: { label: 'Waiting', color: 'badge-yellow', icon: Clock },
@@ -47,6 +48,7 @@ export default function OPQueuePage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
+  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
   const [showAdd, setShowAdd] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -296,11 +298,26 @@ export default function OPQueuePage() {
     </button>
   );
 
+  const admitBtn = (item) => {
+    if (!canAdmit || item.status === 'admitted' || !item.patient?._id) return null;
+    return (
+      <button
+        type="button"
+        title="Admit this patient to IP"
+        onClick={() => navigate(`/ip-admissions?patient=${item.patient._id}&op=${item._id}`)}
+        className="inline-flex items-center gap-1 text-xs font-semibold py-1.5 px-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+      >
+        <Bed size={13} /> Admit to IP
+      </button>
+    );
+  };
+
   const actionFor = (item) => {
     if (item.status === 'waiting') {
       return (
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {printBtn(item)}
+          {admitBtn(item)}
           <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
             className="text-xs font-medium py-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Open Consultation
@@ -316,6 +333,7 @@ export default function OPQueuePage() {
       return (
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {printBtn(item)}
+          {admitBtn(item)}
           <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
             className="text-xs font-medium py-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Continue
@@ -337,6 +355,7 @@ export default function OPQueuePage() {
     return (
       <div className="flex items-center gap-2 flex-wrap justify-end">
         {printBtn(item)}
+        {admitBtn(item)}
         <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
           className="text-xs font-medium py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
           View Details
@@ -392,6 +411,15 @@ export default function OPQueuePage() {
           <button onClick={() => refetch()} className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
             <RefreshCw size={16} /> Refresh
           </button>
+          {canAdmit && (
+            <button
+              type="button"
+              onClick={() => navigate('/ip-admissions')}
+              className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20"
+            >
+              <Bed size={16} /> Admit Patient (IP)
+            </button>
+          )}
           <button onClick={() => { resetRegForm(); setShowAdd(true); }} className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm shadow-blue-600/20">
             <Plus size={16} /> Register Patient
           </button>

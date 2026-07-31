@@ -625,7 +625,8 @@ function PendingPharmacyPanel({ canDispense }) {
 export default function PharmacyPage() {
   const [searchParams] = useSearchParams();
   const { user } = useSelector((s) => s.auth);
-  const canManageInventory = hasRole(user?.role, ["Super Admin", "Pharmacist"]);
+  // Admin can also add/edit medicines (matches backend PHARMA_ROLES)
+  const canManageInventory = hasRole(user?.role, ["Super Admin", "Admin", "Pharmacist"]);
   const canDispense = hasRole(user?.role, [
     "Super Admin",
     "Admin",
@@ -949,18 +950,30 @@ export default function PharmacyPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Pharmacy
-        </h1>
-        <div className="flex gap-2">
-          {tab === "inventory" && canManageInventory && (
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Medicines / Pharmacy
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {canManageInventory
+              ? 'Add new medicines under Inventory Dashboard'
+              : 'View prescriptions and stock'}
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {canManageInventory && (
             <button
               type="button"
-              onClick={() => setShowAdd(true)}
-              className="btn-primary"
+              onClick={() => {
+                setTab("inventory");
+                setEditMed(null);
+                reset();
+                setShowAdd(true);
+              }}
+              className="flex items-center gap-2 text-sm font-semibold px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm"
             >
-              <Plus size={16} /> Add Medicine
+              <Plus size={16} /> Add New Medicine
             </button>
           )}
           {tab === "distributors" && canManageInventory && (

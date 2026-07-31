@@ -7,13 +7,15 @@ import {
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
+import { hasRole } from '../utils/roles';
 
 export default function DoctorConsultationPage() {
   const { opId } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useSelector((s) => s.auth);
-  const isReceptionist = user?.role === 'Receptionist';
+  const isReceptionist = hasRole(user?.role, ['Receptionist']);
+  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist', 'Doctor']);
 
   const [diagnosis, setDiagnosis] = useState('');
   const [notes, setNotes] = useState('');
@@ -187,8 +189,14 @@ export default function DoctorConsultationPage() {
             {!isReceptionist && (
               <button type="button" onClick={() => orderLabMut.mutate()} className="btn-secondary"><FlaskConical size={16} /> Order Lab</button>
             )}
-            {!isReceptionist && (
-              <button type="button" onClick={() => admitMut.mutate()} className="btn-secondary"><Bed size={16} /> Recommend Admission</button>
+            {canAdmit && (
+              <button
+                type="button"
+                onClick={() => admitMut.mutate()}
+                className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700"
+              >
+                <Bed size={16} /> Admit to IP
+              </button>
             )}
           </div>
         </div>

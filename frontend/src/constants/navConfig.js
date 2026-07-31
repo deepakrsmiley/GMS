@@ -12,10 +12,10 @@ export const NAV_ITEMS = [
   { id: 'op-reg',           to: '/op-queue',                label: 'OP Registration',    icon: 'Activity',        permission: 'CREATE_OP_QUEUE',        roles: ['Super Admin', 'Admin', 'Receptionist'] },
   { id: 'doctor-queue',     to: '/op-queue',                label: 'Doctor Queue',       icon: 'Stethoscope',     permission: 'VIEW_OP_QUEUE',          roles: ['Super Admin', 'Doctor', 'Receptionist'] },
   { id: 'appointments',     to: '/appointments',            label: 'Appointments',       icon: 'Calendar',        permission: 'VIEW_APPOINTMENT',       roles: ['Super Admin', 'Admin', 'Receptionist'] },
-  { id: 'ip-patients',      to: '/ip-admissions',           label: 'IP Patients',        icon: 'Building2',       permission: 'VIEW_IP_ADMISSION',      roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist'] },
+  { id: 'ip-patients',      to: '/ip-admissions',           label: 'IP Admissions',      icon: 'Building2',       permission: 'VIEW_IP_ADMISSION',      roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist'] },
   { id: 'billing',          to: '/billing',                 label: 'Billing',            icon: 'Receipt',         permission: 'VIEW_BILLING',           roles: ['Super Admin', 'Admin', 'Pharmacist'] },
   { id: 'prescriptions',    to: '/pharmacy?tab=prescriptions', label: 'Prescriptions',  icon: 'ClipboardList',   permission: 'VIEW_PRESCRIPTION',      roles: ['Super Admin', 'Doctor', 'Pharmacist', 'Receptionist'] },
-  { id: 'pharmacy',         to: '/pharmacy?tab=inventory',  label: 'Pharmacy',           icon: 'Pill',            permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
+  { id: 'pharmacy',         to: '/pharmacy?tab=inventory',  label: 'Medicines / Pharmacy', icon: 'Pill',          permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
 
   // ── NEW: Pharmacy Billing Reports ──────────────────────────────────────────
   { id: 'pharmacy-billing', to: '/pharmacy-billing',        label: 'Pharmacy Reports',   icon: 'FileBarChart2',   permission: 'VIEW_BILLING',           roles: ['Super Admin', 'Admin', 'Pharmacist'] },

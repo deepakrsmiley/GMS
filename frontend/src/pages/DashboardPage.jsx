@@ -47,7 +47,7 @@ const DEPT_COLORS = [
 const QUICK_ACTIONS = [
   { label: 'Add Patient', icon: UserRoundPlus, to: '/patients', color: 'text-blue-600 bg-blue-50' },
   { label: 'New Appointment', icon: CalendarPlus, to: '/appointments', color: 'text-green-600 bg-green-50' },
-  { label: 'IP Admission', icon: BedDouble, to: '/ip-admissions', color: 'text-purple-600 bg-purple-50' },
+  { label: 'Admit Patient (IP)', icon: BedDouble, to: '/ip-admissions', color: 'text-emerald-600 bg-emerald-50' },
   { label: 'Add Prescription', icon: FileSpreadsheet, to: '/pharmacy?tab=prescriptions', color: 'text-orange-600 bg-orange-50' },
   { label: 'Lab Test', icon: FlaskConical, to: '/lab', color: 'text-teal-600 bg-teal-50' },
   { label: 'New Invoice', icon: Receipt, to: '/billing', color: 'text-indigo-600 bg-indigo-50' },

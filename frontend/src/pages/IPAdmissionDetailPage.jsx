@@ -549,28 +549,36 @@ export default function IPAdmissionDetailPage() {
                   <textarea rows={5} className="input-field" value={form.physicalExamination} onChange={set('physicalExamination')} placeholder={'Patient general condition fair, Not Pale, No P.E,\nBP-110/70mm/Hg, pulse-86/mint,\nCVS/RS- NAD,\nP/A- Uterus 36weeks, acting, Head unengaged, FHS - 140/min.\nP/V -Cx 25 %effaced/Osadmits 1 finger/memb +/ Vx at brim...\nFoleys induction done.'} />
                 </NumberedField>
 
+                <NumberedField n={6} label="Medications / Medicine on Discharge">
+                  <textarea
+                    rows={4}
+                    className="input-field"
+                    value={form.medicationsOnDischarge}
+                    onChange={set('medicationsOnDischarge')}
+                    placeholder={'1. Tab. Calpol 650mg 1-1-1 x 3 days\n2. Cap. Amoxicillin 500mg 1-0-1 x 5 days\n3. Syp. Asthakind 10ml - 0 - 10ml'}
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">Printed on discharge summary under MEDICATIONS ON DISCHARGE</p>
+                </NumberedField>
+
+                <NumberedField n={7} label="Treatment Given">
+                  <textarea rows={2} className="input-field" value={form.treatmentGiven} onChange={set('treatmentGiven')} placeholder="IV Fluids, Antibiotics, Analgesics..." />
+                </NumberedField>
+
                 <button type="button" onClick={() => setShowMore((v) => !v)} className="text-xs text-blue-600 hover:underline font-medium">
-                  {showMore ? 'Hide' : 'Show'} additional sections (treatment, medications, DAMA, etc.)
+                  {showMore ? 'Hide' : 'Show'} additional sections (course, follow-up, DAMA, etc.)
                 </button>
 
                 {showMore && (
                   <div className="space-y-4 border-t border-gray-100 dark:border-gray-700 pt-4">
-                    <NumberedField n={6} label="Clinical Findings">
+                    <NumberedField n={8} label="Clinical Findings">
                       <textarea rows={2} className="input-field" value={form.clinicalFindings} onChange={set('clinicalFindings')} />
                     </NumberedField>
-                    <NumberedField n={7} label="Procedure">
+                    <NumberedField n={9} label="Procedure">
                       <textarea rows={1} className="input-field" value={form.procedures} onChange={set('procedures')} placeholder="Nil" />
                     </NumberedField>
-                    <NumberedField n={8} label="Treatment Given">
-                      <textarea rows={2} className="input-field" value={form.treatmentGiven} onChange={set('treatmentGiven')} />
-                    </NumberedField>
-                    <NumberedField n={9} label="Course Given">
+                    <NumberedField n={10} label="Course Given">
                       <textarea rows={2} className="input-field" value={form.hospitalCourse} onChange={set('hospitalCourse')} />
                     </NumberedField>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Medications on Discharge</label>
-                      <textarea rows={2} className="input-field" value={form.medicationsOnDischarge} onChange={set('medicationsOnDischarge')} />
-                    </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Follow-up Advice</label>
                       <textarea rows={2} className="input-field" value={form.followUpAdvice} onChange={set('followUpAdvice')} />
@@ -708,16 +716,14 @@ export default function IPAdmissionDetailPage() {
                       <p className="font-bold underline inline">PHYSICAL EXAMINATION:</p>
                       <p className="mt-0.5 whitespace-pre-wrap">{form.physicalExamination || '—'}</p>
                     </div>
+                    <div>
+                      <p className="font-bold underline inline">MEDICATIONS ON DISCHARGE:</p>
+                      <p className="mt-0.5 whitespace-pre-wrap">{form.medicationsOnDischarge || '—'}</p>
+                    </div>
                     {form.treatmentGiven && (
                       <div>
                         <p className="font-bold underline inline">TREATMENT GIVEN:</p>
                         <p className="mt-0.5 whitespace-pre-wrap">{form.treatmentGiven}</p>
-                      </div>
-                    )}
-                    {form.medicationsOnDischarge && (
-                      <div>
-                        <p className="font-bold underline inline">MEDICATIONS ON DISCHARGE:</p>
-                        <p className="mt-0.5 whitespace-pre-wrap">{form.medicationsOnDischarge}</p>
                       </div>
                     )}
                   </div>

@@ -2,18 +2,22 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Plus, Search, User, Phone, Droplet } from 'lucide-react';
+import { Plus, Search, User, Phone, Droplet, Bed } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
+import { hasRole } from '../utils/roles';
 
 const bloodGroups = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
 const genders = ['Male','Female','Other'];
 
 export default function PatientsPage() {
   const navigate = useNavigate();
+  const { user } = useSelector((s) => s.auth);
+  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -45,18 +49,41 @@ export default function PatientsPage() {
     { key: 'phone', header: 'Phone', render: (r) => <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300"><Phone size={12} />{r.phone}</span> },
     { key: 'bloodGroup', header: 'Blood', render: (r) => r.bloodGroup ? <span className="badge-red">{r.bloodGroup}</span> : '-' },
     { key: 'createdAt', header: 'Registered', render: (r) => new Date(r.createdAt).toLocaleDateString('en-IN') },
+    ...(canAdmit ? [{
+      key: 'actions',
+      header: '',
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/ip-admissions?patient=${r._id}`);
+          }}
+          className="inline-flex items-center gap-1 text-xs font-semibold py-1.5 px-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+        >
+          <Bed size={12} /> Admit
+        </button>
+      ),
+    }] : []),
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Patients</h1>
           <p className="text-gray-500 text-sm mt-1">{data?.total || 0} registered patients</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary">
-          <Plus size={16} /> Register Patient
-        </button>
+        <div className="flex gap-2">
+          {canAdmit && (
+            <button type="button" onClick={() => navigate('/ip-admissions')} className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700">
+              <Bed size={16} /> Admit Patient (IP)
+            </button>
+          )}
+          <button onClick={() => setShowAdd(true)} className="btn-primary">
+            <Plus size={16} /> Register Patient
+          </button>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">

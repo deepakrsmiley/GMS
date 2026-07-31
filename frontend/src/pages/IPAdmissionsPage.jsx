@@ -53,8 +53,8 @@ export default function IPAdmissionsPage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
-  const canAdmit = hasRole(user?.role, ['Super Admin', 'Receptionist']);
-  const viewOnly = hasRole(user?.role, ['Admin', 'Doctor', 'Pharmacist']) && !canAdmit;
+  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
+  const viewOnly = hasRole(user?.role, ['Doctor', 'Pharmacist']) && !canAdmit;
 
   const [tab, setTab] = useState(searchParams.get('tab') === 'discharge' ? 'discharge' : 'admitted');
   const [page, setPage] = useState(1);
@@ -239,19 +239,63 @@ export default function IPAdmissionsPage() {
     admitMut.mutate(payload);
   };
 
-  // Quick "New Patient" mini-form used inside the admit wizard
-  const [quickForm, setQuickForm] = useState({ name: '', phone: '', age: '', gender: '', email: '' });
+  const EMPTY_QUICK_PATIENT = {
+    name: '', phone: '', age: '', gender: '', email: '', bloodGroup: '',
+    rchId: '', allergies: '',
+    address: { street: '', city: '', state: '', pincode: '' },
+    emergencyContact: { name: '', phone: '' },
+  };
+  const [quickForm, setQuickForm] = useState(EMPTY_QUICK_PATIENT);
   const quickAddMut = useMutation({
-    mutationFn: (d) => api.post('/patients', d),
+    mutationFn: (d) => {
+      const allergies = String(d.allergies || '')
+        .split(',')
+        .map((a) => a.trim())
+        .filter(Boolean);
+      return api.post('/patients', {
+        name: d.name,
+        phone: d.phone,
+        age: Number(d.age),
+        gender: d.gender,
+        email: d.email || undefined,
+        bloodGroup: d.bloodGroup || undefined,
+        rchId: d.rchId || undefined,
+        address: {
+          street: d.address?.street || undefined,
+          city: d.address?.city || undefined,
+          state: d.address?.state || undefined,
+          pincode: d.address?.pincode || undefined,
+        },
+        emergencyContact: {
+          name: d.emergencyContact?.name || undefined,
+          phone: d.emergencyContact?.phone || undefined,
+        },
+        allergies,
+      });
+    },
     onSuccess: (r) => {
-      toast.success('Patient registered!');
+      toast.success(`Patient registered — UHID ${r.data.data?.patientId || ''}`);
       const p = r.data.data;
       pickPatient(p);
       setShowQuickAdd(false);
-      setQuickForm({ name: '', phone: '', age: '', gender: '', email: '' });
+      setQuickForm(EMPTY_QUICK_PATIENT);
     },
     onError: (err) => toast.error(err?.response?.data?.message || 'Failed to add patient'),
   });
+
+  const runPatientSearch = async () => {
+    if (patientSearch.trim().length < 2) {
+      toast.error('Type at least 2 characters to search');
+      return;
+    }
+    try {
+      const r = await api.get(`/patients/search?q=${encodeURIComponent(patientSearch.trim())}`);
+      setPatients(r.data.data || []);
+      if (!(r.data.data || []).length) toast.error('No patient found — use New Patient to register');
+    } catch {
+      toast.error('Search failed');
+    }
+  };
 
   const columns = [
     { key: 'uhid', header: 'UHID', render: (r) => <span className="font-mono font-semibold text-blue-700" title="Patient ID from registration">{r.patient?.patientId || '—'}</span> },
@@ -292,12 +336,15 @@ export default function IPAdmissionsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             {tab === 'discharge' ? 'Discharge Processing' : viewOnly ? 'IP Patients' : 'IP Admissions'}
           </h1>
-          <p className="text-sm text-gray-500">{data?.total || 0} currently admitted</p>
+          <p className="text-sm text-gray-500">
+            {data?.total || 0} currently admitted
+            {canAdmit ? ' — use Admit Patient to start a new IP stay' : ''}
+          </p>
         </div>
         {canAdmit && tab !== 'discharge' && (
           <button type="button" onClick={() => { resetForm(); setShowAdd(true); }}
-            className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm shadow-blue-600/20">
-            <Plus size={16} /> New Admission
+            className="flex items-center gap-2 text-sm font-semibold px-5 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/25">
+            <UserCheck size={18} /> Admit Patient
           </button>
         )}
       </div>
@@ -426,11 +473,11 @@ export default function IPAdmissionsPage() {
                             </div>
                           )}
                         </div>
-                        <button type="button"
+                        <button type="button" onClick={runPatientSearch}
                           className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors whitespace-nowrap flex-shrink-0">
                           <Search size={15} /> Search
                         </button>
-                        <button type="button" onClick={() => setShowQuickAdd(true)}
+                        <button type="button" onClick={() => { setQuickForm(EMPTY_QUICK_PATIENT); setShowQuickAdd(true); }}
                           className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors whitespace-nowrap flex-shrink-0">
                           <UserPlus size={16} /> New Patient
                         </button>
@@ -708,13 +755,22 @@ export default function IPAdmissionsPage() {
       </AnimatePresence>
       )}
 
-      {/* Quick New Patient Modal (nested) */}
-      <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Add New Patient" size="md">
-        <form onSubmit={(e) => { e.preventDefault(); quickAddMut.mutate(quickForm); }} className="p-6 space-y-4">
+      {/* New Patient for IP admission — creates UHID then selects for admit */}
+      <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Register New Patient for IP" size="lg">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            quickAddMut.mutate(quickForm);
+          }}
+          className="p-6 space-y-4 max-h-[75vh] overflow-y-auto"
+        >
+          <p className="text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+            Patient gets a lifelong <strong>UHID</strong> on save, then is selected for this admission automatically.
+          </p>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-              <input required value={quickForm.name} onChange={(e) => setQuickForm({ ...quickForm, name: e.target.value })} className="input-field" placeholder="Patient full name" />
+              <input required value={quickForm.name} onChange={(e) => setQuickForm({ ...quickForm, name: e.target.value })} className="input-field" placeholder="Mrs. Name / Patient full name" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
@@ -734,14 +790,86 @@ export default function IPAdmissionsPage() {
               </select>
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
+              <select value={quickForm.bloodGroup} onChange={(e) => setQuickForm({ ...quickForm, bloodGroup: e.target.value })} className="input-field">
+                <option value="">Unknown</option>
+                {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((b) => <option key={b}>{b}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input value={quickForm.email} onChange={(e) => setQuickForm({ ...quickForm, email: e.target.value })} type="email" className="input-field" placeholder="Email address" />
+              <input value={quickForm.email} onChange={(e) => setQuickForm({ ...quickForm, email: e.target.value })} type="email" className="input-field" placeholder="Email (optional)" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">RCH ID</label>
+              <input value={quickForm.rchId} onChange={(e) => setQuickForm({ ...quickForm, rchId: e.target.value })} className="input-field" placeholder="Maternity RCH ID (if any)" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
+              <input value={quickForm.allergies} onChange={(e) => setQuickForm({ ...quickForm, allergies: e.target.value })} className="input-field" placeholder="e.g. Inj. Xone (comma separated)" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Street Address *</label>
+              <textarea
+                required
+                rows={2}
+                value={quickForm.address.street}
+                onChange={(e) => setQuickForm({ ...quickForm, address: { ...quickForm.address, street: e.target.value } })}
+                className="input-field"
+                placeholder="House / street address (shown on discharge summary)"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+              <input
+                required
+                value={quickForm.address.city}
+                onChange={(e) => setQuickForm({ ...quickForm, address: { ...quickForm.address, city: e.target.value } })}
+                className="input-field"
+                placeholder="City"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+              <input
+                value={quickForm.address.state}
+                onChange={(e) => setQuickForm({ ...quickForm, address: { ...quickForm.address, state: e.target.value } })}
+                className="input-field"
+                placeholder="State"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Pincode</label>
+              <input
+                value={quickForm.address.pincode}
+                onChange={(e) => setQuickForm({ ...quickForm, address: { ...quickForm.address, pincode: e.target.value } })}
+                className="input-field"
+                placeholder="Pincode"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact</label>
+              <input
+                value={quickForm.emergencyContact.name}
+                onChange={(e) => setQuickForm({ ...quickForm, emergencyContact: { ...quickForm.emergencyContact, name: e.target.value } })}
+                className="input-field"
+                placeholder="Contact name"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Phone</label>
+              <input
+                value={quickForm.emergencyContact.phone}
+                onChange={(e) => setQuickForm({ ...quickForm, emergencyContact: { ...quickForm.emergencyContact, phone: e.target.value } })}
+                className="input-field"
+                placeholder="Contact phone"
+              />
             </div>
           </div>
           <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
             <button type="button" onClick={() => setShowQuickAdd(false)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={quickAddMut.isPending} className="btn-primary">
-              {quickAddMut.isPending ? 'Adding...' : 'Add Patient'}
+              <UserPlus size={15} /> {quickAddMut.isPending ? 'Registering...' : 'Register & Select for Admit'}
             </button>
           </div>
         </form>

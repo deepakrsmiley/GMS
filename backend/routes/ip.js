@@ -8,7 +8,7 @@ const IPAdmission = require('../models/IPAdmission');
 router.use(protect);
 
 const IP_VIEW = ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Nurse', 'Pharmacist'];
-const IP_ADMIT = ['Super Admin', 'Receptionist'];
+const IP_ADMIT = ['Super Admin', 'Admin', 'Receptionist'];
 const IP_DISCHARGE_SUMMARY = ['Super Admin', 'Doctor'];
 const IP_DISCHARGE = ['Super Admin', 'Receptionist', 'Doctor'];
 

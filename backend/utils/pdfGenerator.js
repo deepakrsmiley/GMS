@@ -578,14 +578,14 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   drawUnderlinedSection(doc, 'Chief Complaints', d.chiefComplaints);
   drawUnderlinedSection(doc, 'Past History', d.pastHistory || 'Nil relevant');
   drawUnderlinedSection(doc, 'Physical Examination', d.physicalExamination);
+  drawUnderlinedSection(doc, 'Medications On Discharge', d.medicationsOnDischarge || '—');
 
   // Optional extra clinical blocks (only if filled)
   [
+    ['Treatment Given', d.treatmentGiven],
     ['Clinical Findings', d.clinicalFindings],
     ['Procedure', d.procedures],
-    ['Treatment Given', d.treatmentGiven],
     ['Course Given', d.hospitalCourse],
-    ['Medications On Discharge', d.medicationsOnDischarge],
     ['Follow-up Advice', d.followUpAdvice],
     ['Discharge Instructions', d.dischargeInstructions],
   ].forEach(([title, content]) => {
