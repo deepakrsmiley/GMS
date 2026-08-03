@@ -33,29 +33,73 @@ exports.getPatient = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: patient });
 });
 
-exports.createPatient = asyncHandler(async (req, res) => {
-  const seq = await Counter.getNextSeq('patient');
-  req.body.patientId = generatePatientId(seq);
-  req.body.registeredBy = req.user._id;
+/** Keep patient counter at/above the highest existing UHID for the current year. */
+const syncPatientCounter = async () => {
+  const year = new Date().getFullYear().toString().slice(-2);
+  const latest = await Patient.findOne({ patientId: new RegExp(`^PT${year}`) })
+    .sort({ patientId: -1 })
+    .select('patientId')
+    .lean();
+  if (!latest?.patientId) return;
+  const maxSeq = parseInt(latest.patientId.slice(-6), 10);
+  if (!Number.isFinite(maxSeq)) return;
 
-  if (req.body.photo && req.body.photo.startsWith('data:')) {
+  const counter = await Counter.findById('patient');
+  if (!counter) {
+    await Counter.create({ _id: 'patient', seq: maxSeq });
+  } else if (counter.seq < maxSeq) {
+    counter.seq = maxSeq;
+    await counter.save();
+  }
+};
+
+const allocatePatientId = async () => {
+  await syncPatientCounter();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const seq = await Counter.getNextSeq('patient');
+    const patientId = generatePatientId(seq);
+    const exists = await Patient.exists({ patientId });
+    if (!exists) return patientId;
+  }
+  throw new ErrorResponse('Unable to allocate a unique patient ID. Please try again.', 500);
+};
+
+/** Drop empty strings so optional enum/email fields do not fail validation. */
+const sanitizePatientPayload = (body) => {
+  const data = { ...body };
+  delete data._id;
+  delete data.patientId;
+
+  ['email', 'bloodGroup', 'maritalStatus', 'occupation', 'alternatePhone', 'rchId', 'photo'].forEach((key) => {
+    if (data[key] === '' || data[key] === null) delete data[key];
+  });
+
+  return data;
+};
+
+exports.createPatient = asyncHandler(async (req, res) => {
+  const payload = sanitizePatientPayload(req.body);
+  payload.patientId = await allocatePatientId();
+  payload.registeredBy = req.user._id;
+
+  if (payload.photo && payload.photo.startsWith('data:')) {
     try {
       if (hasCloudinaryCredentials()) {
-        const upload = await cloudinary.uploader.upload(req.body.photo, {
+        const upload = await cloudinary.uploader.upload(payload.photo, {
           folder: 'hms/patients',
           resource_type: 'image',
         });
-        req.body.photo = upload.secure_url;
+        payload.photo = upload.secure_url;
       } else {
-        req.body.photo = undefined;
+        delete payload.photo;
       }
     } catch (error) {
       logger.warn(`Patient photo upload failed; continuing without image: ${error.message}`);
-      req.body.photo = undefined;
+      delete payload.photo;
     }
   }
 
-  const patient = await Patient.create(req.body);
+  const patient = await Patient.create(payload);
   res.status(201).json({ success: true, data: patient });
 });
 
