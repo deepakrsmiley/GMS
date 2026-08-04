@@ -6,7 +6,7 @@
 
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-blue-50/40 text-slate-800;
 }
 
 .dark body {
@@ -14,19 +14,23 @@ body {
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { @apply bg-gray-100 dark:bg-gray-800; }
-::-webkit-scrollbar-thumb { @apply bg-gray-300 dark:bg-gray-600 rounded-full; }
+::-webkit-scrollbar-track { @apply bg-blue-50 dark:bg-gray-800; }
+::-webkit-scrollbar-thumb { @apply bg-blue-200 dark:bg-gray-600 rounded-full; }
 
 .glass-card {
   @apply backdrop-blur-md bg-white/80 dark:bg-gray-800/80 border border-white/20 dark:border-gray-700/30;
 }
 
 .kpi-card {
-  @apply bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 hover:shadow-md transition-shadow duration-200;
+  @apply bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-blue-100 dark:border-gray-700 p-5 hover:shadow-md transition-shadow duration-200;
+}
+
+.corp-card {
+  @apply bg-white dark:bg-gray-800 rounded-xl border border-blue-100 dark:border-gray-700 shadow-sm;
 }
 
 .table-row-hover:hover {
-  @apply bg-blue-50/50 dark:bg-blue-900/10;
+  @apply bg-blue-50/60 dark:bg-gray-700/40;
 }
 
 .btn-primary {
@@ -34,7 +38,7 @@ body {
 }
 
 .btn-secondary {
-  @apply bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium px-4 py-2 rounded-lg transition-colors duration-150 flex items-center gap-2;
+  @apply bg-white hover:bg-blue-50 dark:bg-gray-800 dark:hover:bg-gray-700 text-slate-700 dark:text-gray-200 font-medium px-4 py-2 rounded-lg border border-blue-100 dark:border-gray-600 transition-colors duration-150 flex items-center gap-2;
 }
 
 .btn-danger {
@@ -42,11 +46,23 @@ body {
 }
 
 .input-field {
-  @apply w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 placeholder-gray-400 dark:placeholder-gray-500;
+  @apply w-full px-3 py-2 bg-white dark:bg-gray-700 border border-blue-100 dark:border-gray-600 rounded-lg text-slate-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 placeholder-slate-400 dark:placeholder-gray-500;
 }
 
-.badge-green { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400; }
-.badge-red { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400; }
-.badge-yellow { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400; }
-.badge-blue { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400; }
-.badge-gray { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300; }
+.corp-tabs {
+  @apply flex gap-1 p-1 bg-blue-50 dark:bg-gray-800 rounded-lg w-fit border border-blue-100 dark:border-gray-700;
+}
+
+.corp-tab {
+  @apply px-4 py-2 text-sm font-medium rounded-md transition-colors text-slate-500 hover:text-blue-700;
+}
+
+.corp-tab-active {
+  @apply bg-white dark:bg-gray-700 text-blue-700 dark:text-white shadow-sm;
+}
+
+.badge-green { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800; }
+.badge-red { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800; }
+.badge-yellow { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800; }
+.badge-blue { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800; }
+.badge-gray { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-slate-100 text-slate-600 border-slate-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600; }

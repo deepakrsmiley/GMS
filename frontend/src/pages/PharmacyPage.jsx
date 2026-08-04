@@ -6,9 +6,13 @@ import {
   Trash2,
   Receipt,
   FileText,
-  Printer,
   Truck,
+  Pencil,
+  Layers,
+  SlidersHorizontal,
+  Eraser,
   Stethoscope,
+  ShoppingCart,
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -20,8 +24,10 @@ import toast from "react-hot-toast";
 import api from "../services/api";
 import Modal from "../components/common/Modal";
 import DataTable from "../components/common/DataTable";
+import PageHeader from "../components/common/PageHeader";
 import PharmacyInventoryDashboard from "../components/pharmacy/PharmacyInventoryDashboard";
-import InvoicePrint from "../components/billing/InvoicePrint";
+import DistributorDesk from "../components/pharmacy/DistributorDesk";
+import PharmacyCounterSale from "../components/pharmacy/PharmacyCounterSale";
 import PharmacyTaxInvoice from "../components/billing/PharmacyTaxInvoice";
 
 const categories = [
@@ -34,8 +40,6 @@ const categories = [
   "inhaler",
   "other",
 ];
-const paymentModes = ["cash", "card", "upi", "cheque", "insurance", "online"];
-
 const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -46,15 +50,10 @@ function PendingPharmacyPanel({ canDispense }) {
   const [medResults, setMedResults] = useState([]);
   const [items, setItems] = useState([]);
   const [discount, setDiscount] = useState(0);
-  const [paymentMode, setPaymentMode] = useState("cash");
-  const [paidAmount, setPaidAmount] = useState("");
   const [printBill, setPrintBill] = useState(null);
-
-  // ── Consultation fee state ──────────────────────────────────────────────────
   const [consultationFee, setConsultationFee] = useState("");
   const [consultationGst, setConsultationGst] = useState(0);
   const [showConsultFee, setShowConsultFee] = useState(false);
-  // ───────────────────────────────────────────────────────────────────────────
 
   const { data: pending, isLoading } = useQuery({
     queryKey: ["opPharmacyPending"],
@@ -71,6 +70,12 @@ function PendingPharmacyPanel({ canDispense }) {
   useEffect(() => {
     if (!selectedOpId && pending?.length) setSelectedOpId(pending[0]._id);
   }, [pending, selectedOpId]);
+
+  // Clear draft prescription when switching patients
+  useEffect(() => {
+    resetWorkbench();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOpId]);
 
   useEffect(() => {
     if (medQuery.length >= 2) {
@@ -106,7 +111,6 @@ function PendingPharmacyPanel({ canDispense }) {
     );
   };
 
-  // ── Totals — include consultation fee ──────────────────────────────────────
   const totals = useMemo(() => {
     const subtotal = items.reduce(
       (sum, item) =>
@@ -125,23 +129,44 @@ function PendingPharmacyPanel({ canDispense }) {
     const discountAmount =
       (subtotal + medGst) * ((Number(discount) || 0) / 100);
     const total = subtotal + medGst - discountAmount + feeTotal;
-    const paid = paidAmount === "" ? total : Number(paidAmount || 0);
 
-    return { subtotal, medGst, discountAmount, total, paid, fee, feeGst, feeTotal };
-  }, [items, discount, paidAmount, consultationFee, consultationGst]);
-  // ───────────────────────────────────────────────────────────────────────────
+    return { subtotal, medGst, discountAmount, total, fee, feeGst, feeTotal };
+  }, [items, discount, consultationFee, consultationGst]);
 
   const resetWorkbench = () => {
     setItems([]);
     setDiscount(0);
-    setPaymentMode("cash");
-    setPaidAmount("");
     setMedQuery("");
     setMedResults([]);
-    // reset consultation fee too
     setConsultationFee("");
     setConsultationGst(0);
     setShowConsultFee(false);
+  };
+
+  // Clear draft medicines AND remove patient from pharmacy queue when no bill is needed
+  const dismissMut = useMutation({
+    mutationFn: () =>
+      api.put(`/op/${selectedOp._id}/status`, { status: "consultation_completed" }),
+    onSuccess: () => {
+      resetWorkbench();
+      toast.success("Prescription cleared — patient removed from pharmacy queue");
+      qc.invalidateQueries(["opPharmacyPending"]);
+      qc.invalidateQueries(["opQueue"]);
+      setSelectedOpId("");
+    },
+    onError: (err) =>
+      toast.error(err.response?.data?.message || "Could not clear prescription"),
+  });
+
+  const clearPrescription = () => {
+    if (!selectedOp) return;
+    const name = selectedOp.patient?.name || "this patient";
+    const hasDraft = items.length || Number(consultationFee) > 0;
+    const msg = hasDraft
+      ? `Clear draft items and remove ${name} from the pharmacy queue?\n\nUse this if you do not need to bill for this visit.`
+      : `Remove ${name} from the pharmacy queue?\n\nUse this if no medicines / fee are needed.`;
+    if (!window.confirm(msg)) return;
+    dismissMut.mutate();
   };
 
   const billMut = useMutation({
@@ -150,9 +175,7 @@ function PendingPharmacyPanel({ canDispense }) {
       if (!items.length && !totals.fee)
         throw new Error("Add at least one medicine or a consultation fee");
 
-      // Build bill items — consultation first (if entered), then medicines
       const billItems = [
-        // ── Consultation fee item ─────────────────────────────────────────
         ...(totals.fee > 0
           ? [
               {
@@ -169,7 +192,6 @@ function PendingPharmacyPanel({ canDispense }) {
               },
             ]
           : []),
-        // ── Medicine items ────────────────────────────────────────────────
         ...items.map((item) => ({
           category: "Pharmacy",
           type: "medicine",
@@ -184,6 +206,7 @@ function PendingPharmacyPanel({ canDispense }) {
         })),
       ];
 
+      // Unpaid pharmacy bill — Billing counter collects payment, then patient takes medicine
       const payload = {
         billType: "pharmacy",
         patient: selectedOp.patient?._id,
@@ -191,8 +214,7 @@ function PendingPharmacyPanel({ canDispense }) {
         department: selectedOp.department?._id,
         opRegistration: selectedOp._id,
         discount: Number(discount) || 0,
-        paidAmount: totals.paid,
-        paymentMode,
+        paidAmount: 0,
         notes: [selectedOp.diagnosis, selectedOp.consultationNotes]
           .filter(Boolean)
           .join("\n"),
@@ -200,16 +222,23 @@ function PendingPharmacyPanel({ canDispense }) {
       };
 
       const created = await api.post("/billing", payload);
+      const billId = created.data.data._id;
       await api.put(`/op/${selectedOp._id}/status`, {
         status: "pharmacy_completed",
       });
-      const bill = await api.get(`/billing/${created.data.data._id}`);
-      return bill.data.data;
+      const bill = await api.get(`/billing/${billId}`);
+      return { bill: bill.data.data, message: created.data.message, merged: created.data.merged };
     },
-    onSuccess: (bill) => {
-      toast.success("Pharmacy bill generated");
+    onSuccess: ({ bill, message, merged }) => {
+      toast.success(
+        message
+          || (merged
+            ? "Medicines added to the same OP visit bill — consultation + medicines together"
+            : "Medicines saved — sent to Billing for payment"),
+      );
       setPrintBill(bill);
       resetWorkbench();
+      setSelectedOpId("");
       qc.invalidateQueries(["opPharmacyPending"]);
       qc.invalidateQueries(["bills"]);
       qc.invalidateQueries(["billStats"]);
@@ -218,396 +247,418 @@ function PendingPharmacyPanel({ canDispense }) {
     },
     onError: (err) =>
       toast.error(
-        err.response?.data?.message || err.message || "Billing failed",
+        err.response?.data?.message || err.message || "Failed to send to billing",
       ),
   });
 
-  if (isLoading)
+  if (isLoading) {
     return (
-      <p className="p-8 text-center text-gray-400">
-        Loading pending pharmacy queue...
-      </p>
+      <div className="corp-card p-12 text-center text-slate-400 text-sm">
+        Loading pharmacy queue…
+      </div>
     );
+  }
 
   if (!pending?.length) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-8 text-center text-gray-400">
-        No pending OP prescriptions
+      <div className="corp-card p-12 text-center">
+        <Pill size={36} className="mx-auto mb-3 text-slate-300" />
+        <p className="font-semibold text-slate-600">No pending OP prescriptions</p>
+        <p className="text-xs text-slate-400 mt-1">
+          Patients appear here after doctor sends them to pharmacy.
+          For return patients buying medicines only (no doctor), use the Counter Sale tab.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-      {/* ── Left: Patient List ─────────────────────────────────────────────── */}
-      <div className="xl:col-span-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-          <h3 className="font-semibold flex items-center gap-2">
-            <FileText size={16} /> Pending Pharmacy
-          </h3>
-        </div>
-        <div className="divide-y divide-gray-100 dark:divide-gray-700 max-h-[720px] overflow-y-auto">
-          {pending.map((op) => (
-            <button
-              key={op._id}
-              type="button"
-              onClick={() => {
-                setSelectedOpId(op._id);
-                resetWorkbench();
-              }}
-              className={`w-full text-left p-4 hover:bg-blue-50 dark:hover:bg-blue-900/20 ${selectedOp?._id === op._id ? "bg-blue-50 dark:bg-blue-900/20" : ""}`}
-            >
-              <p className="font-semibold text-gray-900 dark:text-white">
-                {op.patient?.name}
-              </p>
-              <p className="text-xs text-gray-500">
-                <span className="font-semibold text-gray-600">UHID:</span>{' '}
-                <span className="font-mono font-semibold text-blue-600">{op.patient?.patientId || '—'}</span>
-                {' · '}Token {op.tokenNumber}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                Dr. {op.doctor?.name || "N/A"}
-              </p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Right: Workbench ───────────────────────────────────────────────── */}
-      <div className="xl:col-span-8 space-y-5">
-
-        {/* Patient Info Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 min-h-[70vh]">
+      {/* Queue */}
+      <aside className="xl:col-span-4 corp-card overflow-hidden flex flex-col">
+        <div className="px-4 py-3 border-b border-blue-50 bg-gradient-to-r from-blue-50/60 to-white flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+              <FileText size={15} />
+            </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                {selectedOp?.patient?.name}
-              </h2>
-              <p className="text-sm text-gray-500">
-                <span className="font-semibold text-gray-600">UHID:</span>{' '}
-                <span className="font-mono font-semibold text-blue-600">{selectedOp?.patient?.patientId || '—'}</span>
-                {' · '}
-                {selectedOp?.patient?.age || "N/A"} /{" "}
-                {selectedOp?.patient?.gender || "N/A"}
-                {' · '}
-                {selectedOp?.patient?.phone || "N/A"}
-              </p>
-            </div>
-            <span className="badge-blue">Sent To Pharmacy</span>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4 mt-4 text-sm">
-            <div className="bg-gray-50 dark:bg-gray-900/40 rounded-xl p-3">
-              <p className="text-xs font-semibold uppercase text-gray-500 mb-1">
-                Diagnosis
-              </p>
-              <p className="text-gray-900 dark:text-white">
-                {selectedOp?.diagnosis || "Not recorded"}
-              </p>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-900/40 rounded-xl p-3">
-              <p className="text-xs font-semibold uppercase text-gray-500 mb-1">
-                Clinical Notes
-              </p>
-              <p className="text-gray-900 dark:text-white whitespace-pre-wrap">
-                {selectedOp?.consultationNotes || "Not recorded"}
-              </p>
+              <h3 className="text-sm font-semibold text-slate-800">Pending pharmacy</h3>
+              <p className="text-[10px] text-slate-500">OP visit queue</p>
             </div>
           </div>
+          <span className="text-[11px] font-bold text-blue-800 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full tabular-nums">
+            {pending.length}
+          </span>
         </div>
-
-        {/* ── Consultation Fee Section ─────────────────────────────────────── */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-blue-200 dark:border-blue-700 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 bg-blue-50 dark:bg-blue-900/20">
-            <span className="font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-2 text-sm">
-              <Stethoscope size={16} /> Doctor Consultation Fee
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowConsultFee((v) => !v)}
-              className="text-xs font-medium text-blue-600 hover:underline"
-            >
-              {showConsultFee ? "Hide" : "+ Add Fee"}
-            </button>
-          </div>
-
-          {showConsultFee && (
-            <div className="p-5 border-t border-blue-100 dark:border-blue-800 space-y-3">
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">
-                    Consultation Fee (₹) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={consultationFee}
-                    onChange={(e) => setConsultationFee(e.target.value)}
-                    className="input-field"
-                    placeholder="e.g. 500.00"
-                  />
+        <div className="divide-y divide-slate-50 overflow-y-auto max-h-[72vh]">
+          {pending.map((op) => {
+            const active = selectedOp?._id === op._id;
+            return (
+              <button
+                key={op._id}
+                type="button"
+                onClick={() => setSelectedOpId(op._id)}
+                className={`w-full text-left px-4 py-3.5 transition-colors border-l-4 ${
+                  active
+                    ? "bg-blue-50/80 border-l-blue-600"
+                    : "border-l-transparent hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 ${
+                    active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+                  }`}>
+                    {(op.patient?.name || "?").charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900 truncate">{op.patient?.name}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      <span className="font-mono font-semibold text-blue-700">{op.patient?.patientId || "—"}</span>
+                      {" · "}Token {op.tokenNumber}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                      <Stethoscope size={10} /> Dr. {op.doctor?.name || "N/A"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">
-                    GST on Fee (%)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={consultationGst}
-                    onChange={(e) => setConsultationGst(e.target.value)}
-                    className="input-field"
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-
-              {/* Fee preview */}
-              {totals.fee > 0 && (
-                <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/30 rounded-xl px-4 py-2 text-sm">
-                  <span className="text-gray-600 dark:text-gray-300">
-                    Dr. {selectedOp?.doctor?.name || "—"} — Consultation Fee
-                    {totals.feeGst > 0 && ` + GST ${fmt(totals.feeGst)}`}
-                  </span>
-                  <span className="font-bold text-blue-700 dark:text-blue-300">
-                    {fmt(totals.feeTotal)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Collapsed summary badge */}
-          {!showConsultFee && totals.fee > 0 && (
-            <div className="px-5 py-2 text-sm text-blue-700 dark:text-blue-300 bg-blue-50/50 dark:bg-blue-900/10 flex items-center justify-between">
-              <span>Consultation fee added</span>
-              <span className="font-semibold">{fmt(totals.feeTotal)}</span>
-            </div>
-          )}
+              </button>
+            );
+          })}
         </div>
-        {/* ── End Consultation Fee Section ─────────────────────────────────── */}
+      </aside>
 
-        {/* Medicine Search & List */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
-          <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <Search size={16} /> Add Medicines
-          </h3>
-          <div className="relative">
-            <input
-              value={medQuery}
-              onChange={(e) => setMedQuery(e.target.value)}
-              className="input-field pr-10"
-              placeholder="Search medicine by name..."
-            />
-            {medResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl overflow-hidden z-20 bg-white dark:bg-gray-800 max-h-60 overflow-y-auto">
-                {medResults.map((m) => (
-                  <button
-                    key={m._id}
-                    type="button"
-                    onClick={() => addMedicine(m)}
-                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0 flex justify-between items-center"
-                  >
-                    <div>
-                      <span className="font-medium">{m.name}</span>
-                      <span className="text-gray-400 ml-2 text-xs capitalize">
-                        {m.category}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-blue-600">
-                        {fmt(m.sellingPrice)}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Stock: {m.currentStock}
-                      </p>
-                    </div>
-                  </button>
-                ))}
+      {/* Prescription desk */}
+      <div className="xl:col-span-8 flex flex-col gap-4">
+        <div className="corp-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-blue-50 bg-gradient-to-r from-white via-blue-50/30 to-white">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center shrink-0">
+                  {(selectedOp?.patient?.name || "?").charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-bold text-slate-900 truncate">
+                    {selectedOp?.patient?.name}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    <span className="font-mono font-semibold text-blue-700">{selectedOp?.patient?.patientId || "—"}</span>
+                    {" · "}
+                    {selectedOp?.patient?.age || "—"} / {selectedOp?.patient?.gender || "—"}
+                    {" · "}
+                    {selectedOp?.patient?.phone || "—"}
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-2">
-            {items.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 text-sm">
-                <Pill size={32} className="mx-auto mb-2 opacity-30" />
-                Search and add medicines for this OP patient
-              </div>
-            ) : (
-              items.map((item, index) => (
-                <div
-                  key={`${item.medicine}-${index}`}
-                  className="grid grid-cols-12 gap-2 items-end bg-gray-50 dark:bg-gray-700/40 rounded-xl p-3"
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <span className="text-[11px] font-semibold text-blue-800 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
+                  Token {selectedOp?.tokenNumber}
+                </span>
+                <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full">
+                  Sent to pharmacy
+                </span>
+                <button
+                  type="button"
+                  onClick={clearPrescription}
+                  disabled={dismissMut.isPending || !selectedOp}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+                  title="Clear prescription and remove from queue if no medicines needed"
                 >
-                  <div className="col-span-12 sm:col-span-4">
-                    <label className="text-xs text-gray-500">Medicine</label>
-                    <input
-                      value={item.name}
-                      onChange={(e) =>
-                        updateItem(index, { name: e.target.value })
-                      }
-                      className="input-field text-sm mt-1"
-                    />
-                  </div>
-                  <div className="col-span-6 sm:col-span-2">
-                    <label className="text-xs text-gray-500">Dosage</label>
-                    <input
-                      value={item.dosage}
-                      onChange={(e) =>
-                        updateItem(index, { dosage: e.target.value })
-                      }
-                      className="input-field text-sm mt-1"
-                      placeholder="1-0-1"
-                    />
-                  </div>
-                  <div className="col-span-3 sm:col-span-2">
-                    <label className="text-xs text-gray-500">Qty</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity}
-                      onChange={(e) =>
-                        updateItem(index, { quantity: e.target.value })
-                      }
-                      className="input-field text-sm mt-1"
-                    />
-                  </div>
-                  <div className="col-span-3 sm:col-span-2">
-                    <label className="text-xs text-gray-500">Price</label>
+                  <Eraser size={14} />
+                  {dismissMut.isPending ? "Clearing…" : "Clear prescription"}
+                </button>
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2.5 mt-4">
+              <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Diagnosis</p>
+                <p className="text-sm text-slate-800">{selectedOp?.diagnosis || "Not recorded"}</p>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Clinical notes</p>
+                <p className="text-sm text-slate-800 whitespace-pre-wrap line-clamp-3">
+                  {selectedOp?.consultationNotes || "Not recorded"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-2.5 bg-slate-50 border-b border-blue-50 text-[11px] text-slate-500 flex items-center gap-2">
+            <Receipt size={12} className="text-blue-600 shrink-0" />
+            Consultation fee + medicines merge into the OP visit invoice · patient pays at Billing
+          </div>
+
+          {/* Consultation fee */}
+          <div className="border-b border-blue-50">
+            <div className="flex items-center justify-between px-5 py-3 bg-blue-50/50">
+              <span className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                <Stethoscope size={15} className="text-blue-600" /> Doctor Consultation Fee
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowConsultFee((v) => !v)}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+              >
+                {showConsultFee ? "Hide" : "+ Add Fee"}
+              </button>
+            </div>
+
+            {showConsultFee && (
+              <div className="px-5 py-4 space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                      Consultation Fee (₹)
+                    </label>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      value={item.unitPrice}
-                      onChange={(e) =>
-                        updateItem(index, { unitPrice: e.target.value })
-                      }
-                      className="input-field text-sm mt-1"
+                      value={consultationFee}
+                      onChange={(e) => setConsultationFee(e.target.value)}
+                      className="input-field text-sm"
+                      placeholder="e.g. 500.00"
                     />
                   </div>
-                  <div className="col-span-10 sm:col-span-1">
-                    <label className="text-xs text-gray-500">GST %</label>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                      GST on Fee (%)
+                    </label>
                     <input
                       type="number"
                       min="0"
-                      value={item.gstPercent}
-                      onChange={(e) =>
-                        updateItem(index, { gstPercent: e.target.value })
-                      }
-                      className="input-field text-sm mt-1"
+                      max="100"
+                      value={consultationGst}
+                      onChange={(e) => setConsultationGst(e.target.value)}
+                      className="input-field text-sm"
+                      placeholder="0"
                     />
                   </div>
-                  <div className="col-span-2 sm:col-span-1 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setItems((prev) => prev.filter((_, i) => i !== index))
-                      }
-                      className="text-red-500 p-2"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
                 </div>
-              ))
+                {totals.fee > 0 && (
+                  <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-2.5 text-sm">
+                    <span className="text-slate-600">
+                      Dr. {selectedOp?.doctor?.name || "—"}
+                      {totals.feeGst > 0 && ` · GST ${fmt(totals.feeGst)}`}
+                    </span>
+                    <span className="font-bold text-blue-700 tabular-nums">
+                      {fmt(totals.feeTotal)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!showConsultFee && totals.fee > 0 && (
+              <div className="px-5 py-2.5 text-sm text-slate-600 flex items-center justify-between bg-blue-50/30">
+                <span>Consultation fee added</span>
+                <span className="font-semibold text-blue-700 tabular-nums">{fmt(totals.feeTotal)}</span>
+              </div>
             )}
           </div>
-        </div>
 
-        {/* Payment & Totals */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Discount (%) — on medicines
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Payment Mode
-              </label>
-              <select
-                value={paymentMode}
-                onChange={(e) => setPaymentMode(e.target.value)}
-                className="input-field"
+          {/* Medicines */}
+          <div className="p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <Pill size={15} className="text-blue-600" /> Prescription medicines
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {items.length} item(s) · search inventory to add
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearPrescription}
+                disabled={dismissMut.isPending || !selectedOp}
+                className="btn-secondary text-xs py-2 disabled:opacity-40"
+                title="Clear medicines and remove patient from pharmacy queue"
               >
-                {paymentModes.map((mode) => (
-                  <option key={mode} value={mode} className="capitalize">
-                    {mode}
-                  </option>
-                ))}
-              </select>
+                <Eraser size={14} /> Clear prescription
+              </button>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                Amount Received
-              </label>
+
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
-                type="number"
-                min="0"
-                value={paidAmount}
-                onChange={(e) => setPaidAmount(e.target.value)}
-                placeholder={totals.total.toFixed(2)}
-                className="input-field"
+                value={medQuery}
+                onChange={(e) => setMedQuery(e.target.value)}
+                className="input-field pl-9 text-sm"
+                placeholder="Search medicine by name…"
               />
+              {medResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 border border-blue-100 rounded-xl shadow-xl overflow-hidden z-20 bg-white max-h-60 overflow-y-auto">
+                  {medResults.map((m) => (
+                    <button
+                      key={m._id}
+                      type="button"
+                      onClick={() => addMedicine(m)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm border-b border-slate-50 last:border-0 flex justify-between items-center gap-3"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-medium text-slate-800">{m.name}</span>
+                        <span className="text-slate-400 ml-2 text-xs capitalize">{m.category}</span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-semibold text-blue-700 tabular-nums">{fmt(m.sellingPrice)}</p>
+                        <p className="text-[10px] text-slate-400">Stock {m.currentStock}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="bg-gray-50 dark:bg-gray-900/40 rounded-xl px-4 py-3">
-              <p className="text-xs text-gray-500">Grand Total</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">
-                {fmt(totals.total)}
-              </p>
-            </div>
-          </div>
 
-          {/* Breakdown line */}
-          <div className="mt-3 text-xs text-gray-500 space-y-0.5">
-            {totals.fee > 0 && (
-              <p>
-                <span className="font-medium text-blue-600">Consult Fee:</span>{" "}
-                {fmt(totals.fee)}
-                {totals.feeGst > 0 && ` + GST ${fmt(totals.feeGst)}`} ={" "}
-                {fmt(totals.feeTotal)}
-              </p>
+            {items.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-12 text-center">
+                <Pill size={28} className="mx-auto mb-2 text-slate-300" />
+                <p className="text-sm font-medium text-slate-500">No medicines added</p>
+                <p className="text-xs text-slate-400 mt-1">Search above to build the prescription</p>
+              </div>
+            ) : (
+              <div className="corp-card overflow-hidden border border-blue-50">
+                <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-2 bg-slate-50 border-b border-blue-50 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  <span className="col-span-4">Medicine</span>
+                  <span className="col-span-2">Dosage</span>
+                  <span className="col-span-1">Qty</span>
+                  <span className="col-span-2">Price</span>
+                  <span className="col-span-2">GST %</span>
+                  <span className="col-span-1" />
+                </div>
+                <div className="divide-y divide-slate-50">
+                  {items.map((item, index) => (
+                    <div
+                      key={`${item.medicine}-${index}`}
+                      className="grid grid-cols-12 gap-2 items-center px-3 py-2.5 hover:bg-blue-50/30"
+                    >
+                      <div className="col-span-12 sm:col-span-4">
+                        <p className="text-[10px] text-slate-400 sm:hidden mb-0.5">Medicine</p>
+                        <input
+                          value={item.name}
+                          onChange={(e) => updateItem(index, { name: e.target.value })}
+                          className="input-field text-sm py-1.5"
+                        />
+                        {item.available != null && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">Stock {item.available}</p>
+                        )}
+                      </div>
+                      <div className="col-span-6 sm:col-span-2">
+                        <p className="text-[10px] text-slate-400 sm:hidden mb-0.5">Dosage</p>
+                        <input
+                          value={item.dosage}
+                          onChange={(e) => updateItem(index, { dosage: e.target.value })}
+                          className="input-field text-sm py-1.5"
+                          placeholder="1-0-1"
+                        />
+                      </div>
+                      <div className="col-span-3 sm:col-span-1">
+                        <p className="text-[10px] text-slate-400 sm:hidden mb-0.5">Qty</p>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => updateItem(index, { quantity: e.target.value })}
+                          className="input-field text-sm py-1.5"
+                        />
+                      </div>
+                      <div className="col-span-3 sm:col-span-2">
+                        <p className="text-[10px] text-slate-400 sm:hidden mb-0.5">Price</p>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unitPrice}
+                          onChange={(e) => updateItem(index, { unitPrice: e.target.value })}
+                          className="input-field text-sm py-1.5"
+                        />
+                      </div>
+                      <div className="col-span-9 sm:col-span-2">
+                        <p className="text-[10px] text-slate-400 sm:hidden mb-0.5">GST %</p>
+                        <input
+                          type="number"
+                          min="0"
+                          value={item.gstPercent}
+                          onChange={(e) => updateItem(index, { gstPercent: e.target.value })}
+                          className="input-field text-sm py-1.5"
+                        />
+                      </div>
+                      <div className="col-span-3 sm:col-span-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                          title="Remove medicine"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
-            <p>
-              Medicines: Subtotal {fmt(totals.subtotal)} + GST{" "}
-              {fmt(totals.medGst)} − Discount {fmt(totals.discountAmount)}
-            </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-            <p className="text-sm text-gray-500">
-              {totals.fee > 0
-                ? `Consult ${fmt(totals.feeTotal)} + Pharmacy ${fmt(
-                    totals.subtotal + totals.medGst - totals.discountAmount,
-                  )} = ${fmt(totals.total)}`
-                : `Subtotal ${fmt(totals.subtotal)} + GST ${fmt(
-                    totals.medGst,
-                  )} − Discount ${fmt(totals.discountAmount)}`}
-            </p>
-            <button
-              type="button"
-              onClick={() => billMut.mutate()}
-              disabled={
-                !canDispense ||
-                billMut.isPending ||
-                (!items.length && !totals.fee)
-              }
-              className="btn-primary justify-center disabled:opacity-50"
-            >
-              <Receipt size={16} />{" "}
-              {billMut.isPending ? "Generating..." : "Generate Bill & Print"}
-            </button>
+          {/* Settlement footer */}
+          <div className="px-5 py-4 border-t border-blue-100 bg-slate-50/80">
+            <div className="grid sm:grid-cols-3 gap-3 mb-3">
+              <div>
+                <label className="text-[11px] text-slate-500 block mb-1">Discount % (medicines)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  className="input-field text-sm"
+                />
+              </div>
+              <div className="corp-card p-3 border-l-4 border-l-slate-300">
+                <p className="text-[10px] uppercase text-slate-400">Medicines + GST</p>
+                <p className="text-sm font-semibold text-slate-700 tabular-nums">
+                  {fmt(totals.subtotal + totals.medGst - totals.discountAmount)}
+                </p>
+              </div>
+              <div className="corp-card p-3 border-l-4 border-l-blue-600">
+                <p className="text-[10px] uppercase text-slate-400">Bill total (unpaid)</p>
+                <p className="text-xl font-bold text-blue-700 tabular-nums">{fmt(totals.total)}</p>
+              </div>
+            </div>
+            <div className="text-[11px] text-slate-400 mb-3 space-y-0.5">
+              {totals.fee > 0 && (
+                <p>
+                  Consult Fee: {fmt(totals.fee)}
+                  {totals.feeGst > 0 && ` + GST ${fmt(totals.feeGst)}`} = {fmt(totals.feeTotal)}
+                </p>
+              )}
+              <p>
+                Medicines: Subtotal {fmt(totals.subtotal)} + GST {fmt(totals.medGst)} − Discount{" "}
+                {fmt(totals.discountAmount)}
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={clearPrescription}
+                disabled={dismissMut.isPending || !selectedOp}
+                className="btn-secondary justify-center disabled:opacity-40 order-2 sm:order-1"
+              >
+                <Eraser size={15} /> Clear prescription
+              </button>
+              <button
+                type="button"
+                onClick={() => billMut.mutate()}
+                disabled={
+                  !canDispense ||
+                  billMut.isPending ||
+                  (!items.length && !totals.fee)
+                }
+                className="btn-primary justify-center disabled:opacity-50 order-1 sm:order-2 min-w-[200px]"
+              >
+                <Receipt size={16} />
+                {billMut.isPending ? "Sending…" : "Save & send to billing"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -645,9 +696,12 @@ export default function PharmacyPage() {
   const [showAdjustStock, setShowAdjustStock] = useState(null);
   const [adjustType, setAdjustType] = useState("reduce"); // 'reduce' or 'increase'
   // ─────────────────────────────────────────────────────────────────────────
-  const [tab, setTab] = useState(
-    searchParams.get("tab") === "inventory" ? "inventory" : "prescriptions",
-  );
+  const [tab, setTab] = useState(() => {
+    const urlTab = searchParams.get("tab");
+    return ["inventory", "prescriptions", "counter", "distributors"].includes(urlTab)
+      ? urlTab
+      : "prescriptions";
+  });
   const [invSearch, setInvSearch] = useState("");
   const [invSearchInput, setInvSearchInput] = useState("");
   const [stockFilter, setStockFilter] = useState("all"); // all | in | low | out
@@ -655,7 +709,7 @@ export default function PharmacyPage() {
 
   useEffect(() => {
     const urlTab = searchParams.get("tab");
-    if (urlTab && ["inventory", "prescriptions"].includes(urlTab))
+    if (urlTab && ["inventory", "prescriptions", "counter", "distributors"].includes(urlTab))
       setTab(urlTab);
   }, [searchParams]);
 
@@ -771,127 +825,141 @@ export default function PharmacyPage() {
   });
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ---- Distributors / Suppliers ----
-  const { data: suppliersData, isLoading: suppliersLoading } = useQuery({
+  // Suppliers list (used by medicine form dropdown + Distributor desk shares query key)
+  const { data: suppliersData } = useQuery({
     queryKey: ["suppliers"],
-    queryFn: () => api.get("/suppliers?limit=100").then((r) => r.data),
+    queryFn: () => api.get("/suppliers?limit=200").then((r) => r.data),
   });
 
-  const {
-    register: supReg,
-    handleSubmit: supSubmit,
-    reset: supReset,
-  } = useForm();
-  const [showAddSupplier, setShowAddSupplier] = useState(false);
-  const [editSupplier, setEditSupplier] = useState(null);
+  const stockStatus = (r) => {
+    if (Number(r.currentStock) === 0)
+      return { label: "Out of Stock", cls: "bg-red-50 text-red-700 border-red-200" };
+    if (Number(r.currentStock) <= Number(r.minimumStock || 0))
+      return { label: "Low Stock", cls: "bg-amber-50 text-amber-700 border-amber-200" };
+    return { label: "In Stock", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+  };
 
-  const addSupplier = useMutation({
-    mutationFn: (d) => api.post("/suppliers", d),
-    onSuccess: () => {
-      toast.success("Distributor added!");
-      qc.invalidateQueries(["suppliers"]);
-      setShowAddSupplier(false);
-      supReset();
-    },
-  });
-
-  const updateSupplier = useMutation({
-    mutationFn: ({ id, data: d }) => api.put(`/suppliers/${id}`, d),
-    onSuccess: () => {
-      toast.success("Distributor updated!");
-      qc.invalidateQueries(["suppliers"]);
-      setEditSupplier(null);
-      supReset();
-    },
-  });
-
-  const supplierColumns = [
-    {
-      key: "name",
-      header: "Name",
-      render: (r) => <span className="font-medium">{r.name}</span>,
-    },
-    { key: "contactPerson", header: "Contact Person" },
-    { key: "phone", header: "Phone" },
-    { key: "gstNumber", header: "GST No." },
-    { key: "creditDays", header: "Credit Days" },
-    {
-      key: "outstanding",
-      header: "Outstanding",
-      render: (r) => fmt(r.outstanding),
-    },
-    {
-      key: "actions",
-      header: "",
-      render: (r) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setEditSupplier(r);
-            supReset(r);
-          }}
-          className="text-xs text-blue-600 hover:underline font-medium"
-        >
-          Edit
-        </button>
-      ),
-    },
-  ];
-  // ---- End Distributors / Suppliers ----
+  const nearestExpiry = (r) => {
+    const batches = (r.batches || []).filter(
+      (b) => !b.isDisposed && Number(b.quantity) > 0 && b.expiryDate,
+    );
+    if (!batches.length) return null;
+    return batches.reduce((soonest, b) =>
+      !soonest || new Date(b.expiryDate) < new Date(soonest.expiryDate) ? b : soonest,
+    null);
+  };
 
   const columns = [
     {
       key: "name",
-      header: "Medicine",
+      header: "Medicine / SKU",
       render: (r) => (
-        <div>
-          <p className="font-medium text-gray-900 dark:text-white">{r.name}</p>
-          <p className="text-xs text-gray-400">{r.genericName}</p>
+        <div className="min-w-[160px]">
+          <p className="font-semibold text-slate-900 dark:text-white text-sm leading-tight">
+            {r.name}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {[r.genericName, r.manufacturer].filter(Boolean).join(" · ") || "—"}
+          </p>
         </div>
       ),
     },
     {
       key: "category",
-      header: "Category",
+      header: "Form",
       render: (r) => (
-        <span className="badge-blue capitalize">{r.category}</span>
-      ),
-    },
-    {
-      key: "currentStock",
-      header: "Stock",
-      render: (r) => (
-        <span
-          className={`font-semibold ${r.currentStock === 0 ? "text-red-600" : r.currentStock <= r.minimumStock ? "text-yellow-600" : "text-green-600"}`}
-        >
-          {r.currentStock} {r.unitOfMeasure || "Nos"}
+        <span className="inline-flex text-[11px] font-medium capitalize px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600">
+          {r.category || "—"}
         </span>
       ),
     },
-    { key: "minimumStock", header: "Min Level", render: (r) => r.minimumStock },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) => {
+        const s = stockStatus(r);
+        return (
+          <span className={`inline-flex text-[11px] font-semibold px-2 py-0.5 rounded border ${s.cls}`}>
+            {s.label}
+          </span>
+        );
+      },
+    },
+    {
+      key: "currentStock",
+      header: "On Hand",
+      render: (r) => (
+        <div>
+          <p className="font-semibold text-slate-900 dark:text-white tabular-nums text-sm">
+            {r.currentStock}{" "}
+            <span className="text-[11px] font-normal text-slate-400">
+              {r.unitOfMeasure || "Nos"}
+            </span>
+          </p>
+          <p className="text-[11px] text-slate-400">Min {r.minimumStock ?? 0}</p>
+        </div>
+      ),
+    },
+    {
+      key: "expiry",
+      header: "Nearest Expiry",
+      render: (r) => {
+        const b = nearestExpiry(r);
+        if (!b) return <span className="text-xs text-slate-400">—</span>;
+        const days = Math.ceil(
+          (new Date(b.expiryDate) - new Date()) / (1000 * 60 * 60 * 24),
+        );
+        const urgent = days <= 30;
+        const expired = days < 0;
+        return (
+          <div>
+            <p className={`text-xs font-medium tabular-nums ${expired ? "text-red-600" : urgent ? "text-orange-600" : "text-slate-700"}`}>
+              {new Date(b.expiryDate).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+            </p>
+            <p className="text-[11px] text-slate-400">
+              {b.batchNumber}
+              {expired ? " · Expired" : urgent ? ` · ${days}d left` : ""}
+            </p>
+          </div>
+        );
+      },
+    },
     {
       key: "sellingPrice",
-      header: "Price",
-      render: (r) => <span className="font-medium">{fmt(r.sellingPrice)}</span>,
+      header: "Sell / MRP",
+      render: (r) => (
+        <div>
+          <p className="font-semibold text-slate-900 dark:text-white text-sm tabular-nums">
+            {fmt(r.sellingPrice)}
+          </p>
+          <p className="text-[11px] text-slate-400 tabular-nums">
+            MRP {r.mrp != null ? fmt(r.mrp) : "—"}
+            {r.gstPercent != null ? ` · GST ${r.gstPercent}%` : ""}
+          </p>
+        </div>
+      ),
     },
     {
       key: "actions",
-      header: "",
+      header: "Actions",
       render: (r) =>
         canManageInventory && (
-          <div className="flex items-center gap-2 whitespace-nowrap flex-wrap">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowStock(r);
               }}
-              className="text-xs text-blue-600 hover:underline font-medium"
+              title="Add Stock"
+              className="p-1.5 rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-100"
             >
-              Add Stock
+              <Layers size={14} />
             </button>
-            {/* ── NEW: Adjust (Reduce / Increase) Stock button ── */}
             <button
               type="button"
               onClick={(e) => {
@@ -899,10 +967,10 @@ export default function PharmacyPage() {
                 setShowAdjustStock(r);
                 setAdjustType("reduce");
               }}
-              className="text-xs text-orange-600 hover:underline font-medium"
-              title="Reduce or increase current stock"
+              title="Adjust Stock"
+              className="p-1.5 rounded-md text-slate-500 hover:text-amber-700 hover:bg-amber-50 border border-transparent hover:border-amber-100"
             >
-              Adjust
+              <SlidersHorizontal size={14} />
             </button>
             <button
               type="button"
@@ -911,23 +979,23 @@ export default function PharmacyPage() {
                 setEditMed(r);
                 reset(r);
               }}
-              className="text-xs text-green-600 hover:underline font-medium"
+              title="Edit"
+              className="p-1.5 rounded-md text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 border border-transparent hover:border-emerald-100"
             >
-              Edit
+              <Pencil size={14} />
             </button>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (
-                  window.confirm(`Delete "${r.name}"? This cannot be undone.`)
-                ) {
+                if (window.confirm(`Delete "${r.name}"? This cannot be undone.`)) {
                   deleteMed.mutate(r._id);
                 }
               }}
-              className="text-xs text-red-600 hover:underline font-medium"
+              title="Delete"
+              className="p-1.5 rounded-md text-slate-500 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100"
             >
-              Delete
+              <Trash2 size={14} />
             </button>
           </div>
         ),
@@ -936,6 +1004,11 @@ export default function PharmacyPage() {
 
   const TABS = [
     { id: "prescriptions", label: "OP Prescriptions", icon: Pill },
+    canDispense && {
+      id: "counter",
+      label: "Counter Sale",
+      icon: ShoppingCart,
+    },
     canViewDashboard && {
       id: "inventory",
       label: "Inventory Dashboard",
@@ -949,54 +1022,46 @@ export default function PharmacyPage() {
   ].filter(Boolean);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Medicines / Pharmacy
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {canManageInventory
-              ? 'Add new medicines under Inventory Dashboard'
-              : 'View prescriptions and stock'}
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {canManageInventory && (
-            <button
-              type="button"
-              onClick={() => {
-                setTab("inventory");
-                setEditMed(null);
-                reset();
-                setShowAdd(true);
-              }}
-              className="flex items-center gap-2 text-sm font-semibold px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm"
-            >
-              <Plus size={16} /> Add New Medicine
-            </button>
-          )}
-          {tab === "distributors" && canManageInventory && (
-            <button
-              type="button"
-              onClick={() => setShowAddSupplier(true)}
-              className="btn-primary"
-            >
-              <Plus size={16} /> Add Distributor
-            </button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        icon={Pill}
+        title="Pharmacy"
+        subtitle={
+          canManageInventory
+            ? "OP prescriptions · counter sale · inventory · distributors"
+            : "OP prescriptions and counter medicine sale"
+        }
+        actions={(
+          <>
+            {canManageInventory && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTab("inventory");
+                  setEditMed(null);
+                  reset();
+                  setShowAdd(true);
+                }}
+                className="btn-primary text-xs py-2"
+              >
+                <Plus size={14} /> Add Medicine
+              </button>
+            )}
+          </>
+        )}
+      />
 
-      <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+      <div className="corp-tabs">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === id ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"}`}
+            className={`flex items-center gap-2 corp-tab ${
+              tab === id ? "corp-tab-active" : ""
+            }`}
           >
-            <Icon size={16} /> {label}
+            <Icon size={15} /> {label}
           </button>
         ))}
       </div>
@@ -1005,38 +1070,52 @@ export default function PharmacyPage() {
         <PendingPharmacyPanel canDispense={canDispense} />
       )}
 
+      {tab === "counter" && canDispense && (
+        <PharmacyCounterSale canDispense={canDispense} />
+      )}
+
       {tab === "inventory" && canViewDashboard && (
         <PharmacyInventoryDashboard>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-            <div className="p-4 border-b border-gray-100 dark:border-gray-700 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <h3 className="font-semibold text-gray-900 dark:text-white">
-                  Medicine Inventory
-                </h3>
-                <div className="relative w-full sm:w-72">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-gray-700 space-y-3">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Medicine Master
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    SKU register · stock levels · nearest batch expiry
+                    {data && (
+                      <span className="ml-1">
+                        · {data.total ?? data.data?.length ?? 0} records
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="relative w-full lg:w-80">
                   <Search
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                   />
                   <input
                     type="text"
                     value={invSearchInput}
                     onChange={(e) => setInvSearchInput(e.target.value)}
-                    placeholder="Search medicine by name..."
-                    className="input-field w-full pl-9"
+                    placeholder="Search name, generic, barcode…"
+                    className="input-field w-full pl-9 text-sm"
                   />
                   {invSearchInput && (
                     <button
                       type="button"
                       onClick={() => setInvSearchInput("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
                     >
-                      ✕
+                      Clear
                     </button>
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {[
                   { id: "all", label: "All" },
                   { id: "in", label: "In Stock" },
@@ -1047,34 +1126,21 @@ export default function PharmacyPage() {
                     key={id}
                     type="button"
                     onClick={() => setStockFilter(id)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    className={`px-3 py-1 rounded-md text-xs font-semibold border transition-colors ${
                       stockFilter === id
-                        ? id === "out"
-                          ? "bg-red-600 text-white border-red-600"
-                          : id === "low"
-                            ? "bg-yellow-500 text-white border-yellow-500"
-                            : id === "in"
-                              ? "bg-green-600 text-white border-green-600"
-                              : "bg-blue-600 text-white border-blue-600"
-                        : "bg-transparent text-gray-500 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white dark:bg-gray-800 text-slate-500 border-slate-200 dark:border-gray-600 hover:bg-slate-50"
                     }`}
                   >
                     {label}
                   </button>
                 ))}
+                {invSearch && (
+                  <span className="text-xs text-slate-400 ml-1">
+                    Filter: “{invSearch}” · {filteredMedicines.length} shown
+                  </span>
+                )}
               </div>
-              {invSearch && (
-                <p className="text-xs text-gray-400">
-                  Showing results for "{invSearch}"
-                  {data && (
-                    <>
-                      {" "}
-                      — {filteredMedicines.length} of{" "}
-                      {data.total ?? data.data?.length ?? 0} medicine(s)
-                    </>
-                  )}
-                </p>
-              )}
             </div>
             <DataTable
               columns={columns}
@@ -1085,28 +1151,30 @@ export default function PharmacyPage() {
               onPageChange={setPage}
             />
             {!isLoading && filteredMedicines.length === 0 && (
-              <div className="p-8 text-center text-sm text-gray-400">
-                No medicines found{invSearch ? ` for "${invSearch}"` : ""}.
+              <div className="p-10 text-center">
+                <Package size={28} className="mx-auto text-slate-300 mb-2" />
+                <p className="text-sm font-medium text-slate-500">
+                  No medicines found{invSearch ? ` for “${invSearch}”` : ""}
+                </p>
+                {canManageInventory && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdd(true);
+                      reset();
+                    }}
+                    className="mt-3 text-xs font-semibold text-blue-600 hover:underline"
+                  >
+                    Add first medicine
+                  </button>
+                )}
               </div>
             )}
           </div>
         </PharmacyInventoryDashboard>
       )}
 
-      {tab === "distributors" && canManageInventory && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-            <h3 className="font-semibold text-gray-900 dark:text-white">
-              Distributors / Suppliers
-            </h3>
-          </div>
-          <DataTable
-            columns={supplierColumns}
-            data={suppliersData?.data || []}
-            loading={suppliersLoading}
-          />
-        </div>
-      )}
+      {tab === "distributors" && canManageInventory && <DistributorDesk />}
 
       {/* ── Add / Edit Medicine Modal ─────────────────────────────────────── */}
       <Modal
@@ -1600,156 +1668,6 @@ export default function PharmacyPage() {
       </Modal>
       {/* ── End Adjust Stock Modal ───────────────────────────────────────────── */}
 
-      {/* ── Add / Edit Supplier Modal ─────────────────────────────────────── */}
-      <Modal
-        isOpen={showAddSupplier || !!editSupplier}
-        onClose={() => {
-          setShowAddSupplier(false);
-          setEditSupplier(null);
-          supReset();
-        }}
-        title={editSupplier ? "Edit Distributor" : "Add Distributor"}
-        size="lg"
-      >
-        <form
-          onSubmit={supSubmit((d) =>
-            editSupplier
-              ? updateSupplier.mutate({ id: editSupplier._id, data: d })
-              : addSupplier.mutate(d),
-          )}
-          className="p-6 space-y-4"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Distributor Name *
-              </label>
-              <input
-                {...supReg("name", { required: true })}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Contact Person
-              </label>
-              <input {...supReg("contactPerson")} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Phone *</label>
-              <input
-                {...supReg("phone", { required: true })}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
-              <input
-                {...supReg("email")}
-                type="email"
-                className="input-field"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1">Address</label>
-              <input {...supReg("address")} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">City</label>
-              <input {...supReg("city")} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">State</label>
-              <input {...supReg("state")} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Pincode</label>
-              <input {...supReg("pincode")} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                GST Number
-              </label>
-              <input {...supReg("gstNumber")} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Drug License
-              </label>
-              <input {...supReg("drugLicense")} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Credit Days
-              </label>
-              <input
-                {...supReg("creditDays", { valueAsNumber: true })}
-                type="number"
-                defaultValue={30}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Opening Amount
-              </label>
-              <input
-                {...supReg("openingAmount", { valueAsNumber: true })}
-                type="number"
-                defaultValue={0}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Amount Paid
-              </label>
-              <input
-                {...supReg("amountPaid", { valueAsNumber: true })}
-                type="number"
-                defaultValue={0}
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Outstanding Amount
-              </label>
-              <input
-                {...supReg("outstanding", { valueAsNumber: true })}
-                type="number"
-                defaultValue={0}
-                className="input-field"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-sm font-medium mb-1">Notes</label>
-              <input {...supReg("notes")} className="input-field" />
-            </div>
-          </div>
-          <div className="flex gap-3 justify-end pt-4 border-t">
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddSupplier(false);
-                setEditSupplier(null);
-              }}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={addSupplier.isPending || updateSupplier.isPending}
-              className="btn-primary"
-            >
-              {addSupplier.isPending || updateSupplier.isPending
-                ? "Saving..."
-                : "Save Distributor"}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }
