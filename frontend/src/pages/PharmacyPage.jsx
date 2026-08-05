@@ -80,7 +80,7 @@ function PendingPharmacyPanel({ canDispense }) {
   useEffect(() => {
     if (medQuery.length >= 2) {
       api
-        .get(`/pharmacy/search?q=${medQuery}`)
+        .get(`/pharmacy/search?q=${encodeURIComponent(medQuery)}`)
         .then((r) => setMedResults(r.data.data || []))
         .catch(() => setMedResults([]));
     } else {
@@ -727,7 +727,7 @@ export default function PharmacyPage() {
     queryFn: () =>
       api
         .get(
-          `/pharmacy?page=${page}&limit=20${invSearch ? `&search=${encodeURIComponent(invSearch)}` : ""}`,
+          `/pharmacy?page=${page}&limit=20&sort=name${invSearch ? `&search=${encodeURIComponent(invSearch)}` : ""}`,
         )
         .then((r) => r.data),
     enabled: tab === "inventory",

@@ -209,28 +209,27 @@ exports.adjustStock = asyncHandler(async (req, res, next) => {
 
 exports.searchMedicines = asyncHandler(async (req, res) => {
   const { q } = req.query;
-  
-  // FIX: Return empty array if query is empty or very short
+
   if (!q || q.trim().length < 2) {
     return res.status(200).json({ success: true, data: [] });
   }
 
-  // FIX: Sanitize input
   const searchQuery = q.trim().substring(0, 100);
+  const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  // FIX: Better search with case-insensitive and improved regex
   const medicines = await Medicine.find({
     $or: [
-      { name: { $regex: searchQuery, $options: 'i' } },
-      { genericName: { $regex: searchQuery, $options: 'i' } },
-      { barcode: searchQuery }, // Exact match for barcode
+      { name: { $regex: escaped, $options: 'i' } },
+      { genericName: { $regex: escaped, $options: 'i' } },
+      { barcode: searchQuery },
     ],
     isActive: true,
+    currentStock: { $gt: 0 },
   })
-    .limit(15)
+    .sort({ name: 1 })
+    .limit(25)
     .select('name genericName category currentStock sellingPrice gstPercent unitOfMeasure mrp hsnCode batches');
 
-  // FIX: Only return medicines with current stock
   const data = medicines
     .map((m) => {
       const doc = m.toObject();
@@ -240,7 +239,7 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
       return doc;
     })
     .filter((m) => m.currentStock > 0)
-    .sort((a, b) => b.currentStock - a.currentStock); // Sort by stock, most available first
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   res.status(200).json({ success: true, count: data.length, data });
 });
