@@ -615,6 +615,10 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
       .text(`Dr. ${admission.doctor.name}`, PAGE.width - MARGIN - 170, sigY + 44, { width: 170, align: 'center' });
   }
 
+  // ── Final A4 page: maternity discharge advice form ────────────────
+  const { drawMaternityDischargeAdvicePage } = require('./maternityDischargePage');
+  drawMaternityDischargeAdvicePage(doc, PAGE, MARGIN, d.maternityAdvice || {});
+
   doc.end();
 };
 

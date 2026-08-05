@@ -40,17 +40,22 @@ function numberToWords(num) {
   return w + ' ONLY';
 }
 
-export default function PharmacyTaxInvoice({ sale, onClose }) {
+export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
   const { branding } = useBranding();
+  const data = sale || bill;
 
-  if (!sale) return null;
+  if (!data) return null;
 
-  const items = sale.items || [];
+  const items = (data.items || []).map((it) => ({
+    ...it,
+    medicineName: it.medicineName || it.name || it.description || '-',
+    genericName: it.genericName || '',
+  }));
   const subtotal = items.reduce((s, i) => s + (i.unitPrice || 0) * (i.quantity || 0), 0);
   const totalDiscount = items.reduce((s, i) => s + (i.discountAmount || 0), 0);
   const taxableValue = subtotal - totalDiscount;
   const totalGst = items.reduce((s, i) => s + (i.gstAmount || 0), 0);
-  const grandTotal = sale.grandTotal || (taxableValue + totalGst);
+  const grandTotal = data.grandTotal || data.totalAmount || (taxableValue + totalGst);
   const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0);
 
   // Collect HSN codes
@@ -67,7 +72,7 @@ export default function PharmacyTaxInvoice({ sale, onClose }) {
     gstMap[rate].gst += item.gstAmount || 0;
   });
 
-  const invoiceNo = sale.saleNumber || String(sale._id).slice(-4).toUpperCase();
+  const invoiceNo = data.saleNumber || data.billNumber || String(data._id).slice(-4).toUpperCase();
 
   return (
     <>
@@ -190,30 +195,30 @@ export default function PharmacyTaxInvoice({ sale, onClose }) {
                   <tbody>
                     <tr>
                       <td style={{fontWeight:700,width:75,paddingBottom:2,verticalAlign:'top'}}>M/S</td>
-                      <td style={{paddingBottom:2}}>{sale.customerName || sale.patient?.name || 'Walk-in Customer'}</td>
+                      <td style={{paddingBottom:2}}>{data.customerName || data.patient?.name || 'Walk-in Customer'}</td>
                     </tr>
-                    {sale.patient?.name && sale.saleType === 'patient' && (
+                    {data.patient?.name && data.saleType === 'patient' && (
                       <tr>
                         <td style={{fontWeight:700,paddingBottom:2,verticalAlign:'top'}}>C.Person</td>
-                        <td style={{paddingBottom:2}}>{sale.patient.name}</td>
+                        <td style={{paddingBottom:2}}>{data.patient.name}</td>
                       </tr>
                     )}
-                    {sale.customerPhone && (
+                    {data.customerPhone && (
                       <tr>
                         <td style={{fontWeight:700,paddingBottom:2}}>Phone</td>
-                        <td style={{paddingBottom:2}}>{sale.customerPhone}</td>
+                        <td style={{paddingBottom:2}}>{data.customerPhone}</td>
                       </tr>
                     )}
-                    {sale.patient?.phone && (
+                    {data.patient?.phone && (
                       <tr>
                         <td style={{fontWeight:700,paddingBottom:2}}>Phone</td>
-                        <td style={{paddingBottom:2}}>{sale.patient.phone}</td>
+                        <td style={{paddingBottom:2}}>{data.patient.phone}</td>
                       </tr>
                     )}
-                    {sale.patient?.patientId && (
+                    {data.patient?.patientId && (
                       <tr>
                         <td style={{fontWeight:700,paddingBottom:2}}>UHID</td>
-                        <td style={{paddingBottom:2,fontFamily:"ui-monospace,monospace",fontWeight:700,color:'#1d4ed8'}}>{sale.patient.patientId}</td>
+                        <td style={{paddingBottom:2,fontFamily:"ui-monospace,monospace",fontWeight:700,color:'#1d4ed8'}}>{data.patient.patientId}</td>
                       </tr>
                     )}
                     {branding.gstNumber && (
@@ -239,7 +244,7 @@ export default function PharmacyTaxInvoice({ sale, onClose }) {
                     <td style={{paddingBottom:4}}>Invoice No.</td>
                     <td style={{fontWeight:700,fontSize:13,paddingBottom:4,textAlign:'center'}}>{invoiceNo}</td>
                     <td style={{paddingBottom:4,paddingLeft:8}}>Invoice Date</td>
-                    <td style={{fontWeight:700,paddingBottom:4,textAlign:'right'}}>{fmtDate(sale.saleDate || sale.createdAt)}</td>
+                    <td style={{fontWeight:700,paddingBottom:4,textAlign:'right'}}>{fmtDate(data.saleDate || data.createdAt)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -271,7 +276,12 @@ export default function PharmacyTaxInvoice({ sale, onClose }) {
                 return (
                   <tr key={i} style={{background: i % 2 === 0 ? '#fff' : '#f6fff8'}}>
                     <td style={TD_C}>{i + 1}</td>
-                    <td style={{...TD,textAlign:'left',fontWeight:600}}>{item.medicineName}</td>
+                    <td style={{...TD,textAlign:'left',fontWeight:600}}>
+                      {item.genericName || item.medicineName}
+                      {item.genericName && item.medicineName && item.genericName !== item.medicineName ? (
+                        <div style={{fontSize:9,color:'#6b7280',fontWeight:400,marginTop:2}}>{item.medicineName}</div>
+                      ) : null}
+                    </td>
                     <td style={TD_C}>{item.batchNumber || 'A1'}</td>
                     <td style={TD_C}>{item.mfgDate ? fmtMonthYear(item.mfgDate) : 'Dec 2024'}</td>
                     <td style={TD_C}>{item.expiryDate ? fmtMonthYear(item.expiryDate) : '-'}</td>

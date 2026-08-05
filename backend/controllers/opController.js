@@ -5,6 +5,7 @@ const Patient = require('../models/Patient');
 const IPAdmission = require('../models/IPAdmission');
 const Prescription = require('../models/Prescription');
 const LabTest = require('../models/LabTest');
+const Bill = require('../models/Bill');
 const Counter = require('../models/Counter');
 const { generateTokenNo } = require('../utils/generateId');
 
@@ -18,13 +19,85 @@ exports.getOPRegistrations = asyncHandler(async (req, res) => {
   res.status(200).json(res.advancedResults);
 });
 
+/** Build print-ready medicine lines from prescriptions + pharmacy bills for this OP visit. */
+function buildPharmacyMedicines(prescriptions, bills) {
+  const pharmacyMeds = [];
+  const seen = new Set();
+
+  for (const rx of prescriptions || []) {
+    for (const m of rx.medicines || []) {
+      const key = String(m.medicine?._id || m.medicine || m.medicineName || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      pharmacyMeds.push({
+        name: m.medicine?.genericName || m.medicineName || m.medicine?.name || 'Medicine',
+        drugName: m.medicine?.name || '',
+        dosage: m.dosage || '',
+        quantity: m.quantity,
+        frequency: m.frequency || '',
+        duration: m.duration || '',
+        instructions: m.instructions || '',
+      });
+    }
+  }
+
+  for (const bill of bills || []) {
+    for (const it of bill.items || []) {
+      if (it.type !== 'medicine' && it.category !== 'Pharmacy') continue;
+      const key = String(it.medicine || it.name || it.description || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      pharmacyMeds.push({
+        name: it.genericName || it.description || it.name || 'Medicine',
+        drugName: it.name || '',
+        dosage: '',
+        quantity: it.quantity,
+        frequency: '',
+        duration: '',
+        instructions: '',
+      });
+    }
+  }
+
+  return pharmacyMeds;
+}
+
 exports.getOPRegistration = asyncHandler(async (req, res, next) => {
   const op = await OPRegistration.findById(req.params.id)
     .populate('patient', 'patientId name age gender phone address allergies chronicConditions')
     .populate('doctor', 'name specialization')
-    .populate('department', 'name');
+    .populate('department', 'name')
+    .populate('serviceUsages.administeredBy', 'name');
   if (!op) return next(new ErrorResponse('Registration not found', 404));
-  res.status(200).json({ success: true, data: op });
+
+  const [labs, bills, prescriptions] = await Promise.all([
+    LabTest.find({
+      $or: [
+        { opRegistration: op._id },
+        { _id: { $in: op.labTests || [] } },
+      ],
+      status: { $ne: 'cancelled' },
+    })
+      .select('labNumber testProfile tests totalAmount status createdAt sampleType labType')
+      .sort('createdAt'),
+    Bill.find({
+      opRegistration: op._id,
+      status: { $ne: 'cancelled' },
+    }).select('items billNumber createdAt'),
+    Prescription.find({
+      opRegistration: op._id,
+      status: { $ne: 'cancelled' },
+    })
+      .populate('medicines.medicine', 'name genericName')
+      .select('medicines diagnosis status createdAt'),
+  ]);
+
+  const data = op.toObject();
+  data.labs = labs;
+  data.pharmacyMedicines = buildPharmacyMedicines(prescriptions, bills);
+  data.prescriptions = prescriptions;
+
+  res.status(200).json({ success: true, data });
 });
 
 exports.getTodaysQueue = asyncHandler(async (req, res) => {
@@ -128,11 +201,29 @@ exports.getPatientMedicalHistory = asyncHandler(async (req, res, next) => {
 });
 
 exports.createOPRegistration = asyncHandler(async (req, res) => {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const countToday = await OPRegistration.countDocuments({ tokenDate: { $gte: today } });
-  req.body.tokenNumber = generateTokenNo(countToday + 1);
-  req.body.tokenDate = new Date();
+  // Allow backdating OP visits via visitDate / scheduledTime from the registration form
+  let tokenDate = new Date();
+  if (req.body.scheduledTime) {
+    const scheduled = new Date(req.body.scheduledTime);
+    if (!Number.isNaN(scheduled.getTime())) tokenDate = scheduled;
+  } else if (req.body.visitDate) {
+    const visit = new Date(`${req.body.visitDate}T${req.body.visitTime || '00:00'}`);
+    if (!Number.isNaN(visit.getTime())) tokenDate = visit;
+  }
+
+  const dayStart = new Date(tokenDate);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const countThatDay = await OPRegistration.countDocuments({
+    tokenDate: { $gte: dayStart, $lt: dayEnd },
+  });
+  req.body.tokenNumber = generateTokenNo(countThatDay + 1);
+  req.body.tokenDate = tokenDate;
   req.body.registeredBy = req.user._id;
+  delete req.body.visitDate;
+  delete req.body.visitTime;
 
   const op = await OPRegistration.create(req.body);
   await Patient.findByIdAndUpdate(req.body.patient, { $push: { visits: op._id } });

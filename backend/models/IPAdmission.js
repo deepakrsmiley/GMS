@@ -103,6 +103,31 @@ const ipAdmissionSchema = new mongoose.Schema({
     absconded: { type: String, enum: ['Yes', 'No'], default: 'No' },
     death: { type: String, enum: ['Yes', 'No'], default: 'No' },
     remarks: String,
+    // Page-2 maternity advice form (printed after consultant signature)
+    maternityAdvice: {
+      motherCondition: String, // Live and Healthy / Maternal Death / Referral
+      babyCondition: String, // Live and Healthy / Still Birth / Newborn Death / Referral
+      adviceChecked: [Number], // indexes of ADVICE_ITEMS checked
+      reviewDate: String,
+      dischargeDrugs: {
+        iron: String,
+        ironDays: String,
+        calcium: String,
+        calciumDays: String,
+        line8: String,
+        line9: String,
+        line10: String,
+      },
+      referral: {
+        facility: String,
+        mode: String,
+        reason: String,
+        advanceNotification: { type: String, enum: ['Yes', 'No', ''], default: '' },
+        accompanied: { type: String, enum: ['Yes', 'No', ''], default: '' },
+      },
+      referralVitals: String,
+      treatmentGivenAtReferral: String,
+    },
     completedAt: Date,
     completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

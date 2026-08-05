@@ -12,6 +12,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import Modal from '../components/common/Modal';
   import DataTable from '../components/common/DataTable';
   import InvoicePrint from '../components/billing/InvoicePrint';
+  import {
+    flattenMedicineBatchOptions,
+    formatBatchExpiry,
+  } from '../utils/medicineBatches';
 
   const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
   const STATUS_BADGE = {
@@ -366,9 +370,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setEditItems((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
     };
 
-    const addEditMedicine = (medicine) => {
-      // Auto-pick first valid non-disposed batch from inventory
-      const validBatch = medicine.batches?.find((b) => !b.isDisposed && b.quantity > 0);
+    const addEditMedicine = (opt) => {
+      const medicine = opt.medicine || opt;
+      const batch = opt.batch || null;
+      const batchNumber = opt.batchNumber || batch?.batchNumber || '';
+      const unitPrice = Number(opt.unitPrice ?? batch?.sellingPrice ?? medicine.sellingPrice ?? 0);
       setEditItems((prev) => [
         ...prev,
         {
@@ -378,16 +384,16 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           name: medicine.name,
           medicine: medicine._id,
           quantity: 1,
-          unitPrice: medicine.sellingPrice || 0,
+          unitPrice,
           gstPercent: medicine.gstPercent || 0,
           genericName: medicine.genericName || '',
-          mrp: medicine.mrp || medicine.sellingPrice || 0,
+          mrp: Number(opt.mrp ?? batch?.mrp ?? medicine.mrp ?? unitPrice) || 0,
           hsnCode: medicine.hsnCode || '',
           unitOfMeasure: medicine.unitOfMeasure || 'Nos',
-          batch: validBatch?.batchNumber || '',
-          batchNumber: validBatch?.batchNumber || '',
-          expiryDate: validBatch?.expiryDate || null,
-          mfgDate: validBatch?.receivedDate || null,
+          batch: batchNumber,
+          batchNumber,
+          expiryDate: opt.expiryDate || batch?.expiryDate || null,
+          mfgDate: batch?.receivedDate || null,
           discountPercent: 0,
           discountAmount: 0,
         },
@@ -483,16 +489,26 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       return () => clearTimeout(t);
     }, [showCreate, createMedQuery]);
 
-    const addCreateMedicine = (medicine) => {
-      const validBatch = medicine.batches?.find((b) => !b.isDisposed && b.quantity > 0);
-      const availableStock = Number(medicine.currentStock ?? validBatch?.quantity ?? 0);
-      if (!validBatch && availableStock <= 0) {
-        toast.error('Selected medicine is out of stock');
+    const addCreateMedicine = (opt) => {
+      const medicine = opt.medicine || opt;
+      const batch = opt.batch || null;
+      const batchNumber = opt.batchNumber || batch?.batchNumber || '';
+      const availableStock = Number(opt.available ?? batch?.quantity ?? medicine.currentStock ?? 0);
+      if (availableStock <= 0) {
+        toast.error('Selected batch is out of stock');
         return;
       }
 
+      const price = Number(opt.unitPrice ?? batch?.sellingPrice ?? medicine.sellingPrice ?? 0);
+      const gstPercent = Number(medicine.gstPercent || 0);
+      const lineKey = `${medicine._id}:${batchNumber || 'none'}`;
+
       setCharges((prev) => {
-        const existing = prev.find((c) => c.type === 'medicine' && (c.medicine === medicine._id || c.referenceId === medicine._id));
+        const existing = prev.find(
+          (c) => c.type === 'medicine'
+            && (c.medicine === medicine._id || c.referenceId === medicine._id)
+            && String(c.batchNumber || c.batch || '') === String(batchNumber),
+        );
         if (existing) {
           toast.success('Medicine quantity increased');
           return prev.map((c) => (
@@ -502,13 +518,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           ));
         }
 
-        const price = Number(medicine.sellingPrice || 0);
-        const gstPercent = Number(medicine.gstPercent || 0);
         return [...prev, {
-          id: `manual-med-${medicine._id}-${Date.now()}`,
+          id: `manual-med-${lineKey}-${Date.now()}`,
           category: 'Pharmacy',
           type: 'medicine',
-          description: medicine.name,
+          description: medicine.genericName || medicine.name,
+          name: medicine.name,
           quantity: 1,
           unitPrice: price,
           gstPercent,
@@ -518,9 +533,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           referenceId: medicine._id,
           referenceModel: 'Medicine',
           genericName: medicine.genericName || '',
-          batch: validBatch?.batchNumber || '',
-          batchNumber: validBatch?.batchNumber || '',
-          expiryDate: validBatch?.expiryDate || null,
+          mrp: Number(opt.mrp ?? batch?.mrp ?? medicine.mrp ?? price) || 0,
+          batch: batchNumber,
+          batchNumber,
+          expiryDate: opt.expiryDate || batch?.expiryDate || null,
           unitOfMeasure: medicine.unitOfMeasure || 'Nos',
           availableStock,
           included: true,
@@ -828,36 +844,39 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                       )}
                       {createMedResults.length > 0 && (
                         <div className="absolute z-30 mt-1 w-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-xl shadow-xl max-h-64 overflow-y-auto">
-                          {createMedResults.map((m) => {
-                            const validBatch = m.batches?.find((b) => !b.isDisposed && b.quantity > 0);
-                            const stock = Number(m.currentStock ?? validBatch?.quantity ?? 0);
-                            const alreadyAdded = charges.some((c) => c.type === 'medicine' && (c.medicine === m._id || c.referenceId === m._id));
-                            const expiry = validBatch?.expiryDate ? new Date(validBatch.expiryDate).toLocaleDateString('en-IN') : null;
+                          {flattenMedicineBatchOptions(createMedResults).map((opt) => {
+                            const alreadyAdded = charges.some(
+                              (c) => c.type === 'medicine'
+                                && (c.medicine === opt.medicine._id || c.referenceId === opt.medicine._id)
+                                && String(c.batchNumber || c.batch || '') === String(opt.batchNumber || ''),
+                            );
                             return (
                               <button
-                                key={m._id}
+                                key={opt.key}
                                 type="button"
-                                onClick={() => addCreateMedicine(m)}
-                                disabled={stock <= 0}
-                                className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors ${stock <= 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}
+                                onClick={() => addCreateMedicine(opt)}
+                                disabled={opt.available <= 0}
+                                className={`w-full text-left px-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors ${opt.available <= 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
-                                    <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">{m.name}</p>
+                                    <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">{opt.medicine.name}</p>
                                     <p className="text-xs text-gray-500 truncate">
-                                      {m.genericName || 'Generic not set'} {validBatch?.batchNumber ? `| Batch ${validBatch.batchNumber}` : ''} {expiry ? `| Exp ${expiry}` : ''}
+                                      {opt.medicine.genericName || 'Medicine name not set'}
+                                      {opt.batchNumber ? ` | Batch ${opt.batchNumber}` : ''}
+                                      {opt.expiryDate ? ` | Exp ${formatBatchExpiry(opt.expiryDate)}` : ''}
                                     </p>
                                     <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${stock > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'}`}>
-                                        Stock {stock}
+                                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${opt.available > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'}`}>
+                                        Stock {opt.available}
                                       </span>
                                       {alreadyAdded && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">Already added</span>}
-                                      {m.gstPercent ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">GST {m.gstPercent}%</span> : null}
+                                      {opt.medicine.gstPercent ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">GST {opt.medicine.gstPercent}%</span> : null}
                                     </div>
                                   </div>
                                   <div className="text-right shrink-0">
-                                    <p className="font-bold text-emerald-700 dark:text-emerald-300">{fmt(m.sellingPrice)}</p>
-                                    <p className="text-[10px] text-gray-400">{m.unitOfMeasure || 'Nos'}</p>
+                                    <p className="font-bold text-emerald-700 dark:text-emerald-300">{fmt(opt.unitPrice)}</p>
+                                    {opt.mrp ? <p className="text-[10px] text-gray-400">MRP {fmt(opt.mrp)}</p> : null}
                                   </div>
                                 </div>
                               </button>
@@ -1347,11 +1366,20 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                   <input value={medQuery} onChange={(e) => setMedQuery(e.target.value)} className="input-field" placeholder="Search medicine..." />
                   {medResults.length > 0 && (
                     <div className="absolute z-20 mt-1 w-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-xl shadow-lg max-h-56 overflow-y-auto">
-                      {medResults.map((m) => (
-                        <button key={m._id} type="button" onClick={() => addEditMedicine(m)} className="w-full text-left px-4 py-2.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0">
-                          <span className="font-medium">{m.name}</span>
-                          <span className="ml-2 text-gray-400">Stock {m.currentStock}</span>
-                          <span className="ml-2 text-gray-400">{fmt(m.sellingPrice)}</span>
+                      {flattenMedicineBatchOptions(medResults).map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => addEditMedicine(opt)}
+                          className="w-full text-left px-4 py-2.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm border-b border-gray-100 dark:border-gray-700 last:border-0"
+                        >
+                          <span className="font-medium">{opt.medicine.name}</span>
+                          <span className="ml-2 text-gray-400 text-xs">
+                            {opt.batchNumber ? `Batch ${opt.batchNumber}` : ''}
+                            {opt.expiryDate ? ` · Exp ${formatBatchExpiry(opt.expiryDate)}` : ''}
+                            {` · Stock ${opt.available}`}
+                          </span>
+                          <span className="ml-2 text-gray-500">{fmt(opt.unitPrice)}</span>
                         </button>
                       ))}
                     </div>

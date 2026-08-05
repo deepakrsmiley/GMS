@@ -224,12 +224,12 @@
 
 /* ── Clinical writing area ──────────────────────────────────────────── */
 .op-clinical {
-  min-height: 165mm;
+  min-height: 140mm;
   flex: 1;
 }
 
 .op-clinical-blank {
-  min-height: 165mm;
+  min-height: 140mm;
   width: 100%;
 }
 
@@ -242,6 +242,51 @@
 .op-note {
   margin-bottom: 8px;
   white-space: pre-wrap;
+}
+
+/* ── Auto-listed used services / Rx on OP paper ─────────────────────── */
+.op-used {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px dashed #999;
+}
+
+.op-used-block {
+  margin-bottom: 8px;
+}
+
+.op-used-title {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #111;
+  margin-bottom: 3px;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 2px;
+}
+
+.op-used-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #111;
+}
+
+.op-used-list li {
+  margin-bottom: 2px;
+}
+
+.op-rx-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.op-used-cat {
+  font-size: 10px;
+  color: #444;
+  font-weight: 600;
 }
 
 @media print {

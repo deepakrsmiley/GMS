@@ -315,7 +315,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
             <thead>
               <tr style={{ background:primaryColor, color:textColor }}>
                 <th style={{ ...TH, width:'4%'  }}>Sr.</th>
-                <th style={{ ...TH, width:'26%', textAlign:'left' }}>Description / Generic Name</th>
+                <th style={{ ...TH, width:'26%', textAlign:'left' }}>Medicine Name</th>
                 <th style={{ ...TH, width:'8%'  }}>Batch No</th>
                 <th style={{ ...TH, width:'7%'  }}>MFG Date</th>
                 <th style={{ ...TH, width:'7%'  }}>Expiry</th>
@@ -339,6 +339,9 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
                       <div style={{ fontWeight:600, color:'#1f2937' }}>
                         {item.genericName || item.medicineName}
                       </div>
+                      {item.genericName && item.medicineName && item.genericName !== item.medicineName && (
+                        <div style={{ fontSize:9, color:'#6b7280', marginTop:2 }}>{item.medicineName}</div>
+                      )}
                     </td>
                     <td style={TDc}>{item.batchNumber}</td>
                     <td style={TDc}>{item.mfgDate ? fmtMonthYear(item.mfgDate) : '-'}</td>

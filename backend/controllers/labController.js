@@ -50,6 +50,15 @@ exports.createLabTest = asyncHandler(async (req, res) => {
   }
 
   const labTest = await LabTest.create(req.body);
+
+  // Link lab order to OP visit so it appears on the OP prescription paper
+  if (req.body.opRegistration) {
+    const OPRegistration = require('../models/OPRegistration');
+    await OPRegistration.findByIdAndUpdate(req.body.opRegistration, {
+      $addToSet: { labTests: labTest._id },
+    });
+  }
+
   const populated = await LabTest.findById(labTest._id)
     .populate('patient', 'patientId name age gender')
     .populate('doctor', 'name');

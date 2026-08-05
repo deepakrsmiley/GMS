@@ -2,7 +2,19 @@ import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 
-export default function DataTable({ columns, data, loading, page, pages, onPageChange, onRowClick }) {
+export default function DataTable({
+  columns,
+  data,
+  loading,
+  page,
+  pages,
+  onPageChange,
+  onRowClick,
+  /** Optional: (row) => boolean — when true, renderExpandedRow is shown under the row */
+  isRowExpanded,
+  /** Optional: (row) => ReactNode — content for the expanded detail row */
+  renderExpandedRow,
+}) {
   if (loading) return <LoadingSpinner />;
   return (
     <div>
@@ -21,15 +33,30 @@ export default function DataTable({ columns, data, loading, page, pages, onPageC
             {data.length === 0 ? (
               <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-gray-400">No data found</td></tr>
             ) : (
-              data.map((row, i) => (
-                <tr key={row._id || i} onClick={() => onRowClick?.(row)} className={`table-row-hover transition-colors duration-100 ${onRowClick ? 'cursor-pointer' : ''}`}>
-                  {columns.map((col) => (
-                    <td key={col.key} className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                      {col.render ? col.render(row) : row[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              data.map((row, i) => {
+                const expanded = Boolean(isRowExpanded?.(row) && renderExpandedRow);
+                return (
+                  <React.Fragment key={row._id || i}>
+                    <tr
+                      onClick={() => onRowClick?.(row)}
+                      className={`table-row-hover transition-colors duration-100 ${onRowClick ? 'cursor-pointer' : ''} ${expanded ? 'bg-blue-50/40' : ''}`}
+                    >
+                      {columns.map((col) => (
+                        <td key={col.key} className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                          {col.render ? col.render(row) : row[col.key]}
+                        </td>
+                      ))}
+                    </tr>
+                    {expanded && (
+                      <tr className="bg-slate-50 dark:bg-gray-900/40">
+                        <td colSpan={columns.length} className="px-4 py-3 border-b border-blue-100 dark:border-gray-700">
+                          {renderExpandedRow(row)}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -38,10 +65,10 @@ export default function DataTable({ columns, data, loading, page, pages, onPageC
         <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
           <p className="text-sm text-gray-500">Page {page} of {pages}</p>
           <div className="flex gap-2">
-            <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors">
+            <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 1} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors">
               <ChevronLeft size={16} />
             </button>
-            <button onClick={() => onPageChange(page + 1)} disabled={page === pages} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors">
+            <button type="button" onClick={() => onPageChange(page + 1)} disabled={page === pages} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors">
               <ChevronRight size={16} />
             </button>
           </div>

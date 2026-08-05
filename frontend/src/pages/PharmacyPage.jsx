@@ -13,6 +13,11 @@ import {
   Eraser,
   Stethoscope,
   ShoppingCart,
+  FlaskConical,
+  Settings2,
+  Activity,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -29,6 +34,10 @@ import PharmacyInventoryDashboard from "../components/pharmacy/PharmacyInventory
 import DistributorDesk from "../components/pharmacy/DistributorDesk";
 import PharmacyCounterSale from "../components/pharmacy/PharmacyCounterSale";
 import PharmacyTaxInvoice from "../components/billing/PharmacyTaxInvoice";
+import {
+  flattenMedicineBatchOptions,
+  formatBatchExpiry,
+} from "../utils/medicineBatches";
 
 const categories = [
   "tablet",
@@ -67,6 +76,33 @@ function PendingPharmacyPanel({ canDispense }) {
     [pending, selectedOpId],
   );
 
+  // Full visit details (labs, procedures, machine usage) for the selected OP
+  const { data: visitDetail } = useQuery({
+    queryKey: ["op-registration", selectedOp?._id],
+    queryFn: () => api.get(`/op/${selectedOp._id}`).then((r) => r.data.data),
+    enabled: !!selectedOp?._id,
+  });
+
+  const visitUsages = useMemo(() => {
+    const usages = visitDetail?.serviceUsages || selectedOp?.serviceUsages || [];
+    return {
+      labs: visitDetail?.labs || [],
+      procedures: usages.filter((u) => u.category === "Procedure"),
+      machines: usages.filter((u) => u.category === "Equipment"),
+      other: usages.filter(
+        (u) => u.category !== "Procedure" && u.category !== "Equipment",
+      ),
+      medicinesAlready: visitDetail?.pharmacyMedicines || [],
+    };
+  }, [visitDetail, selectedOp]);
+
+  const hasVisitUsage =
+    visitUsages.labs.length > 0
+    || visitUsages.procedures.length > 0
+    || visitUsages.machines.length > 0
+    || visitUsages.other.length > 0
+    || visitUsages.medicinesAlready.length > 0;
+
   useEffect(() => {
     if (!selectedOpId && pending?.length) setSelectedOpId(pending[0]._id);
   }, [pending, selectedOpId]);
@@ -88,17 +124,23 @@ function PendingPharmacyPanel({ canDispense }) {
     }
   }, [medQuery]);
 
-  const addMedicine = (med) => {
+  const addMedicine = (opt) => {
+    const med = opt.medicine || opt;
+    const batch = opt.batch || null;
     setItems((prev) => [
       ...prev,
       {
         medicine: med._id,
         name: med.name,
+        genericName: med.genericName || "",
         dosage: "",
         quantity: 1,
-        unitPrice: Number(med.sellingPrice || 0),
+        unitPrice: Number(opt.unitPrice ?? batch?.sellingPrice ?? med.sellingPrice ?? 0),
+        mrp: Number(opt.mrp ?? batch?.mrp ?? med.mrp ?? med.sellingPrice ?? 0),
         gstPercent: Number(med.gstPercent || 0),
-        available: med.currentStock,
+        available: Number(opt.available ?? batch?.quantity ?? med.currentStock ?? 0),
+        batchNumber: opt.batchNumber || batch?.batchNumber || "",
+        expiryDate: opt.expiryDate || batch?.expiryDate || null,
       },
     ]);
     setMedQuery("");
@@ -195,14 +237,19 @@ function PendingPharmacyPanel({ canDispense }) {
         ...items.map((item) => ({
           category: "Pharmacy",
           type: "medicine",
-          description: `${item.name}${item.dosage ? ` - ${item.dosage}` : ""}`,
+          description: `${item.genericName || item.name}${item.dosage ? ` - ${item.dosage}` : ""}`,
           name: item.name,
+          genericName: item.genericName || "",
           quantity: Number(item.quantity) || 1,
           unitPrice: Number(item.unitPrice) || 0,
+          mrp: Number(item.mrp || item.unitPrice) || 0,
           gstPercent: Number(item.gstPercent) || 0,
           medicine: item.medicine,
           referenceId: item.medicine,
           referenceModel: "Medicine",
+          batch: item.batchNumber || "",
+          batchNumber: item.batchNumber || "",
+          expiryDate: item.expiryDate || null,
         })),
       ];
 
@@ -240,6 +287,7 @@ function PendingPharmacyPanel({ canDispense }) {
       resetWorkbench();
       setSelectedOpId("");
       qc.invalidateQueries(["opPharmacyPending"]);
+      qc.invalidateQueries(["op-registration", selectedOp?._id]);
       qc.invalidateQueries(["bills"]);
       qc.invalidateQueries(["billStats"]);
       qc.invalidateQueries(["medicines"]);
@@ -371,15 +419,143 @@ function PendingPharmacyPanel({ canDispense }) {
             <div className="grid sm:grid-cols-2 gap-2.5 mt-4">
               <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Diagnosis</p>
-                <p className="text-sm text-slate-800">{selectedOp?.diagnosis || "Not recorded"}</p>
+                <p className="text-sm text-slate-800">{visitDetail?.diagnosis || selectedOp?.diagnosis || "Not recorded"}</p>
               </div>
               <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Clinical notes</p>
                 <p className="text-sm text-slate-800 whitespace-pre-wrap line-clamp-3">
-                  {selectedOp?.consultationNotes || "Not recorded"}
+                  {visitDetail?.consultationNotes || selectedOp?.consultationNotes || "Not recorded"}
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Everything used this OP visit — lab / procedure / machine */}
+          <div className="px-5 py-4 border-b border-blue-50 bg-white">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                <Activity size={15} className="text-blue-600" />
+                Used this visit
+              </h3>
+              <span className="text-[11px] text-slate-400">
+                Auto from OP services / lab · medicines added below
+              </span>
+            </div>
+
+            {!hasVisitUsage ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center">
+                <p className="text-sm text-slate-500">No lab, procedure, or machine usage logged yet for this visit.</p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Add them from OP Queue → Services / Lab. They will appear here automatically.
+                </p>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-3">
+                {visitUsages.labs.length > 0 && (
+                  <div className="rounded-xl border border-sky-100 bg-sky-50/50 px-3.5 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700 flex items-center gap-1.5 mb-2">
+                      <FlaskConical size={12} /> Lab ({visitUsages.labs.length})
+                    </p>
+                    <ul className="space-y-1.5">
+                      {visitUsages.labs.map((lab) => {
+                        const tests = (lab.tests || []).map((t) => t.testName).filter(Boolean);
+                        return (
+                          <li key={lab._id || lab.labNumber} className="text-sm text-slate-800">
+                            <span className="font-medium">{lab.testProfile || lab.labType || "Lab"}</span>
+                            {tests.length > 0 && (
+                              <span className="text-slate-500 text-xs block mt-0.5">{tests.join(", ")}</span>
+                            )}
+                            {lab.labNumber && (
+                              <span className="text-[10px] text-slate-400 font-mono">{lab.labNumber}</span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                {visitUsages.procedures.length > 0 && (
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3.5 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 flex items-center gap-1.5 mb-2">
+                      <Settings2 size={12} /> Procedure ({visitUsages.procedures.length})
+                    </p>
+                    <ul className="space-y-1.5">
+                      {visitUsages.procedures.map((u) => (
+                        <li key={u._id} className="text-sm text-slate-800 flex justify-between gap-2">
+                          <span>
+                            <span className="font-medium">{u.serviceName}</span>
+                            {u.quantity > 1 && <span className="text-slate-400 text-xs"> × {u.quantity}</span>}
+                          </span>
+                          <span className="text-xs font-semibold text-blue-700 tabular-nums shrink-0">
+                            ₹{Number(u.quantity || 1) * Number(u.unitPrice || 0)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {visitUsages.machines.length > 0 && (
+                  <div className="rounded-xl border border-purple-100 bg-purple-50/50 px-3.5 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-purple-700 flex items-center gap-1.5 mb-2">
+                      <Settings2 size={12} /> Machine / Equipment ({visitUsages.machines.length})
+                    </p>
+                    <ul className="space-y-1.5">
+                      {visitUsages.machines.map((u) => (
+                        <li key={u._id} className="text-sm text-slate-800 flex justify-between gap-2">
+                          <span>
+                            <span className="font-medium">{u.serviceName}</span>
+                            {u.quantity > 1 && <span className="text-slate-400 text-xs"> × {u.quantity}</span>}
+                          </span>
+                          <span className="text-xs font-semibold text-purple-700 tabular-nums shrink-0">
+                            ₹{Number(u.quantity || 1) * Number(u.unitPrice || 0)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {visitUsages.other.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-2">
+                      Other services ({visitUsages.other.length})
+                    </p>
+                    <ul className="space-y-1.5">
+                      {visitUsages.other.map((u) => (
+                        <li key={u._id} className="text-sm text-slate-800 flex justify-between gap-2">
+                          <span>
+                            <span className="text-[10px] text-slate-400 mr-1">[{u.category}]</span>
+                            <span className="font-medium">{u.serviceName}</span>
+                          </span>
+                          <span className="text-xs font-semibold text-slate-700 tabular-nums shrink-0">
+                            ₹{Number(u.quantity || 1) * Number(u.unitPrice || 0)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {visitUsages.medicinesAlready.length > 0 && (
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 px-3.5 py-3 sm:col-span-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 flex items-center gap-1.5 mb-2">
+                      <Pill size={12} /> Medicines already billed ({visitUsages.medicinesAlready.length})
+                    </p>
+                    <ul className="space-y-1 grid sm:grid-cols-2 gap-x-4">
+                      {visitUsages.medicinesAlready.map((m, i) => (
+                        <li key={`${m.name}-${i}`} className="text-sm text-slate-800">
+                          <span className="font-medium">{m.name}</span>
+                          {m.dosage && <span className="text-slate-500 text-xs"> · {m.dosage}</span>}
+                          {m.quantity && <span className="text-slate-400 text-xs"> · Qty {m.quantity}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="px-5 py-2.5 bg-slate-50 border-b border-blue-50 text-[11px] text-slate-500 flex items-center gap-2">
@@ -484,24 +660,33 @@ function PendingPharmacyPanel({ canDispense }) {
                 value={medQuery}
                 onChange={(e) => setMedQuery(e.target.value)}
                 className="input-field pl-9 text-sm"
-                placeholder="Search medicine by name…"
+                placeholder="Search medicine by drug / medicine name…"
               />
               {medResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 border border-blue-100 rounded-xl shadow-xl overflow-hidden z-20 bg-white max-h-60 overflow-y-auto">
-                  {medResults.map((m) => (
+                <div className="absolute top-full left-0 right-0 mt-1 border border-blue-100 rounded-xl shadow-xl overflow-hidden z-20 bg-white max-h-72 overflow-y-auto">
+                  {flattenMedicineBatchOptions(medResults).map((opt) => (
                     <button
-                      key={m._id}
+                      key={opt.key}
                       type="button"
-                      onClick={() => addMedicine(m)}
+                      onClick={() => addMedicine(opt)}
                       className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm border-b border-slate-50 last:border-0 flex justify-between items-center gap-3"
                     >
                       <div className="min-w-0">
-                        <span className="font-medium text-slate-800">{m.name}</span>
-                        <span className="text-slate-400 ml-2 text-xs capitalize">{m.category}</span>
+                        <span className="font-medium text-slate-800">{opt.medicine.name}</span>
+                        {opt.medicine.genericName && (
+                          <span className="text-slate-500 ml-2 text-xs">{opt.medicine.genericName}</span>
+                        )}
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {opt.batchNumber ? `Batch ${opt.batchNumber}` : "No batch"}
+                          {opt.expiryDate ? ` · Exp ${formatBatchExpiry(opt.expiryDate)}` : ""}
+                          {` · Stock ${opt.available}`}
+                        </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-semibold text-blue-700 tabular-nums">{fmt(m.sellingPrice)}</p>
-                        <p className="text-[10px] text-slate-400">Stock {m.currentStock}</p>
+                        <p className="font-semibold text-blue-700 tabular-nums">{fmt(opt.unitPrice)}</p>
+                        {opt.mrp ? (
+                          <p className="text-[10px] text-slate-400">MRP {fmt(opt.mrp)}</p>
+                        ) : null}
                       </div>
                     </button>
                   ))}
@@ -534,10 +719,21 @@ function PendingPharmacyPanel({ canDispense }) {
                       <div className="col-span-12 sm:col-span-4">
                         <p className="text-[10px] text-slate-400 sm:hidden mb-0.5">Medicine</p>
                         <input
-                          value={item.name}
-                          onChange={(e) => updateItem(index, { name: e.target.value })}
+                          value={item.genericName || item.name}
+                          onChange={(e) => updateItem(index, { genericName: e.target.value })}
                           className="input-field text-sm py-1.5"
                         />
+                        {item.name && item.genericName && item.name !== item.genericName && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">Drug: {item.name}</p>
+                        )}
+                        {(item.batchNumber || item.expiryDate) && (
+                          <p className="text-[10px] text-blue-600 mt-0.5">
+                            {item.batchNumber ? `Batch ${item.batchNumber}` : ""}
+                            {item.expiryDate
+                              ? `${item.batchNumber ? " · " : ""}Exp ${formatBatchExpiry(item.expiryDate)}`
+                              : ""}
+                          </p>
+                        )}
                         {item.available != null && (
                           <p className="text-[10px] text-slate-400 mt-0.5">Stock {item.available}</p>
                         )}
@@ -695,6 +891,8 @@ export default function PharmacyPage() {
   // ── NEW: Stock Adjustment (Reduce / Increase) state ─────────────────────
   const [showAdjustStock, setShowAdjustStock] = useState(null);
   const [adjustType, setAdjustType] = useState("reduce"); // 'reduce' or 'increase'
+  // Expanded medicine rows — show all batches under the SKU
+  const [expandedMedIds, setExpandedMedIds] = useState(() => new Set());
   // ─────────────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState(() => {
     const urlTab = searchParams.get("tab");
@@ -798,10 +996,17 @@ export default function PharmacyPage() {
   const addStock = useMutation({
     mutationFn: ({ id, data: stockData }) =>
       api.post(`/pharmacy/${id}/stock`, stockData),
-    onSuccess: () => {
-      toast.success("Stock updated!");
+    onSuccess: (_res, vars) => {
+      toast.success("Batch added — see batches under this medicine");
       qc.invalidateQueries(["medicines"]);
       qc.invalidateQueries(["pharmaInventoryDash"]);
+      if (vars?.id) {
+        setExpandedMedIds((prev) => {
+          const next = new Set(prev);
+          next.add(vars.id);
+          return next;
+        });
+      }
       setShowStock(null);
       stockReset();
     },
@@ -849,20 +1054,187 @@ export default function PharmacyPage() {
     null);
   };
 
+  const activeBatches = (r) =>
+    (r.batches || [])
+      .filter((b) => !b.isDisposed)
+      .slice()
+      .sort((a, b) => new Date(a.expiryDate || 0) - new Date(b.expiryDate || 0));
+
+  const toggleExpandMed = (id) => {
+    setExpandedMedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const openAddStock = (r) => {
+    setShowStock(r);
+    stockReset({
+      sellingPrice: r.sellingPrice,
+      mrp: r.mrp,
+      purchasePrice: r.purchasePrice,
+    });
+    setExpandedMedIds((prev) => {
+      const next = new Set(prev);
+      next.add(r._id);
+      return next;
+    });
+  };
+
+  const fmtBatchDate = (d) => {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const batchStatus = (b) => {
+    const qty = Number(b.quantity) || 0;
+    if (qty <= 0) return { label: "Zero", cls: "text-slate-400" };
+    if (!b.expiryDate) return { label: "Active", cls: "text-emerald-600" };
+    const days = Math.ceil(
+      (new Date(b.expiryDate) - new Date()) / (1000 * 60 * 60 * 24),
+    );
+    if (days < 0) return { label: "Expired", cls: "text-red-600" };
+    if (days <= 30) return { label: `${days}d left`, cls: "text-orange-600" };
+    return { label: "Active", cls: "text-emerald-600" };
+  };
+
+  const renderBatchPanel = (r) => {
+    const batches = activeBatches(r);
+    if (!batches.length) {
+      return (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-5 text-center">
+          <p className="text-sm text-slate-500">No batches on this medicine yet.</p>
+          {canManageInventory && (
+            <button
+              type="button"
+              onClick={() => openAddStock(r)}
+              className="mt-2 text-xs font-semibold text-blue-600 hover:underline"
+            >
+              Add first batch
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-xl border border-blue-100 bg-white overflow-hidden">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 bg-blue-50/70 border-b border-blue-100">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-800">
+            Batches ({batches.length}) · total {r.currentStock} {r.unitOfMeasure || "Nos"}
+          </p>
+          {canManageInventory && (
+            <button
+              type="button"
+              onClick={() => openAddStock(r)}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900"
+            >
+              <Layers size={12} /> Add batch
+            </button>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-100 text-slate-400 uppercase tracking-wide">
+                <th className="px-3 py-2 text-left font-semibold">Batch No</th>
+                <th className="px-3 py-2 text-left font-semibold">Expiry</th>
+                <th className="px-3 py-2 text-right font-semibold">Qty</th>
+                <th className="px-3 py-2 text-right font-semibold">Sell</th>
+                <th className="px-3 py-2 text-right font-semibold">MRP</th>
+                <th className="px-3 py-2 text-right font-semibold">Purchase</th>
+                <th className="px-3 py-2 text-left font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {batches.map((b) => {
+                const st = batchStatus(b);
+                const sell = b.sellingPrice != null ? b.sellingPrice : r.sellingPrice;
+                const mrp = b.mrp != null ? b.mrp : r.mrp;
+                const purchase = b.purchasePrice != null ? b.purchasePrice : r.purchasePrice;
+                return (
+                  <tr key={b._id || `${b.batchNumber}-${b.expiryDate}`} className="hover:bg-slate-50/80">
+                    <td className="px-3 py-2 font-mono font-semibold text-slate-800">
+                      {b.batchNumber || "—"}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums text-slate-700">
+                      {fmtBatchDate(b.expiryDate)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
+                      {Number(b.quantity) || 0}{" "}
+                      <span className="font-normal text-slate-400">{r.unitOfMeasure || "Nos"}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-blue-700">
+                      {sell != null ? fmt(sell) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                      {mrp != null ? fmt(mrp) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                      {purchase != null ? fmt(purchase) : "—"}
+                    </td>
+                    <td className={`px-3 py-2 font-semibold ${st.cls}`}>{st.label}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   const columns = [
     {
       key: "name",
-      header: "Medicine / SKU",
-      render: (r) => (
-        <div className="min-w-[160px]">
-          <p className="font-semibold text-slate-900 dark:text-white text-sm leading-tight">
-            {r.name}
-          </p>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {[r.genericName, r.manufacturer].filter(Boolean).join(" · ") || "—"}
-          </p>
-        </div>
-      ),
+      header: "Drug / Medicine",
+      render: (r) => {
+        const batchCount = activeBatches(r).length;
+        const expanded = expandedMedIds.has(r._id);
+        return (
+          <div className="min-w-[180px] flex items-start gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleExpandMed(r._id);
+              }}
+              className="mt-0.5 p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+              title={expanded ? "Hide batches" : "Show batches"}
+            >
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-900 dark:text-white text-sm leading-tight">
+                {r.name}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {[r.genericName && `Medicine: ${r.genericName}`, r.manufacturer]
+                  .filter(Boolean)
+                  .join(" · ") || "—"}
+              </p>
+              {batchCount > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleExpandMed(r._id);
+                  }}
+                  className="mt-1 text-[10px] font-semibold text-blue-600 hover:underline"
+                >
+                  {batchCount} batch{batchCount === 1 ? "" : "es"} · {expanded ? "hide" : "view"}
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: "category",
@@ -914,11 +1286,7 @@ export default function PharmacyPage() {
         return (
           <div>
             <p className={`text-xs font-medium tabular-nums ${expired ? "text-red-600" : urgent ? "text-orange-600" : "text-slate-700"}`}>
-              {new Date(b.expiryDate).toLocaleDateString("en-IN", {
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-              })}
+              {fmtBatchDate(b.expiryDate)}
             </p>
             <p className="text-[11px] text-slate-400">
               {b.batchNumber}
@@ -953,9 +1321,9 @@ export default function PharmacyPage() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowStock(r);
+                openAddStock(r);
               }}
-              title="Add Stock"
+              title="Add new batch (Layers)"
               className="p-1.5 rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-100"
             >
               <Layers size={14} />
@@ -1149,6 +1517,8 @@ export default function PharmacyPage() {
               page={page}
               pages={data?.pages || 1}
               onPageChange={setPage}
+              isRowExpanded={(r) => expandedMedIds.has(r._id)}
+              renderExpandedRow={renderBatchPanel}
             />
             {!isLoading && filteredMedicines.length === 0 && (
               <div className="p-10 text-center">
@@ -1229,19 +1599,23 @@ export default function PharmacyPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">
-                Medicine Name *
+                Drug Name *
               </label>
               <input
                 {...register("name", { required: true })}
                 className="input-field"
-                placeholder="Brand name"
+                placeholder="Drug / brand name"
               />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                Generic Name
+                Medicine Name
               </label>
-              <input {...register("genericName")} className="input-field" />
+              <input
+                {...register("genericName")}
+                className="input-field"
+                placeholder="Medicine name (printed on bill)"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Category</label>
@@ -1414,7 +1788,7 @@ export default function PharmacyPage() {
       <Modal
         isOpen={!!showStock}
         onClose={() => setShowStock(null)}
-        title={`Add Stock: ${showStock?.name}`}
+        title={`Add Batch: ${showStock?.name}`}
         size="md"
       >
         <form
@@ -1423,6 +1797,9 @@ export default function PharmacyPage() {
           )}
           className="p-6 space-y-4"
         >
+          <p className="text-xs text-slate-500 -mt-1">
+            Same medicine · enter a <span className="font-semibold">new batch number</span>, expiry, qty and <span className="font-semibold">this batch&apos;s prices</span>. It appears under this row.
+          </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -1431,6 +1808,7 @@ export default function PharmacyPage() {
               <input
                 {...stockReg("batchNumber", { required: true })}
                 className="input-field"
+                placeholder="e.g. TB2601947"
               />
             </div>
             <div>
@@ -1460,7 +1838,30 @@ export default function PharmacyPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                Purchase Price
+                Selling Price (this batch)
+              </label>
+              <input
+                {...stockReg("sellingPrice", { valueAsNumber: true })}
+                type="number"
+                step="0.01"
+                className="input-field"
+                placeholder="Batch sell rate"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                MRP (this batch)
+              </label>
+              <input
+                {...stockReg("mrp", { valueAsNumber: true })}
+                type="number"
+                step="0.01"
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Purchase Price (this batch)
               </label>
               <input
                 {...stockReg("purchasePrice", { valueAsNumber: true })}
@@ -1492,7 +1893,7 @@ export default function PharmacyPage() {
               className="btn-primary"
             >
               <Package size={16} />
-              {addStock.isPending ? "Updating..." : "Add Stock"}
+              {addStock.isPending ? "Saving..." : "Add Batch"}
             </button>
           </div>
         </form>

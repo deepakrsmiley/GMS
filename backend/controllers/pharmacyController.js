@@ -12,6 +12,7 @@ const {
   logStockMovement,
   validateDispensable,
   getExpiredBatches,
+  mapUsableBatchesWithPrices,
 } = require('../utils/pharmacyStockHelper');
 const inventoryService = require('../services/pharmacyInventoryService');
 const { exportExcel, exportPdf } = require('../utils/pharmacyReportExporter');
@@ -236,6 +237,7 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
       syncCurrentStock(m);
       doc.currentStock = m.currentStock;
       doc.hasExpiredStock = getExpiredBatches(m).length > 0;
+      doc.usableBatches = mapUsableBatchesWithPrices(m);
       return doc;
     })
     .filter((m) => m.currentStock > 0)

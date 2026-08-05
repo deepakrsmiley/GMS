@@ -20,11 +20,29 @@ const syncCurrentStock = (medicine) => {
 const sortBatchesFEFO = (batches = []) =>
   [...batches].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
 
-const deductFromUsableBatches = (medicine, quantity) => {
+/**
+ * Deduct stock. If preferredBatchNumber is set, deduct only from that batch
+ * (needed when pharmacy picks a specific batch with its own price).
+ */
+const deductFromUsableBatches = (medicine, quantity, preferredBatchNumber = null) => {
   let remaining = quantity;
   let primaryBatch = null;
-  const sorted = sortBatchesFEFO(getUsableBatches(medicine));
 
+  if (preferredBatchNumber) {
+    const preferred = getUsableBatches(medicine).find(
+      (b) => String(b.batchNumber) === String(preferredBatchNumber),
+    );
+    if (!preferred || preferred.quantity < quantity) {
+      return {
+        primaryBatch: preferredBatchNumber,
+        unallocated: quantity - (preferred?.quantity || 0),
+      };
+    }
+    preferred.quantity -= quantity;
+    return { primaryBatch: preferred.batchNumber, unallocated: 0 };
+  }
+
+  const sorted = sortBatchesFEFO(getUsableBatches(medicine));
   for (const batch of sorted) {
     if (remaining <= 0) break;
     const take = Math.min(batch.quantity, remaining);
@@ -71,7 +89,26 @@ const logStockMovement = async ({
   return movement;
 };
 
-const validateDispensable = (medicine, quantity) => {
+const validateDispensable = (medicine, quantity, preferredBatchNumber = null) => {
+  if (preferredBatchNumber) {
+    const preferred = getUsableBatches(medicine).find(
+      (b) => String(b.batchNumber) === String(preferredBatchNumber),
+    );
+    if (!preferred) {
+      return {
+        ok: false,
+        reason: `${medicine.name}: batch ${preferredBatchNumber} not available (expired, disposed, or empty)`,
+      };
+    }
+    if (preferred.quantity < quantity) {
+      return {
+        ok: false,
+        reason: `${medicine.name} batch ${preferredBatchNumber}: only ${preferred.quantity} in stock (requested ${quantity})`,
+      };
+    }
+    return { ok: true, available: preferred.quantity };
+  }
+
   const available = getAvailableStock(medicine);
   if (available < quantity) {
     const expiredQty = getExpiredBatches(medicine).reduce((s, b) => s + b.quantity, 0);
@@ -83,6 +120,20 @@ const validateDispensable = (medicine, quantity) => {
   return { ok: true, available };
 };
 
+/** Normalize usable batches with effective sell / MRP / purchase for APIs & UI. */
+const mapUsableBatchesWithPrices = (medicine) =>
+  sortBatchesFEFO(getUsableBatches(medicine)).map((b) => ({
+    _id: b._id,
+    batchNumber: b.batchNumber,
+    expiryDate: b.expiryDate,
+    quantity: b.quantity,
+    purchasePrice: b.purchasePrice != null ? b.purchasePrice : medicine.purchasePrice,
+    sellingPrice: b.sellingPrice != null ? b.sellingPrice : medicine.sellingPrice,
+    mrp: b.mrp != null ? b.mrp : medicine.mrp,
+    receivedDate: b.receivedDate,
+    manufacturer: b.manufacturer || medicine.manufacturer,
+  }));
+
 module.exports = {
   isBatchUsable,
   getUsableBatches,
@@ -93,4 +144,5 @@ module.exports = {
   deductFromUsableBatches,
   logStockMovement,
   validateDispensable,
+  mapUsableBatchesWithPrices,
 };

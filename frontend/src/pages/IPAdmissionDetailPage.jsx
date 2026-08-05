@@ -72,6 +72,74 @@ const SECTIONS = [
   { key: 'history', label: 'History', icon: HistoryIcon },
 ];
 
+const MOTHER_CONDITIONS = ['Live and Healthy', 'Maternal Death', 'Referral'];
+const BABY_CONDITIONS = ['Live and Healthy', 'Still Birth', 'Newborn Death', 'Referral'];
+const ADVICE_ITEMS = [
+  'Rest',
+  'Nutritious diet',
+  'Plenty of oral fluids',
+  'Continue previous medications, if had been prescribed',
+  'Exclusive Breast feeding for six months',
+  "No Water / honey / cow's milk for baby",
+  'Dry cord care',
+  'Burping after breastfeeding',
+  'Maintaining warmth for baby',
+  'Counselling on danger symptoms for mother and baby',
+  'Hand hygiene and Perineal hygiene',
+  'Maintain ambulation and COVID Appropriate Behaviour',
+  'Regular Immunization for baby as per schedule',
+  'Step down admission to CHC / PHC',
+];
+const DANGER_MOTHER = [
+  'Excessive bleeding / Severe abdominal pain',
+  'Severe headache or visual disturbance',
+  'Breathing difficulty / Cough',
+  'Fever or chills',
+  'Breast Swelling / Pain / unable to feed baby',
+  'Difficulty in passing urine / decreased urine output',
+  'Foul smelling vaginal discharge',
+  'Leg Pain or Swelling',
+  'Feels unhappy / cries easily / Sleep Disturbance',
+  'Excessive tiredness and not feeling well',
+];
+const DANGER_BABY = [
+  'Fast / Difficulty breathing',
+  'Fever / Unusually cold',
+  'Stops feeding / Poor feeding',
+  'Less activity than normal / Lethargy',
+  'Palms / Soles becomes yellow or blue',
+  'Vomiting / Diarrhoea / Abdomen distension',
+  'Swollen, Red / Purulent eyes',
+  'Redness / Discharge from umbilicus',
+  'Skin boils / Infection',
+  'Convulsions',
+];
+
+const EMPTY_MATERNITY = {
+  motherCondition: '',
+  babyCondition: '',
+  adviceChecked: [],
+  reviewDate: '',
+  dischargeDrugs: {
+    iron: '',
+    ironDays: '',
+    calcium: '1 - 1 - 0',
+    calciumDays: '',
+    line8: '',
+    line9: '',
+    line10: '',
+  },
+  referral: {
+    facility: '',
+    mode: '',
+    reason: '',
+    advanceNotification: '',
+    accompanied: '',
+  },
+  referralVitals: '',
+  treatmentGivenAtReferral: '',
+};
+
 const EMPTY_FORM = {
   diagnosis: '', clinicalFindings: '', procedures: '', treatmentGiven: '', hospitalCourse: '',
   dama: 'No', referred: 'No', referredTo: '', absconded: 'No', death: 'No',
@@ -80,6 +148,7 @@ const EMPTY_FORM = {
   chiefComplaints: '', pastHistory: '', physicalExamination: '',
   deliveryDate: '',
   obstetricHistory: { rmp: '', lmp: '', edd: '' },
+  maternityAdvice: { ...EMPTY_MATERNITY, dischargeDrugs: { ...EMPTY_MATERNITY.dischargeDrugs }, referral: { ...EMPTY_MATERNITY.referral } },
 };
 
 const YES_NO = [{ value: 'No', label: 'No' }, { value: 'Yes', label: 'Yes' }];
@@ -147,7 +216,17 @@ export default function IPAdmissionDetailPage() {
 
   const buildFormFromAdmission = (adm) => {
     const dd = adm?.dischargeDetails;
-    if (!dd) return EMPTY_FORM;
+    if (!dd) {
+      return {
+        ...EMPTY_FORM,
+        maternityAdvice: {
+          ...EMPTY_MATERNITY,
+          dischargeDrugs: { ...EMPTY_MATERNITY.dischargeDrugs },
+          referral: { ...EMPTY_MATERNITY.referral },
+        },
+      };
+    }
+    const ma = dd.maternityAdvice || {};
     return {
       ...EMPTY_FORM,
       ...dd,
@@ -156,6 +235,13 @@ export default function IPAdmissionDetailPage() {
         rmp: dd.obstetricHistory?.rmp || '',
         lmp: toDateInputValue(dd.obstetricHistory?.lmp),
         edd: toDateInputValue(dd.obstetricHistory?.edd),
+      },
+      maternityAdvice: {
+        ...EMPTY_MATERNITY,
+        ...ma,
+        adviceChecked: Array.isArray(ma.adviceChecked) ? ma.adviceChecked.map(Number) : [],
+        dischargeDrugs: { ...EMPTY_MATERNITY.dischargeDrugs, ...(ma.dischargeDrugs || {}) },
+        referral: { ...EMPTY_MATERNITY.referral, ...(ma.referral || {}) },
       },
     };
   };
@@ -189,6 +275,37 @@ export default function IPAdmissionDetailPage() {
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const setNested = (parent, key) => (e) => setForm((f) => ({ ...f, [parent]: { ...f[parent], [key]: e.target.value } }));
+  const setMaternity = (key) => (e) => setForm((f) => ({
+    ...f,
+    maternityAdvice: { ...f.maternityAdvice, [key]: e.target.value },
+  }));
+  const setMaternityDrug = (key) => (e) => setForm((f) => ({
+    ...f,
+    maternityAdvice: {
+      ...f.maternityAdvice,
+      dischargeDrugs: { ...f.maternityAdvice.dischargeDrugs, [key]: e.target.value },
+    },
+  }));
+  const setMaternityReferral = (key) => (e) => setForm((f) => ({
+    ...f,
+    maternityAdvice: {
+      ...f.maternityAdvice,
+      referral: { ...f.maternityAdvice.referral, [key]: e.target.value },
+    },
+  }));
+  const toggleAdvice = (idx) => {
+    setForm((f) => {
+      const cur = new Set(f.maternityAdvice.adviceChecked || []);
+      if (cur.has(idx)) cur.delete(idx);
+      else cur.add(idx);
+      return {
+        ...f,
+        maternityAdvice: { ...f.maternityAdvice, adviceChecked: [...cur].sort((a, b) => a - b) },
+      };
+    });
+  };
+  const ma = form.maternityAdvice || EMPTY_MATERNITY;
+  const adviceChecked = new Set((ma.adviceChecked || []).map(Number));
 
   const computedDischargeType = () => {
     if (form.death === 'Yes') return 'death';
@@ -624,6 +741,106 @@ export default function IPAdmissionDetailPage() {
                   </div>
                 )}
 
+                {/* Page 2 — Maternity advice / referral form */}
+                <div className="border-t border-gray-100 dark:border-gray-700 pt-5 space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Last page — Maternity Advice / Referral</h4>
+                    <p className="text-xs text-gray-400">Printed as page 2 of the A4 discharge PDF (exact form layout)</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Condition of mother at discharge</label>
+                      <select className="input-field" value={ma.motherCondition} onChange={setMaternity('motherCondition')}>
+                        <option value="">Select…</option>
+                        {MOTHER_CONDITIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Condition of baby at discharge</label>
+                      <select className="input-field" value={ma.babyCondition} onChange={setMaternity('babyCondition')}>
+                        <option value="">Select…</option>
+                        {BABY_CONDITIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Advice on discharge / Referral</label>
+                    <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto border border-gray-100 dark:border-gray-700 rounded-lg p-3">
+                      {ADVICE_ITEMS.map((item, idx) => (
+                        <label key={item} className="flex items-start gap-2 text-xs text-gray-700 dark:text-gray-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={adviceChecked.has(idx)}
+                            onChange={() => toggleAdvice(idx)}
+                          />
+                          <span>{item}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Review date</label>
+                    <input type="date" className="input-field" value={ma.reviewDate} onChange={setMaternity('reviewDate')} />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Discharge Drugs for Mother</label>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input className="input-field" placeholder="6. Tab. Iron (e.g. 1-0-1)" value={ma.dischargeDrugs?.iron || ''} onChange={setMaternityDrug('iron')} />
+                        <input className="input-field" placeholder="Days" value={ma.dischargeDrugs?.ironDays || ''} onChange={setMaternityDrug('ironDays')} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input className="input-field" placeholder="7. Calcium & Vit. D3" value={ma.dischargeDrugs?.calcium || ''} onChange={setMaternityDrug('calcium')} />
+                        <input className="input-field" placeholder="Days" value={ma.dischargeDrugs?.calciumDays || ''} onChange={setMaternityDrug('calciumDays')} />
+                      </div>
+                      <input className="input-field" placeholder="8. Additional drug" value={ma.dischargeDrugs?.line8 || ''} onChange={setMaternityDrug('line8')} />
+                      <input className="input-field" placeholder="9. Additional drug" value={ma.dischargeDrugs?.line9 || ''} onChange={setMaternityDrug('line9')} />
+                      <input className="input-field" placeholder="10. Additional drug" value={ma.dischargeDrugs?.line10 || ''} onChange={setMaternityDrug('line10')} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">If referred</label>
+                    <div className="space-y-2">
+                      <input className="input-field" placeholder="Name of facility referred to" value={ma.referral?.facility || ''} onChange={setMaternityReferral('facility')} />
+                      <input className="input-field" placeholder="Mode of Referral" value={ma.referral?.mode || ''} onChange={setMaternityReferral('mode')} />
+                      <input className="input-field" placeholder="Reason for referral" value={ma.referral?.reason || ''} onChange={setMaternityReferral('reason')} />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[11px] text-gray-400 mb-1 block">Advance notification</label>
+                          <select className="input-field" value={ma.referral?.advanceNotification || ''} onChange={setMaternityReferral('advanceNotification')}>
+                            <option value="">Yes / No</option>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-gray-400 mb-1 block">Accompanied by HCP</label>
+                          <select className="input-field" value={ma.referral?.accompanied || ''} onChange={setMaternityReferral('accompanied')}>
+                            <option value="">Yes / No</option>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Condition at Referral (Consciousness / Temp / Pulse / RR / BP / Others)</label>
+                    <textarea rows={2} className="input-field" value={ma.referralVitals || ''} onChange={setMaternity('referralVitals')} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Treatment given with time</label>
+                    <textarea rows={2} className="input-field" value={ma.treatmentGivenAtReferral || ''} onChange={setMaternity('treatmentGivenAtReferral')} />
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap gap-3 pt-2">
                   <button type="button" onClick={handleReset} className="btn-secondary"><RotateCcw size={15} /> Reset</button>
                   <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveDraft} className="btn-secondary"><Save size={15} /> Save Draft</button>
@@ -642,7 +859,9 @@ export default function IPAdmissionDetailPage() {
                 </div>
 
                 {/* Exact paper-style preview */}
-                <div className="border border-gray-300 bg-white text-black p-5 font-serif text-[12px] leading-snug space-y-3 max-h-[70vh] overflow-y-auto">
+                <div className="max-h-[70vh] overflow-y-auto space-y-4">
+                <div className="border border-gray-300 bg-white text-black p-5 font-serif text-[12px] leading-snug space-y-3">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Page 1 — Discharge Summary</p>
                   {(patient.allergies || []).length > 0 && (
                     <p className="text-center font-bold uppercase tracking-wide">
                       {(patient.allergies || []).join(', ').toUpperCase()} ALLERGY
@@ -735,6 +954,93 @@ export default function IPAdmissionDetailPage() {
                       <p>Dr. {admission.doctor?.name || '—'}</p>
                     </div>
                   </div>
+                </div>
+
+                {/* Page 2 — Maternity advice form (exact layout) */}
+                <div className="border border-black bg-white text-black font-sans text-[9px] leading-tight" style={{ aspectRatio: '210/297' }}>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wide px-2 pt-1 font-serif">Page 2 — Maternity Advice / Referral (A4)</p>
+                  <div className="border border-black m-1.5 flex flex-col min-h-[520px]">
+                    {/* Condition row */}
+                    <div className="grid grid-cols-2 border-b border-black">
+                      <div className="border-r border-black p-1.5">
+                        <p className="font-bold text-[10px]">Condition of mother at discharge:</p>
+                        <p className="mt-1">
+                          {MOTHER_CONDITIONS.map((o, i) => (
+                            <span key={o}>{i > 0 ? ' / ' : ''}{ma.motherCondition === o ? `[✓] ${o}` : `[ ] ${o}`}</span>
+                          ))}
+                        </p>
+                      </div>
+                      <div className="p-1.5">
+                        <p className="font-bold text-[10px]">Condition of baby at discharge:</p>
+                        <p className="mt-1">
+                          {BABY_CONDITIONS.map((o, i) => (
+                            <span key={o}>{i > 0 ? ' / ' : ''}{ma.babyCondition === o ? `[✓] ${o}` : `[ ] ${o}`}</span>
+                          ))}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Advice + Danger */}
+                    <div className="grid grid-cols-[1.1fr_0.9fr] border-b border-black flex-1">
+                      <div className="border-r border-black p-1.5">
+                        <p className="font-bold text-[10px] mb-1">Advice on discharge / Referral:</p>
+                        {ADVICE_ITEMS.map((item, idx) => (
+                          <p key={item} className="flex gap-1.5 mb-0.5">
+                            <span className="inline-block w-2.5 h-2.5 border border-black shrink-0 mt-0.5 text-[7px] leading-none text-center">
+                              {adviceChecked.has(idx) ? '✓' : ''}
+                            </span>
+                            <span>{item}</span>
+                          </p>
+                        ))}
+                        <p className="mt-2">
+                          Review date {ma.reviewDate ? fmtPaperDate(ma.reviewDate) : '_______________'} / Immediately if any danger symptoms present
+                        </p>
+                        <p className="font-bold text-[10px] mt-2 mb-1">Discharge Drugs for Mother</p>
+                        <p>6. Tab. Iron {ma.dischargeDrugs?.iron || '___ - ___ - ___'} x {ma.dischargeDrugs?.ironDays || '___'} days (Before food)</p>
+                        <p>7. Tab. Calcium &amp; Vit. D3 {ma.dischargeDrugs?.calcium || '1 - 1 - 0'} x {ma.dischargeDrugs?.calciumDays || '___'} days (After food)</p>
+                        <p>8. {ma.dischargeDrugs?.line8 || '_________________________________'}</p>
+                        <p>9. {ma.dischargeDrugs?.line9 || '_________________________________'}</p>
+                        <p>10. {ma.dischargeDrugs?.line10 || '________________________________'}</p>
+                      </div>
+                      <div className="p-1.5">
+                        <p className="font-bold text-[10px] mb-1">Danger Symptoms for mother</p>
+                        {DANGER_MOTHER.map((item) => (
+                          <p key={item} className="mb-0.5">• {item}</p>
+                        ))}
+                        <p className="font-bold text-[10px] mt-2 mb-1">Danger Symptoms for Baby</p>
+                        {DANGER_BABY.map((item) => (
+                          <p key={item} className="mb-0.5">• {item}</p>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* If referred */}
+                    <div className="border-b border-black p-1.5 grid grid-cols-2 gap-2">
+                      <div>
+                        <p className="font-bold text-[10px]">If referred:</p>
+                        <p className="mt-1">Name of facility referred to : {ma.referral?.facility || '.............................................'}</p>
+                        <p>Mode of Referral : {ma.referral?.mode || '.............................................................'}</p>
+                        <p>Reason for referral : {ma.referral?.reason || '...........................................................'}</p>
+                      </div>
+                      <div className="pt-4">
+                        <p>Advance notification given – {ma.referral?.advanceNotification || 'Yes / No'}</p>
+                        <p className="mt-2">Accompanied by Health Care Provider with Emergency Drug tray / Delivery tray – {ma.referral?.accompanied || 'Yes / No'}</p>
+                      </div>
+                    </div>
+
+                    {/* Referral vitals */}
+                    <div className="border-b border-black p-1.5 min-h-[56px]">
+                      <p className="font-bold text-[10px]">Condition at Referral Consciousness / Temperature / Pulse / RR / BP / Others</p>
+                      <p className="mt-1 whitespace-pre-wrap">{ma.referralVitals || ''}</p>
+                    </div>
+
+                    {/* Treatment */}
+                    <div className="p-1.5 min-h-[56px] flex-1">
+                      <p className="font-bold text-[10px]">Treatment given with time:</p>
+                      <p className="mt-1 whitespace-pre-wrap">{ma.treatmentGivenAtReferral || ''}</p>
+                    </div>
+                  </div>
+                </div>
                 </div>
               </div>
             </div>

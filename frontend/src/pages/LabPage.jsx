@@ -266,11 +266,40 @@ export default function LabPage() {
   // selected IP admission for medicine viewing
   const [selectedAdmission, setSelectedAdmission] = useState(null);
 
+  const { register, handleSubmit, watch, setValue, reset } = useForm({
+    defaultValues: { sampleType: 'blood', priority: 'routine', notes: '', opRegistration: '' },
+  });
+
   useEffect(() => {
     const urlTab = searchParams.get('tab');
     if (urlTab === 'reports') setTab('reports');
     else if (urlTab === 'orders') setTab('orders');
   }, [searchParams]);
+
+  // Prefill create-order modal when opened from OP queue (?patient=&op=)
+  useEffect(() => {
+    const patientId = searchParams.get('patient');
+    const opId = searchParams.get('op');
+    if (!patientId || !canCreateOrders) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.get(`/patients/${patientId}`);
+        if (cancelled) return;
+        const p = r.data.data;
+        setShowCreate(true);
+        setValue('patient', p._id);
+        if (opId) setValue('opRegistration', opId);
+        setPatientSearch(`${p.name} (${p.patientId})`);
+        if (p.activeAdmission) setSelectedAdmission(p.activeAdmission);
+      } catch {
+        /* ignore — user can still search manually */
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [searchParams, canCreateOrders, setValue]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['labTests', page],
@@ -299,10 +328,6 @@ export default function LabPage() {
   });
   const findMasterPrice = (profileName) =>
     testMasterList.find((t) => t.name.trim().toLowerCase() === String(profileName).trim().toLowerCase())?.price;
-
-  const { register, handleSubmit, watch, setValue, reset } = useForm({
-    defaultValues: { sampleType: 'blood', priority: 'routine', notes: '' },
-  });
 
   const [testFields, setTestFields] = useState([]);
   const [resultFields, setResultFields] = useState([]);
@@ -339,11 +364,18 @@ export default function LabPage() {
       totalAmount: selectedProfile === 'Custom / Manual'
         ? testFields.reduce((s, t) => s + (Number(t.price) || 0), 0)
         : Number(profilePrice) || 0,
+      opRegistration: d.opRegistration || undefined,
     }),
-    onSuccess: () => {
+    onSuccess: async (res, vars) => {
       toast.success('Lab test order created!');
+      if (vars?.opRegistration) {
+        try {
+          await api.put(`/op/${vars.opRegistration}/status`, { status: 'sent_to_lab' });
+        } catch { /* non-blocking */ }
+      }
       qc.invalidateQueries(['labTests']);
       qc.invalidateQueries(['labDash']);
+      qc.invalidateQueries(['opQueue']);
       setShowCreate(false);
       reset();
       setTestFields([]);
@@ -603,6 +635,7 @@ export default function LabPage() {
               </div>
             )}
             <input type="hidden" {...register('patient', { required: true })} />
+            <input type="hidden" {...register('opRegistration')} />
           </div>
 
           {/* IP Medicine Viewer */}

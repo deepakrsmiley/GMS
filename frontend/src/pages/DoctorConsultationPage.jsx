@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Stethoscope, FlaskConical, Bed, Save, Play,
+  ArrowLeft, Stethoscope, FlaskConical, Bed, Save, Play, Settings2,
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { hasRole } from '../utils/roles';
+import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 
 export default function DoctorConsultationPage() {
   const { opId } = useParams();
@@ -16,12 +17,14 @@ export default function DoctorConsultationPage() {
   const { user } = useSelector((s) => s.auth);
   const isReceptionist = hasRole(user?.role, ['Receptionist']);
   const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist', 'Doctor']);
+  const canLogServices = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Nurse']);
 
   const [diagnosis, setDiagnosis] = useState('');
   const [notes, setNotes] = useState('');
   const [followUp, setFollowUp] = useState('');
   const [examinationFindings, setExaminationFindings] = useState('');
   const [investigationsAdvised, setInvestigationsAdvised] = useState('');
+  const [showServices, setShowServices] = useState(false);
   const [vitals, setVitals] = useState({
     bloodPressure: '',
     pulse: '',
@@ -93,18 +96,7 @@ export default function DoctorConsultationPage() {
   });
 
   const orderLabMut = useMutation({
-    mutationFn: () => api.post('/lab', {
-      patient: patientId,
-      doctor: op?.doctor?._id,
-      department: op?.department?._id,
-      tests: [{ testName: 'General Panel', price: 500 }],
-      sampleType: 'blood',
-    }),
-    onSuccess: async () => {
-      await api.put(`/op/${opId}/status`, { status: 'sent_to_lab' });
-      toast.success('Lab test ordered');
-      qc.invalidateQueries(['opQueue']);
-    },
+    mutationFn: () => navigate(`/lab?patient=${patientId}&op=${opId}`),
   });
 
   const admitMut = useMutation({
@@ -153,7 +145,7 @@ export default function DoctorConsultationPage() {
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5 space-y-4">
             <h3 className="font-semibold">Clinical Notes</h3>
             <div>
-              <label className="text-xs font-medium text-gray-500">Diagnosis</label>
+              <label className="text-xs font-medium text-gray-500">Diagnosis (Optional)</label>
               <input value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} className="input-field mt-1" placeholder="Primary diagnosis" />
             </div>
             <div>
@@ -188,6 +180,11 @@ export default function DoctorConsultationPage() {
             </button>
             {!isReceptionist && (
               <button type="button" onClick={() => orderLabMut.mutate()} className="btn-secondary"><FlaskConical size={16} /> Order Lab</button>
+            )}
+            {canLogServices && (
+              <button type="button" onClick={() => setShowServices(true)} className="btn-secondary">
+                <Settings2 size={16} /> Procedures / Machine
+              </button>
             )}
             {canAdmit && (
               <button
@@ -229,6 +226,12 @@ export default function DoctorConsultationPage() {
           </div>
         </div>
       </div>
+
+      <OPServiceUsageModal
+        registration={op}
+        isOpen={showServices}
+        onClose={() => setShowServices(false)}
+      />
     </div>
   );
 }

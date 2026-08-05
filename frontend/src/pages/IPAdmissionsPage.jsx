@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, UserCheck, ChevronRight, ChevronLeft, Eye, Search, UserPlus, X, Check, Info, Stethoscope, Building2, Phone, ClipboardList, Activity, Home, User, Printer } from 'lucide-react';
+import { Plus, UserCheck, ChevronRight, ChevronLeft, Eye, Search, UserPlus, X, Check, Info, Stethoscope, Building2, Phone, ClipboardList, Activity, Home, User, Printer, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
@@ -24,6 +24,11 @@ const ROOM_TYPES = [
   { value: 'nicu', label: 'NICU' },
   { value: 'emergency', label: 'Emergency' },
 ];
+
+const toLocalDateTimeValue = (d = new Date()) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const statusColors = {
   available: 'border-green-400 bg-green-50 text-green-800',
@@ -76,6 +81,7 @@ export default function IPAdmissionsPage() {
     roomType: '', selectedRoom: null, opRegistration: '',
     knownAllergies: '', bloodPressure: '', pulse: '', temperature: '', weight: '',
     advanceAmount: '', advancePaymentMode: 'cash',
+    admissionDate: toLocalDateTimeValue(),
   });
   const qc = useQueryClient();
 
@@ -200,6 +206,7 @@ export default function IPAdmissionsPage() {
       roomType: '', selectedRoom: null, opRegistration: '',
       knownAllergies: '', bloodPressure: '', pulse: '', temperature: '', weight: '',
       advanceAmount: '', advancePaymentMode: 'cash',
+      admissionDate: toLocalDateTimeValue(),
     });
     setPatientSearch('');
     setPatients([]);
@@ -222,6 +229,7 @@ export default function IPAdmissionsPage() {
       department: form.department,
       admissionType: form.admissionType,
       admissionDiagnosis: form.admissionDiagnosis,
+      admissionDate: form.admissionDate ? new Date(form.admissionDate).toISOString() : undefined,
       attendant: form.attendant,
       knownAllergies: form.knownAllergies,
       admissionVitals: {
@@ -559,6 +567,19 @@ export default function IPAdmissionsPage() {
                           {ROOM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
                       </div>
+                      <div className="col-span-2">
+                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Admission Date &amp; Time</label>
+                        <div className="relative max-w-sm">
+                          <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          <input
+                            type="datetime-local"
+                            value={form.admissionDate}
+                            onChange={(e) => setForm({ ...form, admissionDate: e.target.value })}
+                            className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1">You can select yesterday or any past date if needed.</p>
+                      </div>
                     </div>
 
                     <div>
@@ -587,7 +608,7 @@ export default function IPAdmissionsPage() {
                       <h3 className="text-sm font-bold">Clinical Details</h3>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-slate-500 block mb-1.5">Admission Diagnosis *</label>
+                      <label className="text-xs font-medium text-slate-500 block mb-1.5">Admission Diagnosis (Optional)</label>
                       <textarea value={form.admissionDiagnosis} onChange={(e) => setForm({ ...form, admissionDiagnosis: e.target.value })}
                         rows={3} placeholder="Enter provisional diagnosis..."
                         className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
@@ -649,6 +670,9 @@ export default function IPAdmissionsPage() {
                       <p><strong>Doctor:</strong> Dr. {doctors.find((d) => d._id === form.doctor)?.name}</p>
                       <p><strong>Department:</strong> {departments.find((d) => d._id === form.department)?.name}</p>
                       <p><strong>Admission Type:</strong> <span className="capitalize">{form.admissionType}</span></p>
+                      {form.admissionDate && (
+                        <p><strong>Admission Date:</strong> {new Date(form.admissionDate).toLocaleString('en-IN')}</p>
+                      )}
                       {form.selectedRoom && (
                         <p><strong>Room:</strong> {form.selectedRoom.roomNumber} · Bed {form.selectedRoom.bedNumber || form.selectedRoom.bed?.bedNumber} — ₹{form.selectedRoom.dailyCharge || form.selectedRoom.bed?.dailyRate}/day</p>
                       )}
@@ -731,8 +755,8 @@ export default function IPAdmissionsPage() {
                     className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
                     <ChevronLeft size={15} /> Back
                   </button>
-                  <button type="button" disabled={!form.admissionDiagnosis} onClick={() => setStep(4)}
-                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-sm shadow-blue-600/20">
+                  <button type="button" onClick={() => setStep(4)}
+                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm shadow-blue-600/20">
                     Next Step <ChevronRight size={15} />
                   </button>
                 </div>

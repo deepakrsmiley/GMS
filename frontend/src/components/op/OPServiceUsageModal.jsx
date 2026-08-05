@@ -41,13 +41,21 @@ export default function OPServiceUsageModal({ registration, isOpen, onClose }) {
     if (isOpen) setForm(emptyForm());
   }, [isOpen, registration?._id]);
 
+  const { data: liveRegistration } = useQuery({
+    queryKey: ['op-registration', registration?._id],
+    queryFn: async () => (await api.get(`/op/${registration._id}`)).data.data,
+    enabled: isOpen && !!registration?._id,
+  });
+
+  const activeRegistration = liveRegistration || registration;
+
   const { data: serviceOptions = [], isLoading: loadingRates } = useQuery({
     queryKey: ['service-master'],
     queryFn: async () => (await api.get('/services')).data.data,
     enabled: isOpen,
   });
 
-  const usages = registration?.serviceUsages || [];
+  const usages = activeRegistration?.serviceUsages || [];
   const runningTotal = useMemo(
     () => usages.reduce((sum, u) => sum + (u.quantity || 0) * (u.unitPrice || 0), 0),
     [usages],
@@ -70,6 +78,7 @@ export default function OPServiceUsageModal({ registration, isOpen, onClose }) {
     onSuccess: () => {
       toast.success('Entry removed');
       queryClient.invalidateQueries({ queryKey: ['opQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['op-registration', registration._id] });
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to remove entry'),
   });
@@ -109,8 +118,11 @@ export default function OPServiceUsageModal({ registration, isOpen, onClose }) {
   if (!registration) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Services / Equipment - Token ${registration.tokenNumber}`} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={`Services / Equipment - Token ${activeRegistration?.tokenNumber || registration.tokenNumber}`} size="lg">
     <div className="p-6">
+      <p className="text-xs text-slate-500 mb-4">
+        Log procedures, lab-related charges, and machine / equipment usage for this OP visit. Entries are billed automatically.
+      </p>
       <form onSubmit={handleSubmit} className="mb-5 pb-5 border-b border-gray-100">
         {!loadingRates && serviceOptions.length === 0 && (
           <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 mb-3">

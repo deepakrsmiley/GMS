@@ -6,6 +6,10 @@ import {
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import PharmacyTaxInvoice from '../billing/PharmacyTaxInvoice';
+import {
+  flattenMedicineBatchOptions,
+  formatBatchExpiry,
+} from '../../utils/medicineBatches';
 
 const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -54,17 +58,23 @@ export default function PharmacyCounterSale({ canDispense }) {
     return () => clearTimeout(t);
   }, [medQuery]);
 
-  const addMedicine = (med) => {
+  const addMedicine = (opt) => {
+    const med = opt.medicine || opt;
+    const batch = opt.batch || null;
     setItems((prev) => [
       ...prev,
       {
         medicine: med._id,
         name: med.name,
+        genericName: med.genericName || '',
         dosage: '',
         quantity: 1,
-        unitPrice: Number(med.sellingPrice || 0),
+        unitPrice: Number(opt.unitPrice ?? batch?.sellingPrice ?? med.sellingPrice ?? 0),
+        mrp: Number(opt.mrp ?? batch?.mrp ?? med.mrp ?? med.sellingPrice ?? 0),
         gstPercent: Number(med.gstPercent || 0),
-        available: med.currentStock,
+        available: Number(opt.available ?? batch?.quantity ?? med.currentStock ?? 0),
+        batchNumber: opt.batchNumber || batch?.batchNumber || '',
+        expiryDate: opt.expiryDate || batch?.expiryDate || null,
       },
     ]);
     setMedQuery('');
@@ -118,14 +128,19 @@ export default function PharmacyCounterSale({ canDispense }) {
       const billItems = items.map((item) => ({
         category: 'Pharmacy',
         type: 'medicine',
-        description: `${item.name}${item.dosage ? ` - ${item.dosage}` : ''}`,
+        description: `${item.genericName || item.name}${item.dosage ? ` - ${item.dosage}` : ''}`,
         name: item.name,
+        genericName: item.genericName || '',
         quantity: Number(item.quantity) || 1,
         unitPrice: Number(item.unitPrice) || 0,
+        mrp: Number(item.mrp || item.unitPrice) || 0,
         gstPercent: Number(item.gstPercent) || 0,
         medicine: item.medicine,
         referenceId: item.medicine,
         referenceModel: 'Medicine',
+        batch: item.batchNumber || '',
+        batchNumber: item.batchNumber || '',
+        expiryDate: item.expiryDate || null,
       }));
 
       const payload = {
@@ -274,21 +289,27 @@ export default function PharmacyCounterSale({ canDispense }) {
             />
             {medResults.length > 0 && (
               <div className="absolute z-30 mt-1 w-full border border-blue-100 rounded-xl shadow-xl max-h-60 overflow-y-auto bg-white">
-                {medResults.map((m) => (
+                {flattenMedicineBatchOptions(medResults).map((opt) => (
                   <button
-                    key={m._id}
+                    key={opt.key}
                     type="button"
-                    onClick={() => addMedicine(m)}
-                    disabled={Number(m.currentStock) <= 0}
+                    onClick={() => addMedicine(opt)}
+                    disabled={opt.available <= 0}
                     className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm border-b border-slate-50 last:border-0 flex justify-between disabled:opacity-40"
                   >
-                    <span>
-                      <span className="font-medium">{m.name}</span>
-                      <span className="text-slate-400 text-xs ml-2 capitalize">{m.category}</span>
+                    <span className="min-w-0">
+                      <span className="font-medium">{opt.medicine.name}</span>
+                      <span className="block text-[11px] text-slate-500 mt-0.5">
+                        {opt.batchNumber ? `Batch ${opt.batchNumber}` : 'No batch'}
+                        {opt.expiryDate ? ` · Exp ${formatBatchExpiry(opt.expiryDate)}` : ''}
+                        {` · Stock ${opt.available}`}
+                      </span>
                     </span>
-                    <span className="text-right">
-                      <span className="font-semibold text-blue-700">{fmt(m.sellingPrice)}</span>
-                      <span className="block text-[10px] text-slate-400">Stock {m.currentStock}</span>
+                    <span className="text-right shrink-0">
+                      <span className="font-semibold text-blue-700">{fmt(opt.unitPrice)}</span>
+                      {opt.mrp ? (
+                        <span className="block text-[10px] text-slate-400">MRP {fmt(opt.mrp)}</span>
+                      ) : null}
                     </span>
                   </button>
                 ))}
@@ -316,7 +337,13 @@ export default function PharmacyCounterSale({ canDispense }) {
                 {items.map((item, index) => (
                   <div key={`${item.medicine}-${index}`} className="grid grid-cols-12 gap-2 items-center px-3 py-2.5">
                     <div className="col-span-12 sm:col-span-4">
-                      <input value={item.name} onChange={(e) => updateItem(index, { name: e.target.value })} className="input-field text-sm py-1.5" />
+                      <input value={item.genericName || item.name} onChange={(e) => updateItem(index, { genericName: e.target.value })} className="input-field text-sm py-1.5" />
+                      {item.batchNumber && (
+                        <p className="text-[10px] text-blue-600 mt-0.5">
+                          Batch {item.batchNumber}
+                          {item.expiryDate ? ` · Exp ${formatBatchExpiry(item.expiryDate)}` : ''}
+                        </p>
+                      )}
                     </div>
                     <div className="col-span-6 sm:col-span-2">
                       <input value={item.dosage} onChange={(e) => updateItem(index, { dosage: e.target.value })} className="input-field text-sm py-1.5" placeholder="1-0-1" />

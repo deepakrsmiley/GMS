@@ -212,7 +212,7 @@ const renderChargesTable = (doc, items, rgb, onNewPage) => {
     doc.fillColor(TEXT_DARK);
     doc.text(String(i + 1), cols.sno.x + 4, y, { width: cols.sno.w });
     doc.text(getItemCategory(item), cols.cat.x, y, { width: cols.cat.w });
-    doc.text(item.description || item.name || '', cols.desc.x, y, { width: cols.desc.w });
+    doc.text(item.genericName || item.description || item.name || '', cols.desc.x, y, { width: cols.desc.w });
     doc.text(String(item.quantity || 1), cols.qty.x, y, { width: cols.qty.w, align: 'center' });
     doc.text(fmt(item.unitPrice), cols.rate.x, y, { width: cols.rate.w, align: 'right' });
     doc.font('Helvetica-Bold').text(fmt(lineAmount), cols.amt.x, y, { width: cols.amt.w - 4, align: 'right' });
@@ -394,7 +394,7 @@ const generatePremiumThermalPrint = async (bill, res, branding) => {
   (bill.items || []).forEach((item, i) => {
     const amt = (item.quantity || 1) * (item.unitPrice || 0);
     doc.fontSize(6).font('Helvetica-Bold').fillColor(rgb).text(`${i + 1}. ${getItemCategory(item)}`);
-    doc.font('Helvetica').fillColor(TEXT_DARK).text(`${item.description || item.name || ''}`);
+    doc.font('Helvetica').fillColor(TEXT_DARK).text(`${item.genericName || item.description || item.name || ''}`);
     doc.text(`  ${item.quantity || 1} x ${fmt(item.unitPrice)} = ${fmt(amt)}`);
   });
 

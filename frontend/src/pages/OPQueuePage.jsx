@@ -8,7 +8,7 @@ import {
   FlaskConical, Bed, Home, ChevronRight, Building2, ListFilter, User,
   Users, ClipboardList, Calendar, Timer, XCircle, ArrowRight,
   Search, UserPlus, Footprints, Flag, Link2, RotateCcw, Send, Info,
-  Hourglass, Phone, CreditCard, X, Printer,
+  Hourglass, Phone, CreditCard, X, Printer, Settings2,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSelector } from 'react-redux';
@@ -18,6 +18,7 @@ import Modal from '../components/common/Modal';
 import { getSocket } from '../services/socket';
 import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
+import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 import { hasRole } from '../utils/roles';
 
 const statusConfig = {
@@ -49,6 +50,7 @@ export default function OPQueuePage() {
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
   const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
+  const canLogServices = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Nurse', 'Lab Technician']);
   const [showAdd, setShowAdd] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -61,6 +63,7 @@ export default function OPQueuePage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [activeTab, setActiveTab] = useState('waiting');
   const [printData, setPrintData] = useState(null); // { branding, op } for OPPaperTemplate
+  const [serviceOp, setServiceOp] = useState(null);
   const qc = useQueryClient();
 
   const { data: queue, isLoading, refetch } = useQuery({
@@ -312,11 +315,41 @@ export default function OPQueuePage() {
     );
   };
 
+  const servicesBtn = (item) => {
+    if (!canLogServices || item.status === 'cancelled' || item.status === 'no_show') return null;
+    return (
+      <button
+        type="button"
+        title="Add lab procedures, equipment / machine usage"
+        onClick={() => setServiceOp(item)}
+        className="inline-flex items-center gap-1 text-xs font-medium py-1.5 px-2.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100"
+      >
+        <Settings2 size={13} /> Services
+      </button>
+    );
+  };
+
+  const labBtn = (item) => {
+    if (!item.patient?._id || item.status === 'cancelled' || item.status === 'no_show') return null;
+    return (
+      <button
+        type="button"
+        title="Order lab tests for this patient"
+        onClick={() => navigate(`/lab?patient=${item.patient._id}&op=${item._id}`)}
+        className="inline-flex items-center gap-1 text-xs font-medium py-1.5 px-2.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-lg hover:bg-sky-100"
+      >
+        <FlaskConical size={13} /> Lab
+      </button>
+    );
+  };
+
   const actionFor = (item) => {
     if (item.status === 'waiting') {
       return (
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {printBtn(item)}
+          {servicesBtn(item)}
+          {labBtn(item)}
           {admitBtn(item)}
           <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
             className="text-xs font-medium py-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -333,6 +366,8 @@ export default function OPQueuePage() {
       return (
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {printBtn(item)}
+          {servicesBtn(item)}
+          {labBtn(item)}
           {admitBtn(item)}
           <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
             className="text-xs font-medium py-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -345,6 +380,7 @@ export default function OPQueuePage() {
       return (
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {printBtn(item)}
+          {servicesBtn(item)}
           <button type="button" onClick={() => navigate('/ip-admissions')}
             className="text-xs font-medium py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
             View Details
@@ -355,6 +391,8 @@ export default function OPQueuePage() {
     return (
       <div className="flex items-center gap-2 flex-wrap justify-end">
         {printBtn(item)}
+        {servicesBtn(item)}
+        {labBtn(item)}
         {admitBtn(item)}
         <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
           className="text-xs font-medium py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
@@ -762,9 +800,9 @@ export default function OPQueuePage() {
 
                     <div className="grid grid-cols-2 gap-4 mt-4">
                       <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Chief Complaint / Reason for Visit *</label>
-                        <textarea {...register('chiefComplaint', { required: true })} rows={3}
-                          placeholder="Enter main complaint or reason for visit..."
+                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Chief Complaint / Diagnosis (Optional)</label>
+                        <textarea {...register('chiefComplaint')} rows={3}
+                          placeholder="Enter main complaint, diagnosis, or reason for visit..."
                           className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
                       </div>
                       <div>
@@ -791,6 +829,7 @@ export default function OPQueuePage() {
                           <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                           <input type="date" {...register('visitDate')} className="w-full pl-9 pr-2 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
+                        <p className="text-[11px] text-slate-400 mt-1">Past dates allowed (e.g. yesterday).</p>
                       </div>
                       <div>
                         <label className="text-xs font-medium text-slate-500 block mb-1.5">Time</label>
@@ -886,6 +925,12 @@ export default function OPQueuePage() {
           </div>
         </form>
       </Modal>
+
+      <OPServiceUsageModal
+        registration={serviceOp}
+        isOpen={!!serviceOp}
+        onClose={() => setServiceOp(null)}
+      />
 
       {/* A4 OP paper portaled to body so print CSS always finds it */}
       {printData &&

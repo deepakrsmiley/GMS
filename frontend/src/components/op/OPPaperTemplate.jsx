@@ -3,8 +3,9 @@ import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
 import '../../styles/opPaperPrint.css';
 
 /**
- * OPPaperTemplate — A4 OP consultation slip matching the hospital printed form.
- * Letterhead (name, logo, tagline, address, phone) comes from Hospital Branding.
+ * OPPaperTemplate — A4 OP consultation / prescription slip.
+ * Automatically lists used labs, procedures, machine/equipment, and
+ * pharmacy medicines (entered by search) for this OP visit.
  */
 
 function fmtDateTime(value) {
@@ -52,6 +53,15 @@ function Vital({ label, value, unit }) {
       <span className="op-vital-label">{label}</span>
       <span className="op-vital-colon">:</span>
       <span className="op-vital-value">{text}</span>
+    </div>
+  );
+}
+
+function UsedSection({ title, children }) {
+  return (
+    <div className="op-used-block">
+      <div className="op-used-title">{title}</div>
+      {children}
     </div>
   );
 }
@@ -117,6 +127,45 @@ export default function OPPaperTemplate({ branding, op }) {
     op?.examinationFindings ||
     op?.investigationsAdvised ||
     op?.consultationNotes;
+
+  const serviceUsages = op?.serviceUsages || [];
+  const procedures = serviceUsages.filter((u) => u.category === 'Procedure');
+  const machines = serviceUsages.filter((u) => u.category === 'Equipment');
+  const otherServices = serviceUsages.filter(
+    (u) => u.category !== 'Procedure' && u.category !== 'Equipment',
+  );
+  const labs = op?.labs || [];
+  const medicines = op?.pharmacyMedicines || [];
+
+  const hasUsedItems =
+    procedures.length > 0 ||
+    machines.length > 0 ||
+    otherServices.length > 0 ||
+    labs.length > 0 ||
+    medicines.length > 0;
+
+  const formatServiceLine = (u) => {
+    const qty = u.quantity > 1 ? ` × ${u.quantity}` : '';
+    const notes = u.notes ? ` (${u.notes})` : '';
+    return `${u.serviceName}${qty}${notes}`;
+  };
+
+  const formatLabLine = (lab) => {
+    const profile = lab.testProfile || lab.labType || 'Lab';
+    const tests = (lab.tests || []).map((t) => t.testName).filter(Boolean);
+    if (tests.length) return `${profile}: ${tests.join(', ')}`;
+    return profile;
+  };
+
+  const formatMedLine = (m, i) => {
+    const drug = m.drugName && m.drugName !== m.name ? ` [${m.drugName}]` : '';
+    const dose = m.dosage ? ` — ${m.dosage}` : '';
+    const freq = m.frequency ? ` ${m.frequency}` : '';
+    const dur = m.duration ? ` × ${m.duration}` : '';
+    const qty = m.quantity ? ` (Qty ${m.quantity})` : '';
+    const instr = m.instructions ? ` — ${m.instructions}` : '';
+    return `${i + 1}. ${m.name}${drug}${dose}${freq}${dur}${qty}${instr}`;
+  };
 
   return (
     <div id="op-paper-print-root" className="op-paper-root">
@@ -216,7 +265,7 @@ export default function OPPaperTemplate({ branding, op }) {
 
       <div className="op-rule" />
 
-      {/* ── Blank clinical writing area ─────────────────────────────── */}
+      {/* ── Clinical notes + auto-listed used services / Rx ─────────── */}
       <section className="op-clinical">
         {hasClinical ? (
           <div className="op-clinical-filled">
@@ -236,8 +285,64 @@ export default function OPPaperTemplate({ branding, op }) {
               <div className="op-note">{op.consultationNotes}</div>
             )}
           </div>
-        ) : (
+        ) : !hasUsedItems ? (
           <div className="op-clinical-blank" />
+        ) : null}
+
+        {hasUsedItems && (
+          <div className="op-used">
+            {labs.length > 0 && (
+              <UsedSection title="Lab">
+                <ol className="op-used-list">
+                  {labs.map((lab) => (
+                    <li key={lab._id || lab.labNumber}>{formatLabLine(lab)}</li>
+                  ))}
+                </ol>
+              </UsedSection>
+            )}
+
+            {procedures.length > 0 && (
+              <UsedSection title="Procedure">
+                <ol className="op-used-list">
+                  {procedures.map((u) => (
+                    <li key={u._id}>{formatServiceLine(u)}</li>
+                  ))}
+                </ol>
+              </UsedSection>
+            )}
+
+            {machines.length > 0 && (
+              <UsedSection title="Machine / Equipment">
+                <ol className="op-used-list">
+                  {machines.map((u) => (
+                    <li key={u._id}>{formatServiceLine(u)}</li>
+                  ))}
+                </ol>
+              </UsedSection>
+            )}
+
+            {otherServices.length > 0 && (
+              <UsedSection title="Other Services">
+                <ol className="op-used-list">
+                  {otherServices.map((u) => (
+                    <li key={u._id}>
+                      <span className="op-used-cat">[{u.category}]</span> {formatServiceLine(u)}
+                    </li>
+                  ))}
+                </ol>
+              </UsedSection>
+            )}
+
+            {medicines.length > 0 && (
+              <UsedSection title="Rx (Medicines)">
+                <ol className="op-used-list op-rx-list">
+                  {medicines.map((m, i) => (
+                    <li key={`${m.name}-${i}`}>{formatMedLine(m, i)}</li>
+                  ))}
+                </ol>
+              </UsedSection>
+            )}
+          </div>
         )}
       </section>
     </div>

@@ -24,9 +24,9 @@ router.get('/:id', getOPRegistration);
 router.put('/:id/status', updateOPStatus);
 router.put('/:id/consultation', saveConsultation);
 
-const OP_SERVICE_ROLES = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Lab Technician'];
+const OP_SERVICE_ROLES = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Lab Technician', 'Receptionist'];
 router.post('/:id/service-usage', authorizeRoles(...OP_SERVICE_ROLES), addServiceUsage);
 router.put('/:id/service-usage/:usageId', authorizeRoles(...OP_SERVICE_ROLES), updateServiceUsage);
-router.delete('/:id/service-usage/:usageId', authorizeRoles('Super Admin', 'Admin'), deleteServiceUsage);
+router.delete('/:id/service-usage/:usageId', authorizeRoles('Super Admin', 'Admin', 'Receptionist'), deleteServiceUsage);
 
 module.exports = router;

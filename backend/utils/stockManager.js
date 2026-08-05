@@ -10,7 +10,8 @@ const {
 const getMedicineItems = (items = []) =>
   items.filter((item) => item.type === 'medicine' && item.medicine);
 
-const deductFromBatches = (medicine, quantity) => deductFromUsableBatches(medicine, quantity);
+const deductFromBatches = (medicine, quantity, preferredBatchNumber = null) =>
+  deductFromUsableBatches(medicine, quantity, preferredBatchNumber);
 
 const restoreToBatch = (medicine, batchNumber, quantity) => {
   if (!batchNumber) return;
@@ -39,7 +40,8 @@ const validateMedicineStock = async (items) => {
       throw new ErrorResponse(`Medicine not found for ${item.description || 'bill item'}`, 404);
     }
     syncCurrentStock(medicine);
-    const check = validateDispensable(medicine, quantity);
+    const preferredBatch = item.batch || item.batchNumber || null;
+    const check = validateDispensable(medicine, quantity, preferredBatch);
     if (!check.ok) throw new ErrorResponse(check.reason, 400);
   }
 };
@@ -56,13 +58,19 @@ const deductMedicineStock = async (items, userId = null) => {
     }
 
     syncCurrentStock(medicine);
-    const check = validateDispensable(medicine, quantity);
+    const preferredBatch = item.batch || item.batchNumber || null;
+    const check = validateDispensable(medicine, quantity, preferredBatch);
     if (!check.ok) throw new ErrorResponse(check.reason, 400);
 
     const qtyBefore = medicine.currentStock;
-    const { primaryBatch, unallocated } = deductFromBatches(medicine, quantity);
+    const { primaryBatch, unallocated } = deductFromBatches(medicine, quantity, preferredBatch);
     if (unallocated > 0) {
-      throw new ErrorResponse(`${medicine.name}: insufficient non-expired stock`, 409);
+      throw new ErrorResponse(
+        preferredBatch
+          ? `${medicine.name} batch ${preferredBatch}: insufficient stock`
+          : `${medicine.name}: insufficient non-expired stock`,
+        409,
+      );
     }
 
     syncCurrentStock(medicine);
@@ -77,13 +85,16 @@ const deductMedicineStock = async (items, userId = null) => {
         quantityBefore: qtyBefore,
         quantityAfter: medicine.currentStock,
         quantityChanged: -quantity,
-        unitPrice: medicine.sellingPrice,
+        unitPrice: item.unitPrice || medicine.sellingPrice,
         userId,
-        remarks: 'Billed medicine deduction',
+        remarks: preferredBatch
+          ? `Billed medicine deduction (batch ${preferredBatch})`
+          : 'Billed medicine deduction',
       });
     }
 
     item.batch = primaryBatch || item.batch;
+    item.batchNumber = item.batchNumber || primaryBatch || item.batch;
     item.name = item.name || medicine.name;
 
     deducted.push({

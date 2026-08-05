@@ -66,8 +66,8 @@ const STATUS_OPTIONS = [
 const SORT_OPTIONS = [
   { value: "expiry_asc", label: "Expiry Date (Ascending)" },
   { value: "expiry_desc", label: "Expiry Date (Descending)" },
-  { value: "name_asc", label: "Medicine Name A-Z" },
-  { value: "name_desc", label: "Medicine Name Z-A" },
+  { value: "name_asc", label: "Drug Name A-Z" },
+  { value: "name_desc", label: "Drug Name Z-A" },
   { value: "category", label: "Category" },
   { value: "manufacturer", label: "Manufacturer" },
   { value: "supplier", label: "Supplier" },
@@ -412,7 +412,7 @@ function StatusBadge({ status }) {
 }
 
 const GRID_HEADERS = [
-  "SI No", "Medicine Name", "Generic Name", "Category", "Batch No.", "Manufacturer",
+  "SI No", "Drug Name", "Medicine Name", "Category", "Batch No.", "Manufacturer",
   "Supplier", "Expiry Date", "Days Remaining", "Purchase Rate", "MRP", "Stock", "Unit", "Stock Value", "Status",
 ];
 
