@@ -33,15 +33,15 @@ export default function HistorySectionTable({
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-gray-100 dark:border-gray-700">
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-blue-100 dark:border-gray-700 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-blue-50/70 dark:bg-slate-900/40 border-b border-blue-100 dark:border-gray-700">
         <div>
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
-          <p className="text-xs text-gray-400">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</p>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">{title}</h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -51,16 +51,18 @@ export default function HistorySectionTable({
           </div>
           {extraActions}
           <button
+            type="button"
             title="Export Excel/CSV"
             onClick={() => exportToCSV(filtered, columns, filename)}
-            className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-500"
+            className="p-2 rounded-md border border-blue-100 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-700 text-slate-500"
           >
             <Download size={15} />
           </button>
           <button
+            type="button"
             title="Print"
             onClick={() => printSection(domId, title)}
-            className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-500"
+            className="p-2 rounded-md border border-blue-100 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-700 text-slate-500"
           >
             <Printer size={15} />
           </button>

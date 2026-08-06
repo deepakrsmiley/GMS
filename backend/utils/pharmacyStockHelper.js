@@ -20,6 +20,94 @@ const syncCurrentStock = (medicine) => {
 const sortBatchesFEFO = (batches = []) =>
   [...batches].sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
 
+const normalizeBatchNumber = (batchNumber) =>
+  String(batchNumber || '').trim().replace(/\s+/g, ' ');
+
+const sameBatchNumber = (a, b) =>
+  normalizeBatchNumber(a).toLowerCase() === normalizeBatchNumber(b).toLowerCase();
+
+/** Find non-disposed batch by batch number (case-insensitive, trimmed). */
+const findActiveBatch = (medicine, batchNumber) =>
+  (medicine.batches || []).find(
+    (b) => !b.isDisposed && sameBatchNumber(b.batchNumber, batchNumber),
+  );
+
+/**
+ * Add qty to an existing batch or create a new one under the medicine.
+ * Same batch number → merge (no duplicate / already-exists error).
+ * Returns { batch, merged }.
+ */
+const upsertBatchStock = (medicine, {
+  batchNumber,
+  quantity,
+  expiryDate,
+  purchasePrice,
+  sellingPrice,
+  mrp,
+  manufacturer,
+  supplierInvoice,
+  receivedDate,
+  remarks,
+} = {}) => {
+  const qty = Number(quantity) || 0;
+  const normalized = normalizeBatchNumber(batchNumber);
+  if (!normalized) {
+    const err = new Error('Batch number is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (qty <= 0) {
+    const err = new Error('Stock quantity must be greater than zero');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const existing = findActiveBatch(medicine, normalized);
+  if (existing) {
+    existing.quantity = (Number(existing.quantity) || 0) + qty;
+    if (purchasePrice != null && purchasePrice !== '') existing.purchasePrice = Number(purchasePrice);
+    if (sellingPrice != null && sellingPrice !== '') existing.sellingPrice = Number(sellingPrice);
+    if (mrp != null && mrp !== '') existing.mrp = Number(mrp);
+    if (manufacturer) existing.manufacturer = manufacturer;
+    if (supplierInvoice) existing.supplierInvoice = supplierInvoice;
+    // Keep original expiry unless missing; do not silently overwrite lot identity
+    if (!existing.expiryDate && expiryDate) existing.expiryDate = new Date(expiryDate);
+    return { batch: existing, merged: true };
+  }
+
+  if (!expiryDate) {
+    const err = new Error('Expiry date is required for a new batch');
+    err.statusCode = 400;
+    throw err;
+  }
+  const expiry = new Date(expiryDate);
+  if (Number.isNaN(expiry.getTime())) {
+    const err = new Error('Invalid expiry date');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (expiry < new Date()) {
+    const err = new Error('Cannot add stock with expired batch');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const batch = {
+    batchNumber: normalized,
+    quantity: qty,
+    expiryDate: expiry,
+    purchasePrice: purchasePrice != null && purchasePrice !== '' ? Number(purchasePrice) : medicine.purchasePrice,
+    sellingPrice: sellingPrice != null && sellingPrice !== '' ? Number(sellingPrice) : medicine.sellingPrice,
+    mrp: mrp != null && mrp !== '' ? Number(mrp) : medicine.mrp,
+    manufacturer: manufacturer || medicine.manufacturer,
+    supplierInvoice,
+    receivedDate: receivedDate ? new Date(receivedDate) : new Date(),
+    remarks,
+  };
+  medicine.batches.push(batch);
+  return { batch: medicine.batches[medicine.batches.length - 1], merged: false };
+};
+
 /**
  * Deduct stock. If preferredBatchNumber is set, deduct only from that batch
  * (needed when pharmacy picks a specific batch with its own price).
@@ -30,7 +118,7 @@ const deductFromUsableBatches = (medicine, quantity, preferredBatchNumber = null
 
   if (preferredBatchNumber) {
     const preferred = getUsableBatches(medicine).find(
-      (b) => String(b.batchNumber) === String(preferredBatchNumber),
+      (b) => sameBatchNumber(b.batchNumber, preferredBatchNumber),
     );
     if (!preferred || preferred.quantity < quantity) {
       return {
@@ -92,7 +180,7 @@ const logStockMovement = async ({
 const validateDispensable = (medicine, quantity, preferredBatchNumber = null) => {
   if (preferredBatchNumber) {
     const preferred = getUsableBatches(medicine).find(
-      (b) => String(b.batchNumber) === String(preferredBatchNumber),
+      (b) => sameBatchNumber(b.batchNumber, preferredBatchNumber),
     );
     if (!preferred) {
       return {
@@ -141,6 +229,10 @@ module.exports = {
   getExpiredBatches,
   syncCurrentStock,
   sortBatchesFEFO,
+  normalizeBatchNumber,
+  sameBatchNumber,
+  findActiveBatch,
+  upsertBatchStock,
   deductFromUsableBatches,
   logStockMovement,
   validateDispensable,

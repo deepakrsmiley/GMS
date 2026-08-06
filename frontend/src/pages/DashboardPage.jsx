@@ -271,7 +271,7 @@ export default function DashboardPage() {
               );
             })}
           </div>
-          <Link to="/departments" className="text-xs text-blue-600 font-medium mt-4 inline-block">View All Departments →</Link>
+          <Link to="/masters/departments" className="text-xs text-blue-600 font-medium mt-4 inline-block">View All Departments →</Link>
         </div>
       </div>
 
@@ -305,7 +305,7 @@ export default function DashboardPage() {
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold text-gray-900 dark:text-white">Bed Occupancy</h3>
-            <Link to="/beds" className="text-xs text-blue-600 font-medium">View All →</Link>
+            <Link to="/masters/beds" className="text-xs text-blue-600 font-medium">View All →</Link>
           </div>
           <div className="flex items-center gap-4">
             <div className="relative w-28 h-28 flex-shrink-0">

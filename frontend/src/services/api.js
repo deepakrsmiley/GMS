@@ -7,6 +7,8 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true,
+  maxBodyLength: 25 * 1024 * 1024,
+  maxContentLength: 25 * 1024 * 1024,
 });
 
 console.log('API BASE URL =', api.defaults.baseURL);

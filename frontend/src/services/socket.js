@@ -15,8 +15,22 @@ const getBackendOrigin = () => {
   return 'https://gms-ms8j.onrender.com';
 };
 
-export const initSocket = (userId) => {
-  if (socket) return socket;
+const joinUserRooms = (userId, userRole) => {
+  if (!socket) return;
+  socket.emit('join:room', 'hospital:chat');
+  if (userId) {
+    socket.emit('join:room', `doctor:${userId}`);
+    socket.emit('join:room', `user:${userId}`);
+  }
+  if (userRole) socket.emit('join:room', `role:${userRole}`);
+};
+
+export const initSocket = (userId, userRole) => {
+  if (socket) {
+    // Re-join rooms if socket already exists (e.g. first call had no role)
+    if (socket.connected) joinUserRooms(userId, userRole);
+    return socket;
+  }
   socket = io(getBackendOrigin(), {
     auth: { token: localStorage.getItem('hms_token') },
     withCredentials: true,
@@ -26,10 +40,12 @@ export const initSocket = (userId) => {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
   });
-  socket.on('connect', () => console.log('Socket connected:', socket.id));
+  socket.on('connect', () => {
+    console.log('Socket connected:', socket.id);
+    joinUserRooms(userId, userRole);
+  });
   socket.on('disconnect', () => console.log('Socket disconnected'));
   socket.on('connect_error', (err) => console.warn('Socket connect_error:', err.message));
-  if (userId) socket.emit('join:room', `doctor:${userId}`);
   return socket;
 };
 

@@ -1,0 +1,340 @@
+/* Corporate Patient Register */
+
+.pt-shell {
+  --pt-ink: #0f172a;
+  --pt-muted: #64748b;
+  --pt-line: #dbeafe;
+  --pt-surface: #ffffff;
+  --pt-canvas: #eff6ff;
+  --pt-navy: #1e40af;
+  --pt-accent: #2563eb;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  color: var(--pt-ink);
+}
+
+.dark .pt-shell {
+  --pt-ink: #f1f5f9;
+  --pt-muted: #94a3b8;
+  --pt-line: #1e3a5f;
+  --pt-surface: #1e293b;
+  --pt-canvas: #0f172a;
+  --pt-navy: #1e3a8a;
+  --pt-accent: #3b82f6;
+}
+
+.pt-masthead {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+  color: #fff;
+  border-radius: 0.5rem;
+  padding: 1.1rem 1.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.pt-masthead__eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 0.2rem;
+}
+
+.pt-masthead__title {
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.pt-masthead__meta {
+  margin-top: 0.25rem;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.pt-masthead__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.9rem;
+  border-radius: 0.35rem;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pt-btn--primary {
+  background: #fff;
+  color: #1e40af;
+}
+
+.pt-btn--primary:hover {
+  background: #e0e7ff;
+}
+
+.pt-btn--ghost {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.pt-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.pt-panel {
+  background: var(--pt-surface);
+  border: 1px solid var(--pt-line);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.pt-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--pt-canvas);
+  border-bottom: 1px solid var(--pt-line);
+}
+
+.pt-search {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.pt-search svg {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--pt-muted);
+  pointer-events: none;
+}
+
+.pt-search input {
+  width: 100%;
+  padding: 0.55rem 0.75rem 0.55rem 2.25rem;
+  border: 1px solid var(--pt-line);
+  border-radius: 0.35rem;
+  background: var(--pt-surface);
+  color: var(--pt-ink);
+  font-size: 13px;
+  outline: none;
+}
+
+.pt-search input:focus {
+  border-color: var(--pt-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.pt-toolbar__hint {
+  font-size: 11px;
+  color: var(--pt-muted);
+  letter-spacing: 0.02em;
+}
+
+.pt-table-wrap :is(table) {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.pt-table-wrap thead th {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pt-muted) !important;
+  background: #f8fafc !important;
+  border-bottom: 1px solid var(--pt-line) !important;
+  padding-top: 0.7rem !important;
+  padding-bottom: 0.7rem !important;
+}
+
+.dark .pt-table-wrap thead th {
+  background: #0f172a !important;
+}
+
+.pt-table-wrap tbody tr {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.pt-table-wrap tbody tr:hover {
+  background: #f1f5f9 !important;
+}
+
+.dark .pt-table-wrap tbody tr:hover {
+  background: #1e293b !important;
+}
+
+.pt-table-wrap tbody td {
+  border-bottom: 1px solid #eef2f7 !important;
+  padding-top: 0.75rem !important;
+  padding-bottom: 0.75rem !important;
+  vertical-align: middle;
+}
+
+.pt-uhid {
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pt-accent);
+  letter-spacing: 0.02em;
+}
+
+.pt-name {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.pt-avatar {
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.4rem;
+  background: linear-gradient(145deg, #2563eb, #1e40af);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.pt-name__text {
+  min-width: 0;
+}
+
+.pt-name__primary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pt-ink);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pt-name__meta {
+  font-size: 11px;
+  color: var(--pt-muted);
+  margin-top: 0.1rem;
+}
+
+.pt-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 13px;
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+}
+
+.dark .pt-phone {
+  color: #cbd5e1;
+}
+
+.pt-blood {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.25rem;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.pt-blood--empty {
+  background: transparent;
+  border: none;
+  color: var(--pt-muted);
+  font-weight: 500;
+}
+
+.pt-date {
+  font-size: 12px;
+  color: var(--pt-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pt-admit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.3rem;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pt-admit:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.pt-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .pt-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pt-form-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--pt-muted);
+  margin-bottom: 0.3rem;
+}
+
+.pt-form-section {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pt-accent);
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--pt-line);
+  margin-top: 0.25rem;
+}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useForm } from "react-hook-form";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Eye,
   EyeOff,
@@ -11,11 +11,15 @@ import {
   Calendar,
   HeartPulse,
   Stethoscope,
+  ArrowLeft,
+  KeyRound,
 } from "lucide-react";
 import { format } from "date-fns";
+import toast from "react-hot-toast";
 import { login } from "../redux/slices/authSlice";
 import { SYSTEM_TAGLINE } from "../constants/branding";
 import SystemBrandingLogo from "../components/branding/SystemBrandingLogo";
+import api from "../services/api";
 
 function FloatingInput({
   id,
@@ -119,6 +123,15 @@ export default function LoginPage() {
   const dispatch = useDispatch();
   const { loading, error } = useSelector((s) => s.auth);
   const [showPass, setShowPass] = useState(false);
+  // login | forgot-email | forgot-reset
+  const [mode, setMode] = useState("login");
+  const [fpBusy, setFpBusy] = useState(false);
+  const [fpEmail, setFpEmail] = useState("");
+  const [fpOtp, setFpOtp] = useState("");
+  const [fpNewPassword, setFpNewPassword] = useState("");
+  const [fpConfirm, setFpConfirm] = useState("");
+  const [fpShowNew, setFpShowNew] = useState(false);
+  const [hintOtp, setHintOtp] = useState(""); // shown when API returns OTP (dev / hospital mode)
   const {
     register,
     handleSubmit,
@@ -126,6 +139,72 @@ export default function LoginPage() {
   } = useForm();
 
   const onSubmit = (data) => dispatch(login(data));
+
+  const resetForgotForm = () => {
+    setFpEmail("");
+    setFpOtp("");
+    setFpNewPassword("");
+    setFpConfirm("");
+    setHintOtp("");
+    setFpShowNew(false);
+    setMode("login");
+  };
+
+  const requestOtp = async (e) => {
+    e?.preventDefault?.();
+    const email = fpEmail.trim().toLowerCase();
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      toast.error("Enter a valid email address");
+      return;
+    }
+    setFpBusy(true);
+    try {
+      const { data } = await api.post("/auth/forgotpassword", { email });
+      if (data.otp) {
+        setHintOtp(String(data.otp));
+        setFpOtp(String(data.otp));
+      } else {
+        setHintOtp("");
+      }
+      toast.success(data.message || "Verification code sent");
+      setMode("forgot-reset");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not send verification code");
+    } finally {
+      setFpBusy(false);
+    }
+  };
+
+  const submitNewPassword = async (e) => {
+    e.preventDefault();
+    if (!fpOtp.trim() || fpOtp.trim().length !== 6) {
+      toast.error("Enter the 6-digit verification code");
+      return;
+    }
+    if (!fpNewPassword || fpNewPassword.length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
+    if (fpNewPassword !== fpConfirm) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    setFpBusy(true);
+    try {
+      const { data } = await api.post("/auth/resetpassword", {
+        email: fpEmail.trim().toLowerCase(),
+        otp: fpOtp.trim(),
+        newPassword: fpNewPassword,
+        confirmNewPassword: fpConfirm,
+      });
+      toast.success(data.message || "Password changed — sign in with your new password");
+      resetForgotForm();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not reset password");
+    } finally {
+      setFpBusy(false);
+    }
+  };
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -234,7 +313,7 @@ export default function LoginPage() {
               </motion.div>
             </div>
 
-            {error && (
+            {error && mode === "login" && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -244,87 +323,246 @@ export default function LoginPage() {
               </motion.div>
             )}
 
-            <form
-              onSubmit={handleSubmit(onSubmit)}
-              className="space-y-5 relative"
-            >
-              <FloatingInput
-                id="email"
-                label="Email Address"
-                type="email"
-                autoComplete="email"
-                register={register("email", {
-                  required: "Email is required",
-                  pattern: {
-                    value: /\S+@\S+\.\S+/,
-                    message: "Invalid email address",
-                  },
-                })}
-                error={errors.email}
-              />
+            <AnimatePresence mode="wait">
+              {mode === "login" && (
+                <motion.form
+                  key="login"
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 12 }}
+                  onSubmit={handleSubmit(onSubmit)}
+                  className="space-y-5 relative"
+                >
+                  <FloatingInput
+                    id="email"
+                    label="Email Address"
+                    type="email"
+                    autoComplete="email"
+                    register={register("email", {
+                      required: "Email is required",
+                      pattern: {
+                        value: /\S+@\S+\.\S+/,
+                        message: "Invalid email address",
+                      },
+                    })}
+                    error={errors.email}
+                  />
 
-              <FloatingInput
-                id="password"
-                label="Password"
-                type={showPass ? "text" : "password"}
-                autoComplete="current-password"
-                register={register("password", {
-                  required: "Password is required",
-                })}
-                error={errors.password}
-                rightElement={
+                  <FloatingInput
+                    id="password"
+                    label="Password"
+                    type={showPass ? "text" : "password"}
+                    autoComplete="current-password"
+                    register={register("password", {
+                      required: "Password is required",
+                    })}
+                    error={errors.password}
+                    rightElement={
+                      <button
+                        type="button"
+                        onClick={() => setShowPass(!showPass)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-[#2563EB] hover:bg-[#2563EB]/5 transition-all duration-200"
+                        aria-label={showPass ? "Hide password" : "Show password"}
+                      >
+                        {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    }
+                  />
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setMode("forgot-email")}
+                      className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors duration-200 hover:underline underline-offset-2"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+
+                  <motion.button
+                    type="submit"
+                    disabled={loading}
+                    whileHover={{ scale: loading ? 1 : 1.01, y: loading ? 0 : -1 }}
+                    whileTap={{ scale: loading ? 1 : 0.98 }}
+                    className="
+                      relative w-full py-3.5 sm:py-4 mt-1
+                      bg-gradient-to-r from-[#2563EB] via-[#0EA5E9] to-[#60A5FA]
+                      hover:from-[#1d4ed8] hover:via-[#0284c7] hover:to-[#3b82f6]
+                      text-white font-semibold text-[15px] sm:text-base
+                      rounded-xl
+                      shadow-[0_4px_16px_rgba(37,99,235,0.35)]
+                      hover:shadow-[0_8px_24px_rgba(37,99,235,0.45)]
+                      transition-all duration-300
+                      disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none
+                      flex items-center justify-center gap-2.5
+                      overflow-hidden
+                      group
+                    "
+                  >
+                    <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+                    {loading ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Signing in...
+                      </>
+                    ) : (
+                      "Sign In"
+                    )}
+                  </motion.button>
+                </motion.form>
+              )}
+
+              {mode === "forgot-email" && (
+                <motion.form
+                  key="forgot-email"
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  onSubmit={requestOtp}
+                  className="space-y-5 relative"
+                >
+                  <div className="flex items-start gap-3 p-3.5 rounded-xl bg-[#2563EB]/5 border border-[#2563EB]/15">
+                    <KeyRound size={18} className="text-[#2563EB] mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">Reset your password</p>
+                      <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                        Enter your staff email. A 6-digit code will be generated (shown here in hospital mode,
+                        or ask Super Admin from notifications).
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      placeholder=" "
+                      value={fpEmail}
+                      onChange={(e) => setFpEmail(e.target.value)}
+                      className="peer w-full px-4 pt-6 pb-2.5 bg-white/80 border border-gray-200/80 rounded-xl text-gray-900 text-[15px] focus:outline-none focus:border-[#2563EB] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.12)]"
+                      required
+                    />
+                    <label className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-[15px] pointer-events-none transition-all peer-focus:top-3 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:font-medium peer-focus:text-[#2563EB] peer-[:not(:placeholder-shown)]:top-3 peer-[:not(:placeholder-shown)]:translate-y-0 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:font-medium peer-[:not(:placeholder-shown)]:text-gray-500">
+                      Email Address
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={fpBusy}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#0EA5E9] text-white font-semibold disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {fpBusy ? "Sending…" : "Get verification code"}
+                  </button>
+
                   <button
                     type="button"
-                    onClick={() => setShowPass(!showPass)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-[#2563EB] hover:bg-[#2563EB]/5 transition-all duration-200"
-                    aria-label={showPass ? "Hide password" : "Show password"}
+                    onClick={resetForgotForm}
+                    className="w-full flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-[#2563EB]"
                   >
-                    {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                    <ArrowLeft size={14} /> Back to sign in
                   </button>
-                }
-              />
+                </motion.form>
+              )}
 
-              <div className="flex justify-end">
-                <a
-                  href="#"
-                  onClick={(e) => e.preventDefault()}
-                  className="text-sm font-medium text-[#2563EB] hover:text-[#1d4ed8] transition-colors duration-200 hover:underline underline-offset-2"
+              {mode === "forgot-reset" && (
+                <motion.form
+                  key="forgot-reset"
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  onSubmit={submitNewPassword}
+                  className="space-y-4 relative"
                 >
-                  Forgot Password?
-                </a>
-              </div>
+                  <p className="text-sm text-gray-600">
+                    Code sent for <span className="font-semibold text-gray-900">{fpEmail}</span>
+                  </p>
 
-              <motion.button
-                type="submit"
-                disabled={loading}
-                whileHover={{ scale: loading ? 1 : 1.01, y: loading ? 0 : -1 }}
-                whileTap={{ scale: loading ? 1 : 0.98 }}
-                className="
-                  relative w-full py-3.5 sm:py-4 mt-1
-                  bg-gradient-to-r from-[#2563EB] via-[#0EA5E9] to-[#60A5FA]
-                  hover:from-[#1d4ed8] hover:via-[#0284c7] hover:to-[#3b82f6]
-                  text-white font-semibold text-[15px] sm:text-base
-                  rounded-xl
-                  shadow-[0_4px_16px_rgba(37,99,235,0.35)]
-                  hover:shadow-[0_8px_24px_rgba(37,99,235,0.45)]
-                  transition-all duration-300
-                  disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none
-                  flex items-center justify-center gap-2.5
-                  overflow-hidden
-                  group
-                "
-              >
-                <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-                {loading ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  "Sign In"
-                )}
-              </motion.button>
-            </form>
+                  {hintOtp ? (
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                      Your code: <span className="font-bold tracking-[0.3em] text-lg ml-1">{hintOtp}</span>
+                      <span className="block text-xs mt-1 text-amber-700/80">Valid for 10 minutes</span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      Ask Super Admin / Admin for the OTP from their notifications bell, or check the backend console.
+                    </p>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">6-digit code</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={fpOtp}
+                      onChange={(e) => setFpOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-center text-lg tracking-[0.4em] font-semibold focus:outline-none focus:border-[#2563EB]"
+                      placeholder="••••••"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">New password</label>
+                    <div className="relative">
+                      <input
+                        type={fpShowNew ? "text" : "password"}
+                        value={fpNewPassword}
+                        onChange={(e) => setFpNewPassword(e.target.value)}
+                        className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl focus:outline-none focus:border-[#2563EB]"
+                        placeholder="Min 8 chars, A-z, 0-9, symbol"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFpShowNew((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                      >
+                        {fpShowNew ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Confirm new password</label>
+                    <input
+                      type={fpShowNew ? "text" : "password"}
+                      value={fpConfirm}
+                      onChange={(e) => setFpConfirm(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-[#2563EB]"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={fpBusy}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#0EA5E9] text-white font-semibold disabled:opacity-60"
+                  >
+                    {fpBusy ? "Updating…" : "Set new password"}
+                  </button>
+
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      disabled={fpBusy}
+                      onClick={requestOtp}
+                      className="text-sm text-[#2563EB] hover:underline"
+                    >
+                      Resend code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetForgotForm}
+                      className="flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-[#2563EB]"
+                    >
+                      <ArrowLeft size={14} /> Back to sign in
+                    </button>
+                  </div>
+                </motion.form>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Mobile branding */}

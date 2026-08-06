@@ -2,7 +2,6 @@ const asyncHandler = require('../utils/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const Medicine = require('../models/Medicine');
 const Prescription = require('../models/Prescription');
-const Notification = require('../models/Notification');
 const DirectSale = require('../models/DirectSale');
 const Patient = require('../models/Patient');
 const { generatePrescriptionPDF } = require('../utils/pdfGenerator');
@@ -13,9 +12,15 @@ const {
   validateDispensable,
   getExpiredBatches,
   mapUsableBatchesWithPrices,
+  upsertBatchStock,
+  normalizeBatchNumber,
+  findActiveBatch,
 } = require('../utils/pharmacyStockHelper');
 const inventoryService = require('../services/pharmacyInventoryService');
 const { exportExcel, exportPdf } = require('../utils/pharmacyReportExporter');
+const { logActivity } = require('../utils/activityLogger');
+
+const escapeRegex = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 exports.getMedicines = asyncHandler(async (req, res) => {
   res.status(200).json(res.advancedResults);
@@ -27,25 +32,111 @@ exports.getMedicine = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: medicine });
 });
 
-exports.createMedicine = asyncHandler(async (req, res) => {
+exports.createMedicine = asyncHandler(async (req, res, next) => {
   const data = { ...req.body };
   if (!data.barcode || data.barcode.trim() === '') delete data.barcode;
+  else data.barcode = data.barcode.trim();
+
+  const name = String(data.name || '').trim();
+  if (!name) return next(new ErrorResponse('Drug name is required', 400));
+  data.name = name;
+
+  // Soft-block duplicate SKU — guide staff to Add Batch instead of creating again
+  const existingByName = await Medicine.findOne({
+    name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' },
+    isActive: { $ne: false },
+  }).select('_id name genericName currentStock category manufacturer sellingPrice mrp purchasePrice batches');
+
+  if (existingByName) {
+    return res.status(409).json({
+      success: false,
+      code: 'MEDICINE_EXISTS',
+      message: `"${existingByName.name}" already exists. Add a new batch under it — do not create the medicine again.`,
+      data: existingByName,
+    });
+  }
+
+  if (data.barcode) {
+    const existingBarcode = await Medicine.findOne({ barcode: data.barcode }).select('_id name barcode');
+    if (existingBarcode) {
+      return res.status(409).json({
+        success: false,
+        code: 'BARCODE_EXISTS',
+        message: `Barcode already used by "${existingBarcode.name}". Open that medicine and add a batch.`,
+        data: existingBarcode,
+      });
+    }
+  }
+
+  // Normalize optional initial batch if client sent batches[]
+  if (Array.isArray(data.batches) && data.batches.length) {
+    data.batches = data.batches.map((b) => ({
+      ...b,
+      batchNumber: normalizeBatchNumber(b.batchNumber),
+    })).filter((b) => b.batchNumber);
+  }
+
   const medicine = await Medicine.create(data);
+  syncCurrentStock(medicine);
+  await medicine.save();
+  await logActivity(req, {
+    action: 'Medicine Created',
+    module: 'Pharmacy',
+    description: `${req.user?.name || 'User'} added medicine "${medicine.name}"`,
+    relatedId: medicine._id,
+    relatedModel: 'Medicine',
+    metadata: { name: medicine.name, category: medicine.category },
+  });
   res.status(201).json({ success: true, data: medicine });
 });
 
 exports.updateMedicine = asyncHandler(async (req, res, next) => {
+  const ChangeRequest = require('../models/ChangeRequest');
+  const { normalizeRole } = require('../utils/roles');
+
+  const pending = await ChangeRequest.findOne({
+    medicine: req.params.id,
+    category: 'medicine_edit',
+    status: 'pending',
+  }).select('requestNumber');
+
+  // While a change request is pending, direct Edit is locked for everyone
+  // except Super Admin / Admin (they review & can still correct master data).
+  const role = normalizeRole(req.user?.role);
+  if (pending && role !== 'Super Admin' && role !== 'Admin') {
+    return next(new ErrorResponse(
+      `Edit locked — pending change request ${pending.requestNumber}. Wait for Super Admin approval.`,
+      423,
+    ));
+  }
+
   const data = { ...req.body };
   if (!data.barcode || data.barcode.trim() === '') delete data.barcode;
   const medicine = await Medicine.findByIdAndUpdate(req.params.id, data, { new: true, runValidators: true });
   if (!medicine) return next(new ErrorResponse('Medicine not found', 404));
-  res.status(200).json({ success: true, data: medicine });
+  await logActivity(req, {
+    action: 'Medicine Updated',
+    module: 'Pharmacy',
+    description: `${req.user?.name || 'User'} updated medicine "${medicine.name}"`,
+    relatedId: medicine._id,
+    relatedModel: 'Medicine',
+    metadata: pending ? { bypassedPendingRequest: pending.requestNumber } : undefined,
+  });
+  res.status(200).json({ success: true, data: medicine, editLockedBy: pending?.requestNumber || null });
 });
 
 exports.deleteMedicine = asyncHandler(async (req, res, next) => {
   const medicine = await Medicine.findById(req.params.id);
   if (!medicine) return next(new ErrorResponse('Medicine not found', 404));
+  const name = medicine.name;
   await medicine.deleteOne();
+  await logActivity(req, {
+    action: 'Medicine Deleted',
+    module: 'Pharmacy',
+    description: `${req.user?.name || 'User'} deleted medicine "${name}"`,
+    relatedId: req.params.id,
+    relatedModel: 'Medicine',
+  });
   res.status(200).json({ success: true, data: {} });
 });
 
@@ -54,23 +145,36 @@ exports.addStock = asyncHandler(async (req, res, next) => {
   if (!medicine) return next(new ErrorResponse('Medicine not found', 404));
 
   const quantity = Number(req.body.quantity || 0);
+  const batchNumber = normalizeBatchNumber(req.body.batchNumber);
+  if (!batchNumber) return next(new ErrorResponse('Batch number is required', 400));
   if (quantity <= 0) return next(new ErrorResponse('Stock quantity must be greater than zero', 400));
 
-  const expiryDate = new Date(req.body.expiryDate);
-  if (expiryDate < new Date()) return next(new ErrorResponse('Cannot add stock with expired batch', 400));
-
   const qtyBefore = medicine.currentStock;
-  medicine.batches.push({
-    ...req.body,
-    quantity,
-    receivedDate: new Date(),
-  });
+  let result;
+  try {
+    result = upsertBatchStock(medicine, {
+      batchNumber,
+      quantity,
+      expiryDate: req.body.expiryDate,
+      purchasePrice: req.body.purchasePrice,
+      sellingPrice: req.body.sellingPrice,
+      mrp: req.body.mrp,
+      manufacturer: req.body.manufacturer,
+      supplierInvoice: req.body.supplierInvoice,
+      receivedDate: req.body.receivedDate,
+      remarks: req.body.remarks,
+    });
+  } catch (err) {
+    return next(new ErrorResponse(err.message || 'Could not add batch', err.statusCode || 400));
+  }
+
   syncCurrentStock(medicine);
+  medicine.markModified('batches');
   await medicine.save();
 
   await logStockMovement({
     medicine,
-    batchNumber: req.body.batchNumber,
+    batchNumber: result.batch.batchNumber,
     type: 'stock_in',
     quantityBefore: qtyBefore,
     quantityAfter: medicine.currentStock,
@@ -78,10 +182,36 @@ exports.addStock = asyncHandler(async (req, res, next) => {
     unitPrice: req.body.purchasePrice || medicine.purchasePrice,
     supplier: req.body.supplier || medicine.supplier,
     userId: req.user._id,
-    remarks: req.body.remarks || 'Stock added',
+    remarks: result.merged
+      ? (req.body.remarks || `Qty added to existing batch ${result.batch.batchNumber}`)
+      : (req.body.remarks || 'Stock added'),
   });
 
-  res.status(200).json({ success: true, data: medicine });
+  await logActivity(req, {
+    action: result.merged ? 'Batch Stock Increased' : 'Batch Added',
+    module: 'Pharmacy',
+    description: `${req.user?.name || 'User'} ${result.merged ? 'increased' : 'added'} batch ${result.batch.batchNumber} on "${medicine.name}" (+${quantity})`,
+    relatedId: medicine._id,
+    relatedModel: 'Medicine',
+    metadata: { batchNumber: result.batch.batchNumber, quantity, stockAfter: medicine.currentStock },
+  });
+
+  try {
+    const { notifyPharmacyStockRisk } = require('../utils/notify');
+    await notifyPharmacyStockRisk(req, medicine, {
+      batchNumber: result.batch.batchNumber,
+      expiryDate: result.batch.expiryDate || req.body.expiryDate,
+    });
+  } catch (_) { /* ignore */ }
+
+  res.status(200).json({
+    success: true,
+    data: medicine,
+    merged: result.merged,
+    message: result.merged
+      ? `Batch ${result.batch.batchNumber} already on this medicine — quantity increased (no duplicate created)`
+      : `Batch ${result.batch.batchNumber} added under ${medicine.name}`,
+  });
 });
 
 // ─── NEW: REDUCE OR ADJUST STOCK DIRECTLY ───────────────────────────────────
@@ -108,24 +238,51 @@ exports.adjustStock = asyncHandler(async (req, res, next) => {
   const qtyBefore = medicine.currentStock;
 
   if (type === 'reduce') {
-    // For reduce: deduct from usable batches (non-expired)
     if (qtyNumber < 0) {
       return next(new ErrorResponse('For reduce operation, quantity must be positive', 400));
     }
-    
-    if (medicine.currentStock < qtyNumber) {
+
+    // Always adjust a specific batch when 2+ batches exist (hospital-safe)
+    const batchKey = normalizeBatchNumber(req.body.batchNumber);
+    const activeBatches = (medicine.batches || []).filter((b) => !b.isDisposed && Number(b.quantity) > 0);
+
+    if (activeBatches.length > 1 && !batchKey) {
       return next(new ErrorResponse(
-        `Insufficient stock! Available: ${medicine.currentStock}, Requested: ${qtyNumber}`,
-        400
+        'This medicine has multiple batches. Select which batch to reduce.',
+        400,
       ));
     }
 
-    const { unallocated } = deductFromUsableBatches(medicine, qtyNumber);
-    if (unallocated > 0) {
-      return next(new ErrorResponse(
-        `Only ${qtyNumber - unallocated} units of non-expired stock available`,
-        400
-      ));
+    let reducedBatchNo = batchKey;
+    if (batchKey) {
+      const batch = findActiveBatch(medicine, batchKey);
+      if (!batch) {
+        return next(new ErrorResponse(`Batch "${batchKey}" not found on this medicine`, 404));
+      }
+      if (Number(batch.quantity) < qtyNumber) {
+        return next(new ErrorResponse(
+          `Batch ${batch.batchNumber} has only ${batch.quantity} units (requested ${qtyNumber})`,
+          400,
+        ));
+      }
+      batch.quantity -= qtyNumber;
+      reducedBatchNo = batch.batchNumber;
+    } else {
+      // Single / no named batch — FEFO across usable stock
+      if (medicine.currentStock < qtyNumber) {
+        return next(new ErrorResponse(
+          `Insufficient stock! Available: ${medicine.currentStock}, Requested: ${qtyNumber}`,
+          400,
+        ));
+      }
+      const { primaryBatch, unallocated } = deductFromUsableBatches(medicine, qtyNumber);
+      if (unallocated > 0) {
+        return next(new ErrorResponse(
+          `Only ${qtyNumber - unallocated} units of non-expired stock available`,
+          400,
+        ));
+      }
+      reducedBatchNo = primaryBatch;
     }
 
     syncCurrentStock(medicine);
@@ -134,53 +291,51 @@ exports.adjustStock = asyncHandler(async (req, res, next) => {
 
     await logStockMovement({
       medicine,
+      batchNumber: reducedBatchNo,
       type: 'stock_adjustment_reduce',
       quantityBefore: qtyBefore,
       quantityAfter: medicine.currentStock,
       quantityChanged: -qtyNumber,
       unitPrice: medicine.sellingPrice,
       userId: req.user._id,
-      remarks: remarks || `Stock reduced by ${qtyNumber} units`,
+      remarks: remarks || `Stock reduced by ${qtyNumber} from batch ${reducedBatchNo || 'FEFO'}`,
     });
+
+    await logActivity(req, {
+      action: 'Stock Reduced',
+      module: 'Pharmacy',
+      description: `${req.user?.name || 'User'} reduced ${qtyNumber} of "${medicine.name}" (batch ${reducedBatchNo || 'FEFO'})`,
+      relatedId: medicine._id,
+      relatedModel: 'Medicine',
+      metadata: { type: 'reduce', quantity: qtyNumber, batchNumber: reducedBatchNo, stockAfter: medicine.currentStock },
+    });
+
+    try {
+      const { notifyPharmacyStockRisk } = require('../utils/notify');
+      await notifyPharmacyStockRisk(req, medicine);
+    } catch (_) { /* ignore */ }
 
     res.status(200).json({
       success: true,
       data: medicine,
-      message: `Stock reduced by ${qtyNumber} units`,
+      message: `Reduced ${qtyNumber} from batch ${reducedBatchNo || 'stock'}`,
     });
   } else {
-    // For increase: manually add quantity to a specific batch or create new batch
-    const { batchNumber, expiryDate, purchasePrice } = req.body;
-
-    if (!batchNumber || batchNumber.trim() === '') {
-      return next(new ErrorResponse('Batch number is required for increase operation', 400));
-    }
-
-    if (!expiryDate) {
-      return next(new ErrorResponse('Expiry date is required for increase operation', 400));
-    }
-
-    const expiry = new Date(expiryDate);
-    if (expiry < new Date()) {
-      return next(new ErrorResponse('Cannot add stock with expired date', 400));
-    }
-
-    // Check if batch exists
-    let batch = medicine.batches.find(b => b.batchNumber === batchNumber && !b.isDisposed);
-    
-    if (batch) {
-      // Update existing batch quantity
-      batch.quantity += qtyNumber;
-    } else {
-      // Create new batch
-      medicine.batches.push({
+    // For increase: merge into existing batch or create new one (same as Add Batch)
+    const { batchNumber, expiryDate, purchasePrice, sellingPrice, mrp } = req.body;
+    let result;
+    try {
+      result = upsertBatchStock(medicine, {
         batchNumber,
         quantity: qtyNumber,
-        expiryDate: expiry,
-        purchasePrice: purchasePrice || medicine.purchasePrice,
-        receivedDate: new Date(),
-        remarks: remarks || `Stock increased`,
+        expiryDate,
+        purchasePrice,
+        sellingPrice,
+        mrp,
+        remarks: remarks || 'Stock increased',
       });
+    } catch (err) {
+      return next(new ErrorResponse(err.message || 'Could not increase stock', err.statusCode || 400));
     }
 
     syncCurrentStock(medicine);
@@ -189,7 +344,7 @@ exports.adjustStock = asyncHandler(async (req, res, next) => {
 
     await logStockMovement({
       medicine,
-      batchNumber,
+      batchNumber: result.batch.batchNumber,
       type: 'stock_adjustment_increase',
       quantityBefore: qtyBefore,
       quantityAfter: medicine.currentStock,
@@ -199,10 +354,22 @@ exports.adjustStock = asyncHandler(async (req, res, next) => {
       remarks: remarks || `Stock increased by ${qtyNumber} units`,
     });
 
+    await logActivity(req, {
+      action: 'Stock Increased',
+      module: 'Pharmacy',
+      description: `${req.user?.name || 'User'} increased ${qtyNumber} of "${medicine.name}" (batch ${result.batch.batchNumber})`,
+      relatedId: medicine._id,
+      relatedModel: 'Medicine',
+      metadata: { type: 'increase', quantity: qtyNumber, batchNumber: result.batch.batchNumber, stockAfter: medicine.currentStock },
+    });
+
     res.status(200).json({
       success: true,
       data: medicine,
-      message: `Stock increased by ${qtyNumber} units`,
+      merged: result.merged,
+      message: result.merged
+        ? `Batch ${result.batch.batchNumber} qty increased by ${qtyNumber}`
+        : `Stock increased by ${qtyNumber} units (new batch ${result.batch.batchNumber})`,
     });
   }
 });
@@ -310,18 +477,186 @@ exports.disposeExpiredBatch = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: medicine, message: 'Batch marked as disposed' });
 });
 
+/**
+ * Edit a single batch in place: batch no, expiry, qty, sell/MRP/purchase, etc.
+ * PUT /pharmacy/:id/batches/:batchId
+ */
+exports.updateBatch = asyncHandler(async (req, res, next) => {
+  const medicine = await Medicine.findById(req.params.id);
+  if (!medicine) return next(new ErrorResponse('Medicine not found', 404));
+
+  const batch = medicine.batches.id(req.params.batchId);
+  if (!batch) return next(new ErrorResponse('Batch not found', 404));
+  if (batch.isDisposed) {
+    return next(new ErrorResponse('Cannot edit a disposed batch', 400));
+  }
+
+  const body = req.body || {};
+  const qtyBefore = medicine.currentStock;
+  const oldBatchNo = batch.batchNumber;
+  const oldQty = Number(batch.quantity) || 0;
+  const changes = [];
+
+  if (body.batchNumber != null && String(body.batchNumber).trim() !== '') {
+    const nextNo = normalizeBatchNumber(body.batchNumber);
+    if (!nextNo) return next(new ErrorResponse('Batch number is required', 400));
+    const clash = (medicine.batches || []).find(
+      (b) => !b.isDisposed
+        && String(b._id) !== String(batch._id)
+        && normalizeBatchNumber(b.batchNumber).toLowerCase() === nextNo.toLowerCase(),
+    );
+    if (clash) {
+      return next(new ErrorResponse(
+        `Batch "${nextNo}" already exists on this medicine`,
+        400,
+      ));
+    }
+    if (nextNo !== batch.batchNumber) {
+      changes.push(`batch ${oldBatchNo} → ${nextNo}`);
+      batch.batchNumber = nextNo;
+    }
+  }
+
+  if (body.expiryDate != null && body.expiryDate !== '') {
+    const expiry = new Date(body.expiryDate);
+    if (Number.isNaN(expiry.getTime())) {
+      return next(new ErrorResponse('Invalid expiry date', 400));
+    }
+    const prev = batch.expiryDate ? new Date(batch.expiryDate).toISOString().slice(0, 10) : '';
+    const next = expiry.toISOString().slice(0, 10);
+    if (prev !== next) {
+      changes.push(`expiry ${prev || '—'} → ${next}`);
+      batch.expiryDate = expiry;
+    }
+  }
+
+  if (body.quantity != null && body.quantity !== '') {
+    const qty = Number(body.quantity);
+    if (!Number.isFinite(qty) || qty < 0) {
+      return next(new ErrorResponse('Quantity must be zero or greater', 400));
+    }
+    if (qty !== oldQty) {
+      changes.push(`qty ${oldQty} → ${qty}`);
+      batch.quantity = qty;
+    }
+  }
+
+  const priceFields = [
+    ['sellingPrice', 'sell'],
+    ['mrp', 'MRP'],
+    ['purchasePrice', 'purchase'],
+  ];
+  for (const [field, label] of priceFields) {
+    if (body[field] != null && body[field] !== '') {
+      const val = Number(body[field]);
+      if (!Number.isFinite(val) || val < 0) {
+        return next(new ErrorResponse(`${label} price must be zero or greater`, 400));
+      }
+      if (Number(batch[field]) !== val) {
+        changes.push(`${label} ${batch[field] ?? '—'} → ${val}`);
+        batch[field] = val;
+      }
+    } else if (body[field] === null || body[field] === '') {
+      // allow clearing optional prices by sending empty string
+      if (body[field] === '' && batch[field] != null) {
+        changes.push(`${label} cleared`);
+        batch[field] = null;
+      }
+    }
+  }
+
+  if (body.manufacturer != null) {
+    const next = String(body.manufacturer).trim();
+    if (next !== (batch.manufacturer || '')) {
+      changes.push('manufacturer updated');
+      batch.manufacturer = next || undefined;
+    }
+  }
+
+  if (body.supplierInvoice != null) {
+    const next = String(body.supplierInvoice).trim();
+    if (next !== (batch.supplierInvoice || '')) {
+      changes.push('invoice updated');
+      batch.supplierInvoice = next || undefined;
+    }
+  }
+
+  if (body.receivedDate != null && body.receivedDate !== '') {
+    const rd = new Date(body.receivedDate);
+    if (Number.isNaN(rd.getTime())) {
+      return next(new ErrorResponse('Invalid received date', 400));
+    }
+    batch.receivedDate = rd;
+    changes.push('received date updated');
+  }
+
+  if (!changes.length) {
+    return res.status(200).json({
+      success: true,
+      data: medicine,
+      message: 'No changes to save',
+    });
+  }
+
+  syncCurrentStock(medicine);
+  medicine.markModified('batches');
+  await medicine.save();
+
+  const qtyDelta = medicine.currentStock - qtyBefore;
+  if (qtyDelta !== 0) {
+    await logStockMovement({
+      medicine,
+      batchNumber: batch.batchNumber,
+      type: 'adjustment',
+      quantityBefore: qtyBefore,
+      quantityAfter: medicine.currentStock,
+      quantityChanged: qtyDelta,
+      unitPrice: batch.purchasePrice || medicine.purchasePrice,
+      userId: req.user._id,
+      remarks: body.remarks || `Batch edited: ${changes.join('; ')}`,
+    });
+  }
+
+  await logActivity(req, {
+    action: 'Batch Updated',
+    module: 'Pharmacy',
+    description: `${req.user?.name || 'User'} edited batch ${batch.batchNumber} on "${medicine.name}" (${changes.join('; ')})`,
+    relatedId: medicine._id,
+    relatedModel: 'Medicine',
+    metadata: {
+      batchId: batch._id,
+      batchNumber: batch.batchNumber,
+      changes,
+      stockAfter: medicine.currentStock,
+    },
+  });
+
+  try {
+    const { notifyPharmacyStockRisk } = require('../utils/notify');
+    await notifyPharmacyStockRisk(req, medicine, {
+      batchNumber: batch.batchNumber,
+      expiryDate: batch.expiryDate,
+    });
+  } catch (_) { /* ignore */ }
+
+  res.status(200).json({
+    success: true,
+    data: medicine,
+    message: `Batch ${batch.batchNumber} updated`,
+  });
+});
+
 exports.sendInventoryNotification = asyncHandler(async (req, res) => {
   const { type, medicineName, message, roles = ['Pharmacist', 'Admin'] } = req.body;
-  const notifications = await Promise.all(
-    roles.map((role) => Notification.create({
-      title: `Pharmacy Alert: ${type || 'Inventory'}`,
-      message: message || `${medicineName} requires attention`,
-      type: 'pharmacy',
-      recipientRole: role,
-      link: '/pharmacy?tab=inventory',
-      relatedModel: 'Medicine',
-    })),
-  );
+  const { notifyRoles } = require('../utils/notify');
+  const notifications = await notifyRoles(req, {
+    roles: [...new Set([...roles, 'Super Admin'])],
+    title: `Pharmacy Alert: ${type || 'Inventory'}`,
+    message: message || `${medicineName} requires attention`,
+    type: 'pharmacy',
+    link: '/pharmacy?tab=inventory',
+    relatedModel: 'Medicine',
+  });
   res.status(200).json({ success: true, count: notifications.length, message: 'Notifications sent' });
 });
 

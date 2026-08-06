@@ -11,8 +11,8 @@ const { authenticateUser, authorizeRoles } = require('../middleware/auth');
 
 router.use(authenticateUser);
 
-const ALL_STAFF = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'];
-const ADMIN_ROLES = ['Super Admin', 'Admin'];
+const ALL_STAFF = ['Super Admin', 'Admin', 'Biomedical Engineer', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'];
+const ADMIN_ROLES = ['Super Admin', 'Admin', 'Biomedical Engineer'];
 
 router.get('/dashboard', authorizeRoles(...ALL_STAFF), getComplaintDashboard);
 

@@ -85,8 +85,8 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 // Body Parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(cookieParser());
 
 // CORS
@@ -141,8 +141,13 @@ app.use('/api/appointments', appointments);
 app.use('/api/prescriptions', prescriptions);
 app.use('/api/assets', assets);
 app.use('/api/asset-complaints', assetComplaints);
+app.use('/api/bems', require('./routes/bems'));
 app.use('/api/shifts', shifts); // <-- ADDED THIS LINE
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/activity', require('./routes/activity'));
+app.use('/api/change-requests', require('./routes/changeRequests'));
+app.use('/api/chat', require('./routes/chat'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -178,6 +183,18 @@ const startServer = async () => {
       logger.info(
         `Server running on port ${PORT} in ${process.env.NODE_ENV} mode`
       );
+      try {
+        const { startAppointmentReminderJob } = require('./utils/appointmentReminderJob');
+        startAppointmentReminderJob(io);
+      } catch (e) {
+        logger.warn(`Appointment reminder job not started: ${e.message}`);
+      }
+      try {
+        const { startBemsReminderJob } = require('./utils/bemsReminderJob');
+        startBemsReminderJob(io);
+      } catch (e) {
+        logger.warn(`BEMS reminder job not started: ${e.message}`);
+      }
     });
   } catch (error) {
     logger.error(`Server startup failed: ${error.message}`);

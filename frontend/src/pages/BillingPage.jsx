@@ -3,7 +3,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import { useSelector } from 'react-redux';
   import {
     Plus, Printer, Search, Receipt, Pill, X, Eye,
-    CreditCard, Ban, AlertTriangle, CheckCircle2,
     Stethoscope, FlaskConical, Bed, Package, User,
     RefreshCw, ChevronDown, ChevronUp, Edit3, History, Trash2,
   } from 'lucide-react';
@@ -12,15 +11,21 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import Modal from '../components/common/Modal';
   import DataTable from '../components/common/DataTable';
   import InvoicePrint from '../components/billing/InvoicePrint';
+  import InvoiceDetailPanel from '../components/billing/InvoiceDetailPanel';
   import {
     flattenMedicineBatchOptions,
     formatBatchExpiry,
   } from '../utils/medicineBatches';
+  import '../styles/billing.css';
 
   const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
-  const STATUS_BADGE = {
-    paid: 'badge-green', partial: 'badge-yellow', pending: 'badge-red',
-    cancelled: 'badge-gray', draft: 'badge-gray', refunded: 'badge-gray',
+  const STATUS_CLASS = {
+    paid: 'bl-status--paid',
+    partial: 'bl-status--partial',
+    pending: 'bl-status--pending',
+    cancelled: 'bl-status--cancelled',
+    draft: 'bl-status--draft',
+    refunded: 'bl-status--refunded',
   };
 
   const CATEGORY_CONFIG = {
@@ -103,6 +108,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     const [paymentMode, setPaymentMode] = useState('cash');
     const [collapsedCats, setCollapsedCats] = useState({});
     const [showDischarge, setShowDischarge] = useState(false);
+    const [dischargeDetail, setDischargeDetail] = useState(null); // selected IP admission row
+    const [dischargeCharges, setDischargeCharges] = useState([]);
+    const [dischargeChargeSummary, setDischargeChargeSummary] = useState(null);
+    const [loadingDischargeCharges, setLoadingDischargeCharges] = useState(false);
     const [showPrintPreview, setShowPrintPreview] = useState(null);
     const [showEditBill, setShowEditBill] = useState(false);
     const [editItems, setEditItems] = useState([]);
@@ -121,6 +130,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     // ── NEW: manual medicine search inside the Create Bill (IP Billing) modal ──
     const [createMedQuery, setCreateMedQuery] = useState('');
     const [createMedResults, setCreateMedResults] = useState([]);
+    // Manual lab / room / procedure / nursing / misc lines on Create Bill
+    const [createCharge, setCreateCharge] = useState({
+      category: 'Laboratory', description: '', quantity: 1, unitPrice: '', gstPercent: 0,
+    });
     // ─────────────────────────────────────────────────────────────────────────
     const qc = useQueryClient();
 
@@ -139,10 +152,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       queryFn: () => api.get('/billing/stats').then((r) => r.data.data),
     });
 
-    const { data: pendingDischarge } = useQuery({
+    const { data: pendingDischarge, isError: pendingDischargeError, isFetching: pendingDischargeLoading } = useQuery({
       queryKey: ['pendingDischarge'],
-      queryFn: () => api.get('/billing/pending-discharge').then((r) => r.data.data),
+      queryFn: () => api.get('/billing/pending-discharge').then((r) => r.data.data || []),
       enabled: showCreate || showDischarge,
+      retry: 1,
     });
 
     const [chargeMeta, setChargeMeta] = useState({ doctor: null, department: null });
@@ -171,10 +185,51 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     }, [patientSearch]);
 
     const selectPatient = (p) => {
+      if (!p?._id) {
+        toast.error('Patient record is missing — cannot open bill');
+        return;
+      }
       setSelectedPatient(p);
       setPatientSearch(`${p.name} (${p.patientId})`);
       setPatients([]);
       loadPatientCharges(p._id);
+    };
+
+    const openDischargePatientDetail = async (row) => {
+      if (!row?.patient?._id) {
+        toast.error('Patient record is missing for this admission');
+        return;
+      }
+      setDischargeDetail(row);
+      setLoadingDischargeCharges(true);
+      setDischargeCharges([]);
+      setDischargeChargeSummary(null);
+      try {
+        const { data } = await api.get(`/billing/patient/${row.patient._id}/charges?billType=ip`);
+        setDischargeCharges(data.data?.charges || []);
+        setDischargeChargeSummary(data.data?.summary || null);
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to load patient charges');
+      } finally {
+        setLoadingDischargeCharges(false);
+      }
+    };
+
+    const closeDischargeModals = () => {
+      setShowDischarge(false);
+      setDischargeDetail(null);
+      setDischargeCharges([]);
+      setDischargeChargeSummary(null);
+    };
+
+    const billFromDischargeDetail = () => {
+      if (!dischargeDetail?.patient?._id) {
+        toast.error('Patient record is missing — cannot open bill');
+        return;
+      }
+      selectPatient(dischargeDetail.patient);
+      closeDischargeModals();
+      setShowCreate(true);
     };
 
     const toggleCharge = (id) => {
@@ -243,6 +298,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setConsultForm({ description: 'Consultation Fee', doctorName: '', fee: '', gstPercent: 0 });
       setCreateMedQuery('');
       setCreateMedResults([]);
+      setCreateCharge({ category: 'Laboratory', description: '', quantity: 1, unitPrice: '', gstPercent: 0 });
     };
 
     const createMut = useMutation({
@@ -308,15 +364,19 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       enabled: !!showPrintPreview,
     });
 
-    const downloadBillPdf = async (id, thermal = false) => {
+    const downloadBillPdf = async (id, thermal = false, size = 'A4') => {
       try {
-        const endpoint = thermal ? `/billing/${id}/thermal` : `/billing/${id}/print`;
+        const endpoint = thermal
+          ? `/billing/${id}/thermal`
+          : `/billing/${id}/print?size=${encodeURIComponent(size)}`;
         const response = await api.get(endpoint, { responseType: 'blob' });
         const blob = new Blob([response.data], { type: 'application/pdf' });
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = thermal ? `thermal-${id}.pdf` : `invoice-${id}.pdf`;
+        link.download = thermal
+          ? `thermal-${id}.pdf`
+          : `invoice-${id}-${size}.pdf`;
         link.click();
         setTimeout(() => window.URL.revokeObjectURL(url), 60000);
       } catch {
@@ -571,6 +631,39 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       toast.success('Consultation charge added');
     };
 
+    /** Manual lab / room / procedure / nursing / admission / ICU / misc on Create Bill */
+    const addCreateCharge = () => {
+      if (!createCharge.description.trim()) {
+        toast.error('Enter a description for the charge');
+        return;
+      }
+      if (!createCharge.unitPrice || Number(createCharge.unitPrice) <= 0) {
+        toast.error('Enter a valid rate for the charge');
+        return;
+      }
+      const quantity = Number(createCharge.quantity || 1);
+      const unitPrice = Number(createCharge.unitPrice || 0);
+      const gstPercent = Number(createCharge.gstPercent || 0);
+      const gstAmount = quantity * unitPrice * (gstPercent / 100);
+      setCharges((prev) => [
+        ...prev,
+        {
+          id: `manual-${createCharge.category}-${Date.now()}`,
+          category: createCharge.category,
+          type: CATEGORY_TYPE_MAP[createCharge.category] || 'other',
+          description: createCharge.description.trim(),
+          quantity,
+          unitPrice,
+          gstPercent,
+          gstAmount,
+          amount: quantity * unitPrice + gstAmount,
+          included: true,
+        },
+      ]);
+      setCreateCharge({ category: 'Laboratory', description: '', quantity: 1, unitPrice: '', gstPercent: 0 });
+      toast.success(`${createCharge.category} charge added`);
+    };
+
     const handleGenerateBill = () => {
       if (!selectedPatient) {
         toast.error('Please select a patient');
@@ -610,7 +703,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         key: 'billNumber',
         header: 'Invoice #',
         render: (r) => (
-          <button type="button" onClick={() => setShowDetail(r._id)} className="font-mono font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+          <button type="button" onClick={() => setShowDetail(r._id)} className="bl-inv">
             {r.billNumber}
           </button>
         ),
@@ -619,7 +712,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         key: 'uhid',
         header: 'UHID',
         render: (r) => (
-          <span className="font-mono font-semibold text-blue-700 dark:text-blue-400" title="Patient ID from registration">
+          <span className="bl-uhid" title="Patient ID from registration">
             {r.patient?.patientId || '—'}
           </span>
         ),
@@ -627,27 +720,23 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       {
         key: 'patient',
         header: 'Patient',
-        render: (r) => (
-          <div>
-            <p className="font-medium text-gray-900 dark:text-white">{r.patient?.name}</p>
-          </div>
-        ),
+        render: (r) => <p className="bl-patient">{r.patient?.name || '—'}</p>,
       },
       {
         key: 'billType',
         header: 'Type',
-        render: (r) => <span className="badge-blue capitalize">{r.billType || 'unified'}</span>,
+        render: (r) => <span className="bl-type">{r.billType || 'unified'}</span>,
       },
       {
         key: 'totalAmount',
         header: 'Total',
-        render: (r) => <span className="font-semibold">{fmt(r.totalAmount)}</span>,
+        render: (r) => <span className="bl-amt">{fmt(r.totalAmount)}</span>,
       },
       {
         key: 'dueAmount',
         header: 'Due',
         render: (r) => (
-          <span className={r.dueAmount > 0 ? 'text-red-600 font-medium' : 'text-green-600'}>
+          <span className={`bl-due ${r.dueAmount > 0 ? 'bl-due--warn' : 'bl-due--ok'}`}>
             {fmt(r.dueAmount)}
           </span>
         ),
@@ -655,18 +744,22 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       {
         key: 'status',
         header: 'Status',
-        render: (r) => <span className={STATUS_BADGE[r.status] || 'badge-gray'}>{r.status}</span>,
+        render: (r) => (
+          <span className={`bl-status ${STATUS_CLASS[r.status] || 'bl-status--draft'}`}>
+            {r.status}
+          </span>
+        ),
       },
       {
         key: 'actions',
-        header: '',
+        header: 'Actions',
         render: (r) => (
-          <div className="flex gap-1">
-            <button type="button" onClick={() => setShowDetail(r._id)} title="View" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg">
-              <Eye size={15} />
+          <div className="bl-actions">
+            <button type="button" onClick={() => setShowDetail(r._id)} title="View" className="bl-icon-btn">
+              <Eye size={14} />
             </button>
-            <button type="button" onClick={() => openPrintPreview(r._id)} title="Print Preview" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg">
-              <Printer size={15} />
+            <button type="button" onClick={() => openPrintPreview(r._id)} title="Print Preview" className="bl-icon-btn">
+              <Printer size={14} />
             </button>
           </div>
         ),
@@ -674,68 +767,84 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     ];
 
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bl-shell space-y-4">
+        <header className="bl-masthead">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Unified Billing</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Consolidated invoicing for OP, IP, Lab, Pharmacy &amp; more</p>
+            <p className="bl-masthead__eyebrow">Finance · Invoicing</p>
+            <h1 className="bl-masthead__title">Unified Billing</h1>
+            <p className="bl-masthead__meta">OP, IP, Lab, Pharmacy &amp; other consolidated invoices</p>
           </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setShowDischarge(true)} className="btn-secondary">
-              <Bed size={16} /> Pending Discharge
+          <div className="bl-masthead__actions">
+            <button
+              type="button"
+              onClick={() => { setDischargeDetail(null); setShowDischarge(true); }}
+              className="bl-btn bl-btn--ghost"
+            >
+              <Bed size={14} /> Pending Discharge
               {pendingDischarge?.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">{pendingDischarge.length}</span>
+                <span className="bl-btn__count">{pendingDischarge.length}</span>
               )}
             </button>
-            <button type="button" onClick={() => { resetCreateForm(); setShowCreate(true); }} className="btn-primary">
-              <Plus size={16} /> IP Billing
+            <button
+              type="button"
+              onClick={() => { resetCreateForm(); setShowCreate(true); }}
+              className="bl-btn bl-btn--primary"
+            >
+              <Plus size={14} /> IP Billing
             </button>
           </div>
-        </div>
+        </header>
 
         {statsData && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { label: "Today's Revenue", value: fmt(statsData.todayRevenue), color: 'text-green-600', icon: CheckCircle2 },
-              { label: 'Month Revenue', value: fmt(statsData.monthRevenue), color: 'text-blue-600', icon: CreditCard },
-              { label: 'Pending Bills', value: statsData.pendingBills, color: 'text-amber-600', icon: AlertTriangle },
-              { label: "Today's Bills", value: statsData.totalBills, color: 'text-gray-600', icon: Receipt },
-            ].map((s) => (
-              <div key={s.label} className="kpi-card flex items-center gap-4">
-                <div className={`p-3 rounded-xl bg-gray-50 dark:bg-gray-700/50 ${s.color}`}>
-                  <s.icon size={22} />
-                </div>
-                <div>
-                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                  <p className="text-xs text-gray-500">{s.label}</p>
-                </div>
-              </div>
-            ))}
+          <div className="bl-kpis">
+            <div className="bl-kpi bl-kpi--ok">
+              <p className="bl-kpi__label">Today&apos;s Revenue</p>
+              <p className="bl-kpi__value">{fmt(statsData.todayRevenue)}</p>
+            </div>
+            <div className="bl-kpi bl-kpi--accent">
+              <p className="bl-kpi__label">Month Revenue</p>
+              <p className="bl-kpi__value">{fmt(statsData.monthRevenue)}</p>
+            </div>
+            <div className="bl-kpi bl-kpi--warn">
+              <p className="bl-kpi__label">Pending Bills</p>
+              <p className="bl-kpi__value">{statsData.pendingBills}</p>
+            </div>
+            <div className="bl-kpi">
+              <p className="bl-kpi__label">Today&apos;s Bills</p>
+              <p className="bl-kpi__value">{statsData.totalBills}</p>
+            </div>
           </div>
         )}
 
-        <div className="flex flex-wrap gap-3">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search invoice number..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="input-field pl-9"
-            />
+        <section className="bl-panel">
+          <div className="bl-toolbar">
+            <div className="bl-search">
+              <Search size={15} />
+              <input
+                type="search"
+                placeholder="Search invoice number…"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              className="bl-select"
+            >
+              <option value="">All Status</option>
+              {['pending', 'partial', 'paid', 'cancelled'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <p className="bl-toolbar__hint">
+              Page {page}{data?.pages ? ` of ${data.pages}` : ''}
+            </p>
           </div>
-          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input-field w-auto min-w-[140px]">
-            <option value="">All Status</option>
-            {['pending', 'partial', 'paid', 'cancelled'].map((s) => (
-              <option key={s} value={s} className="capitalize">{s}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <DataTable columns={columns} data={data?.data || []} loading={isLoading} page={page} pages={data?.pages || 1} onPageChange={setPage} />
-        </div>
+          <div className="bl-table-wrap">
+            <DataTable columns={columns} data={data?.data || []} loading={isLoading} page={page} pages={data?.pages || 1} onPageChange={setPage} />
+          </div>
+        </section>
 
         {/* UNIFIED BILLING MODAL */}
         <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); resetCreateForm(); }} title="IP Billing — Create Bill" size="full">
@@ -802,10 +911,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
               )}
 
               {!loadingCharges && selectedPatient && charges.length === 0 && (
-                <div className="text-center py-12 text-gray-400">
+                <div className="text-center py-8 text-gray-400">
                   <Receipt size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="font-medium">No unpaid charges found</p>
-                  <p className="text-sm mt-1">No existing unpaid items. You can add medicines or consultation below.</p>
+                  <p className="text-sm mt-1">Add lab, room, procedure, medicine, or any charge manually below.</p>
                 </div>
               )}
 
@@ -980,6 +1089,86 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Manual charges — Lab, Room, Procedure, Nursing, Admission, ICU, Misc */}
+              {selectedPatient && !loadingCharges && (
+                <div className="rounded-2xl border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-purple-100 dark:border-purple-900/50">
+                    <span className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center">
+                      <FlaskConical size={16} />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-purple-900 dark:text-purple-200">Add Manual Charge</p>
+                      <p className="text-xs text-purple-700/80 dark:text-purple-300/70">
+                        Lab tests, room, procedure, nursing, admission, ICU, or miscellaneous — type name and rate.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-white dark:bg-gray-800">
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end">
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="block text-xs text-gray-500 mb-1">Category</label>
+                        <select
+                          value={createCharge.category}
+                          onChange={(e) => setCreateCharge((prev) => ({ ...prev, category: e.target.value }))}
+                          className="input-field text-sm"
+                        >
+                          {Object.keys(CATEGORY_CONFIG).filter((c) => c !== 'Pharmacy').map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-span-2 sm:col-span-2">
+                        <label className="block text-xs text-gray-500 mb-1">Description</label>
+                        <input
+                          value={createCharge.description}
+                          onChange={(e) => setCreateCharge((prev) => ({ ...prev, description: e.target.value }))}
+                          className="input-field text-sm"
+                          placeholder="e.g. CBC, MRI Brain, Extra nursing"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Qty</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={createCharge.quantity}
+                          onChange={(e) => setCreateCharge((prev) => ({ ...prev, quantity: e.target.value }))}
+                          className="input-field text-sm text-center"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Rate (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={createCharge.unitPrice}
+                          onChange={(e) => setCreateCharge((prev) => ({ ...prev, unitPrice: e.target.value }))}
+                          className="input-field text-sm text-right"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <label className="block text-xs text-gray-500 mb-1">GST %</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={createCharge.gstPercent}
+                            onChange={(e) => setCreateCharge((prev) => ({ ...prev, gstPercent: e.target.value }))}
+                            className="input-field text-sm text-right"
+                          />
+                        </div>
+                        <button type="button" onClick={addCreateCharge} className="btn-primary self-end shrink-0" title="Add charge">
+                          <Plus size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1175,40 +1364,178 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           </div>
         </Modal>
 
-        {/* PENDING DISCHARGE MODAL */}
-        <Modal isOpen={showDischarge} onClose={() => setShowDischarge(false)} title="Discharged Patients — Pending Billing" size="lg">
+        {/* PENDING DISCHARGE / ADMITTED PATIENTS MODAL */}
+        <Modal
+          isOpen={showDischarge}
+          onClose={closeDischargeModals}
+          title={dischargeDetail ? 'Admission Billing Detail' : 'IP Patients — Pending Billing'}
+          size={dischargeDetail ? 'xl' : 'lg'}
+        >
           <div className="p-6">
-            {!pendingDischarge?.length ? (
-              <p className="text-center text-gray-400 py-8">No discharged patients pending billing</p>
+            {dischargeDetail ? (
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => { setDischargeDetail(null); setDischargeCharges([]); setDischargeChargeSummary(null); }}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  ← Back to patient list
+                </button>
+
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                        {dischargeDetail.patient?.name}
+                        <span className="ml-2 text-sm font-normal text-gray-500">{dischargeDetail.patient?.patientId}</span>
+                      </p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                        {dischargeDetail.admissionNumber}
+                        {dischargeDetail.doctor?.name ? ` · Dr. ${dischargeDetail.doctor.name}` : ''}
+                        {dischargeDetail.department?.name ? ` · ${dischargeDetail.department.name}` : ''}
+                        {dischargeDetail.bed?.bedNumber ? ` · Bed ${dischargeDetail.bed.bedNumber}` : ''}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Admitted: {dischargeDetail.admissionDate ? new Date(dischargeDetail.admissionDate).toLocaleString('en-IN') : '—'}
+                        {dischargeDetail.dischargeDate
+                          ? ` → Discharged: ${new Date(dischargeDetail.dischargeDate).toLocaleString('en-IN')}`
+                          : ' · Still admitted'}
+                        {' · '}{dischargeDetail.stayDays} day(s)
+                      </p>
+                      {(dischargeDetail.patient?.age != null || dischargeDetail.patient?.gender || dischargeDetail.patient?.phone) && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          {[
+                            dischargeDetail.patient?.age != null ? `Age ${dischargeDetail.patient.age}` : null,
+                            dischargeDetail.patient?.gender || null,
+                            dischargeDetail.patient?.phone ? `Ph ${dischargeDetail.patient.phone}` : null,
+                          ].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                      dischargeDetail.admissionStatus === 'admitted'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {dischargeDetail.admissionStatus === 'admitted' ? 'Admitted' : 'Discharged — pending bill'}
+                    </span>
+                  </div>
+                </div>
+
+                {loadingDischargeCharges ? (
+                  <p className="text-center text-gray-400 py-10">Loading full charges…</p>
+                ) : !dischargeCharges.length ? (
+                  <p className="text-center text-gray-400 py-10">No unbilled charges found for this patient.</p>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-100 dark:bg-gray-800 text-left text-xs uppercase tracking-wide text-gray-500">
+                          <tr>
+                            <th className="px-3 py-2.5">Category</th>
+                            <th className="px-3 py-2.5">Description</th>
+                            <th className="px-3 py-2.5 text-center">Qty</th>
+                            <th className="px-3 py-2.5 text-right">Rate</th>
+                            <th className="px-3 py-2.5 text-right">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dischargeCharges.map((c) => {
+                            const line = (Number(c.quantity) || 0) * (Number(c.unitPrice) || 0) + (Number(c.gstAmount) || 0);
+                            return (
+                              <tr key={c.id} className="border-t border-gray-100 dark:border-gray-700">
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{c.category}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{c.description}</td>
+                                <td className="px-3 py-2 text-center tabular-nums">{c.quantity}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{fmt(c.unitPrice)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(c.amount ?? line)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 px-4 py-3">
+                      <div className="text-sm text-gray-600 dark:text-gray-300">
+                        {dischargeCharges.length} line item(s)
+                        {dischargeChargeSummary?.total != null && (
+                          <span className="ml-2 text-xs text-gray-400">(from billing engine)</span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">Exact amount due</p>
+                        <p className="text-xl font-semibold text-blue-700 dark:text-blue-300 tabular-nums">
+                          {fmt(
+                            dischargeChargeSummary?.total
+                            ?? dischargeCharges.reduce((s, c) => s + (Number(c.amount) || ((Number(c.quantity) || 0) * (Number(c.unitPrice) || 0) + (Number(c.gstAmount) || 0))), 0)
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button type="button" onClick={billFromDischargeDetail} className="btn-primary flex-1 justify-center">
+                    Open IP Billing with these charges
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setDischargeDetail(null); setDischargeCharges([]); setDischargeChargeSummary(null); }}
+                    className="btn-secondary flex-1 justify-center"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            ) : pendingDischargeLoading ? (
+              <p className="text-center text-gray-400 py-8">Loading admitted / pending patients…</p>
+            ) : pendingDischargeError ? (
+              <p className="text-center text-red-500 py-8">Could not load patients. Please try again.</p>
+            ) : !pendingDischarge?.length ? (
+              <p className="text-center text-gray-400 py-8">No admitted or discharged patients pending billing</p>
             ) : (
               <div className="space-y-3">
+                <p className="text-xs text-gray-500 mb-1">
+                  Showing currently admitted patients and discharged patients waiting for bill. Click a patient for full usage and exact amount.
+                </p>
                 {pendingDischarge.map((d) => (
-                  <div key={d.admissionId} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                    <div>
-                      <p className="font-medium">{d.patient?.name} <span className="text-gray-400 text-sm">{d.patient?.patientId}</span></p>
+                  <button
+                    key={d.admissionId}
+                    type="button"
+                    onClick={() => openDischargePatientDetail(d)}
+                    className="w-full text-left flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-300 hover:bg-blue-50/40 dark:hover:bg-blue-900/20 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {d.patient?.name || 'Unknown patient'}
+                          <span className="text-gray-400 text-sm ml-1">{d.patient?.patientId || ''}</span>
+                        </p>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          d.admissionStatus === 'admitted'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {d.admissionStatus === 'admitted' ? 'Admitted' : 'Discharged'}
+                        </span>
+                      </div>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {d.admissionNumber} · Dr. {d.doctor?.name} · {d.stayDays} day(s) · Bed {d.bed?.bedNumber}
+                        {d.admissionNumber} · Dr. {d.doctor?.name || '—'} · {d.stayDays} day(s) · Bed {d.bed?.bedNumber || '—'}
                       </p>
                       <p className="text-xs text-gray-400">
-                        Admitted: {new Date(d.admissionDate).toLocaleDateString()} → Discharged: {new Date(d.dischargeDate).toLocaleDateString()}
+                        Admitted: {d.admissionDate ? new Date(d.admissionDate).toLocaleDateString('en-IN') : '—'}
+                        {d.dischargeDate
+                          ? ` → Discharged: ${new Date(d.dischargeDate).toLocaleDateString('en-IN')}`
+                          : ' · In hospital'}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-blue-600">{fmt(d.estimatedRoomCharges + 500)}</p>
-                      <p className="text-xs text-gray-400">Est. charges</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          selectPatient(d.patient);
-                          setShowDischarge(false);
-                          setShowCreate(true);
-                        }}
-                        className="mt-2 text-xs btn-primary py-1 px-3"
-                      >
-                        Bill Now
-                      </button>
+                    <div className="text-right shrink-0 ml-3">
+                      <p className="font-semibold text-blue-600">{fmt(d.estimatedTotal ?? ((d.estimatedRoomCharges || 0) + 500))}</p>
+                      <p className="text-xs text-gray-400">Est. · view exact</p>
+                      <p className="mt-2 text-xs text-blue-600 font-medium">View details →</p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -1216,145 +1543,27 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         </Modal>
 
         {/* BILL DETAIL MODAL */}
-        <Modal isOpen={!!showDetail} onClose={() => setShowDetail(null)} title="Invoice Details" size="lg">
-          {detailLoading ? (
-            <div className="p-8 text-center text-gray-400">Loading...</div>
-          ) : detailData ? (
-            <div className="p-6 space-y-5">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-mono text-lg font-bold text-blue-600">{detailData.billNumber}</p>
-                  <p className="text-sm text-gray-500 capitalize">{detailData.billType || 'unified'} bill</p>
-                </div>
-                <span className={STATUS_BADGE[detailData.status] || 'badge-gray'}>{detailData.status}</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl text-sm">
-                <div>
-                  <p className="text-gray-400 text-xs">Patient</p>
-                  <p className="font-medium">{detailData.patient?.name}</p>
-                  <p className="text-gray-500">
-                    <span className="font-semibold">UHID:</span>{' '}
-                    <span className="font-mono font-semibold text-blue-600">{detailData.patient?.patientId || '—'}</span>
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-xs">Date</p>
-                  <p className="font-medium">{new Date(detailData.createdAt).toLocaleString()}</p>
-                  {detailData.doctor && <p className="text-gray-400 text-xs mt-1">Dr. {detailData.doctor.name}</p>}
-                </div>
-              </div>
-
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                    <th className="text-left py-2">Category</th>
-                    <th className="text-left py-2">Item</th>
-                    <th className="text-center py-2">Qty</th>
-                    <th className="text-right py-2">Rate</th>
-                    <th className="text-right py-2">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailData.items?.map((item, idx) => (
-                    <tr key={idx} className="border-b border-gray-100 dark:border-gray-700/50">
-                      <td className="py-2"><span className="badge-blue text-xs">{item.category || item.type}</span></td>
-                      <td className="py-2">
-                        <p className="font-medium">{item.description || item.name}</p>
-                        {item.type === 'medicine' && item.medicine && (
-                          <p className="text-xs text-green-600 flex items-center gap-1"><Pill size={10} /> Pharmacy</p>
-                        )}
-                      </td>
-                      <td className="text-center py-2">{item.quantity}</td>
-                      <td className="text-right py-2">{fmt(item.unitPrice)}</td>
-                      <td className="text-right py-2 font-medium">{fmt(item.totalAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="flex justify-end">
-                <div className="w-56 space-y-1 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>{fmt(detailData.subtotal)}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">GST</span><span>{fmt(detailData.totalGST)}</span></div>
-                  {detailData.discount > 0 && (
-                    <div className="flex justify-between text-red-500"><span>Discount ({detailData.discount}%)</span><span>-{fmt(detailData.discountAmount)}</span></div>
-                  )}
-                  <div className="flex justify-between font-bold border-t pt-1"><span>Grand Total</span><span>{fmt(detailData.totalAmount)}</span></div>
-                  <div className="flex justify-between text-green-600"><span>Paid</span><span>{fmt(detailData.paidAmount)}</span></div>
-                  {detailData.dueAmount > 0 && (
-                    <div className="flex justify-between text-red-600 font-medium"><span>Due</span><span>{fmt(detailData.dueAmount)}</span></div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-                {canEditBill(detailData) && (
-                  <button type="button" onClick={() => openEditBill(detailData)} className="btn-secondary">
-                    <Edit3 size={15} /> Edit Bill
-                  </button>
-                )}
-                <button type="button" onClick={() => openPrintPreview(detailData._id)} className="btn-primary"><Printer size={15} /> Print Preview</button>
-                <button type="button" onClick={() => downloadBillPdf(detailData._id)} className="btn-secondary"><Printer size={15} /> Download PDF</button>
-                <button type="button" onClick={() => downloadBillPdf(detailData._id, true)} className="btn-secondary"><Printer size={15} /> Thermal PDF</button>
-                {detailData.status !== 'cancelled' && detailData.dueAmount > 0 && (
-                  <button type="button" onClick={() => setShowPayment(detailData)} className="btn-primary"><CreditCard size={15} /> Record Payment</button>
-                )}
-                {detailData.status !== 'cancelled' && detailData.status !== 'paid' && (
-                  <button type="button" onClick={() => { if (window.confirm('Cancel this bill?')) cancelMut.mutate(detailData._id); }} className="btn-danger flex items-center gap-2">
-                    <Ban size={15} /> Cancel
-                  </button>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
-                <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                  <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900/50 flex items-center gap-2">
-                    <History size={15} />
-                    <h3 className="font-semibold text-sm">Edit History</h3>
-                  </div>
-                  <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
-                    {detailData.editHistory?.length ? detailData.editHistory.slice().reverse().map((h) => (
-                      <div key={h._id} className="p-3 text-xs space-y-1">
-                        <div className="flex justify-between gap-3">
-                          <span className="font-semibold text-gray-900 dark:text-white">{h.actionType}</span>
-                          <span className="text-gray-400 shrink-0">{new Date(h.editTime).toLocaleString()}</span>
-                        </div>
-                        <p className="text-gray-500">{h.userName || h.user?.name || 'User'} · {h.reason}</p>
-                        <div className="grid grid-cols-2 gap-2 text-gray-500">
-                          <pre className="whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-900/60 rounded-lg p-2">{JSON.stringify(h.previousValue ?? '-', null, 2)}</pre>
-                          <pre className="whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-900/60 rounded-lg p-2">{JSON.stringify(h.newValue ?? '-', null, 2)}</pre>
-                        </div>
-                      </div>
-                    )) : (
-                      <p className="p-4 text-sm text-gray-400">No edits recorded</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                  <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900/50 flex items-center gap-2">
-                    <Printer size={15} />
-                    <h3 className="font-semibold text-sm">Reprint History</h3>
-                    <span className="ml-auto badge-blue text-xs">{detailData.printCount || 0}</span>
-                  </div>
-                  <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
-                    {detailData.printHistory?.length ? detailData.printHistory.slice().reverse().map((p) => (
-                      <div key={p._id} className="p-3 text-xs">
-                        <div className="flex justify-between gap-3">
-                          <span className="font-semibold capitalize">{p.format} print #{p.printCount}</span>
-                          <span className="text-gray-400 shrink-0">{new Date(p.printedAt).toLocaleString()}</span>
-                        </div>
-                        <p className="text-gray-500 mt-1">{p.printedByName || p.printedBy?.name || 'User'} · {p.reason}</p>
-                      </div>
-                    )) : (
-                      <p className="p-4 text-sm text-gray-400">No print activity recorded</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
+        <Modal
+          isOpen={!!showDetail}
+          onClose={() => setShowDetail(null)}
+          title="Invoice Details"
+          subtitle={detailData?.billNumber ? `Bill ${detailData.billNumber}` : undefined}
+          size="xl"
+        >
+          <InvoiceDetailPanel
+            detailData={detailData}
+            detailLoading={detailLoading}
+            canEditBill={canEditBill}
+            onEditBill={openEditBill}
+            onPrintPreview={openPrintPreview}
+            onDownloadPdf={(id) => downloadBillPdf(id, false, 'A4')}
+            onThermalPdf={(id) => downloadBillPdf(id, true)}
+            onDownloadPdfA5={(id) => downloadBillPdf(id, false, 'A5')}
+            onRecordPayment={setShowPayment}
+            onCancelBill={(bill) => {
+              if (window.confirm('Cancel this bill?')) cancelMut.mutate(bill._id);
+            }}
+          />
         </Modal>
 
         <Modal isOpen={showEditBill} onClose={() => setShowEditBill(false)} title="Edit Bill" size="full">
@@ -1527,7 +1736,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           <InvoicePrint
             bill={previewData}
             onClose={() => setShowPrintPreview(null)}
-            onDownloadPdf={(id) => downloadBillPdf(id)}
+            onDownloadPdf={(id) => downloadBillPdf(id, false, 'A4')}
+            onDownloadPdfA5={(id) => downloadBillPdf(id, false, 'A5')}
             onDownloadThermal={(id) => downloadBillPdf(id, true)}
           />
         )}

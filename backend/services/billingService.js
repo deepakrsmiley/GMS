@@ -265,16 +265,18 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
       Procedure: 'Procedure',
       Nursing: 'Nursing',
       Injection: 'Procedure',
+      Laboratory: 'Laboratory',
       Other: 'Miscellaneous',
     };
     for (const usage of adm.serviceUsages || []) {
       if (isBilled(billedRefs, 'IPAdmission', usage._id)) continue;
 
       const unitLabel = usage.chargeType === 'per_hour' ? 'hr' : usage.chargeType === 'per_day' ? 'day' : 'use';
+      const billCategory = serviceCategoryMap[usage.category] || 'Procedure';
       charges.push(makeCharge({
         id: `ip-service-${usage._id}`,
-        category: serviceCategoryMap[usage.category] || 'Procedure',
-        type: usage.category === 'Injection' ? 'procedure' : 'procedure',
+        category: billCategory,
+        type: usage.category === 'Laboratory' ? 'lab' : 'procedure',
         description: `${usage.serviceName} × ${usage.quantity} ${unitLabel}(s)${usage.notes ? ` - ${usage.notes}` : ''}`,
         quantity: usage.quantity,
         unitPrice: usage.unitPrice,
@@ -444,34 +446,67 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
 };
 
 exports.getPendingDischargeBilling = async () => {
-  const discharged = await IPAdmission.find({ status: 'discharged' })
+  // Admitted (in-stay) + discharged-but-not-yet-billed IP admissions
+  const admissions = await IPAdmission.find({
+    status: { $in: ['admitted', 'discharged'] },
+  })
     .populate('patient', 'patientId name phone age gender')
     .populate('doctor', 'name')
     .populate('department', 'name')
     .populate('bed', 'bedNumber type dailyRate')
-    .sort('-dischargeDate')
-    .limit(50);
+    .sort('-admissionDate')
+    .limit(100);
 
   const results = [];
-  for (const adm of discharged) {
+  for (const adm of admissions) {
+    // Broken / deleted patient refs must not crash the whole list
+    if (!adm.patient?._id) continue;
+
     const billedRefs = await getBilledReferenceIds(adm.patient._id);
-    if (!isBilled(billedRefs, 'IPAdmission', adm._id)) {
-      const stayDays = daysBetween(adm.admissionDate, adm.dischargeDate);
-      results.push({
-        admissionId: adm._id,
-        admissionNumber: adm.admissionNumber,
-        patient: adm.patient,
-        doctor: adm.doctor,
-        department: adm.department,
-        bed: adm.bed,
-        admissionDate: adm.admissionDate,
-        dischargeDate: adm.dischargeDate,
-        stayDays,
-        estimatedRoomCharges: stayDays * (adm.bed?.dailyRate || 500),
-        status: 'pending_billing',
-      });
-    }
+    const admissionAlreadyBilled = isBilled(billedRefs, 'IPAdmission', adm._id);
+
+    // Discharged: only show if this admission is not yet billed
+    // Admitted: always show so staff can preview usage & amount during stay
+    if (adm.status === 'discharged' && admissionAlreadyBilled) continue;
+
+    const endDate = adm.dischargeDate || new Date();
+    const stayDays = daysBetween(adm.admissionDate, endDate);
+    const dailyRate = adm.bed?.dailyRate || (adm.bed?.type === 'icu' ? 3000 : 500);
+    const estimatedRoomCharges = stayDays * dailyRate;
+
+    // Quick estimate of logged service usages (exact total comes from charges API on open)
+    const serviceEstimate = (adm.serviceUsages || []).reduce((sum, u) => {
+      if (isBilled(billedRefs, 'IPAdmission', u._id)) return sum;
+      return sum + (Number(u.quantity) || 0) * (Number(u.unitPrice) || 0);
+    }, 0);
+
+    results.push({
+      admissionId: adm._id,
+      admissionNumber: adm.admissionNumber,
+      patient: adm.patient,
+      doctor: adm.doctor,
+      department: adm.department,
+      bed: adm.bed,
+      admissionDate: adm.admissionDate,
+      dischargeDate: adm.dischargeDate || null,
+      stayDays,
+      estimatedRoomCharges,
+      estimatedServiceCharges: serviceEstimate,
+      estimatedTotal: estimatedRoomCharges + (admissionAlreadyBilled ? 0 : ADMISSION_FEE) + serviceEstimate,
+      admissionBilled: admissionAlreadyBilled,
+      status: adm.status === 'admitted' ? 'admitted' : 'pending_billing',
+      admissionStatus: adm.status,
+    });
   }
+
+  // Admitted first, then discharged pending billing
+  results.sort((a, b) => {
+    if (a.admissionStatus !== b.admissionStatus) {
+      return a.admissionStatus === 'admitted' ? -1 : 1;
+    }
+    return new Date(b.admissionDate) - new Date(a.admissionDate);
+  });
+
   return results;
 };
 

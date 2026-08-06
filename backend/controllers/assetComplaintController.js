@@ -51,7 +51,53 @@ exports.createComplaint = asyncHandler(async (req, res, next) => {
   }
   await asset.save();
 
+  // Track failure metrics on equipment master
+  asset.failureCount = (asset.failureCount || 0) + 1;
+  asset.lastBreakdownDate = new Date();
+  await asset.save();
+
   const complaint = await AssetComplaint.create(req.body);
+
+  try {
+    const { notifyRoles } = require('../utils/notify');
+    const BmeWorkOrder = require('../models/BmeWorkOrder');
+    const { recordLifecycle } = require('../utils/bemsHelpers');
+
+    const wo = await BmeWorkOrder.create({
+      type: 'Breakdown',
+      equipment: asset._id,
+      complaint: complaint._id,
+      department: asset.department,
+      priority: req.body.priority || 'Medium',
+      status: 'Pending',
+      description: req.body.problemDescription || req.body.description || 'Equipment complaint',
+      createdBy: req.user._id,
+    });
+
+    await recordLifecycle({
+      equipment: asset._id,
+      stage: 'Breakdown',
+      title: `Complaint ${complaint.complaintNumber}`,
+      description: req.body.problemDescription,
+      relatedId: complaint._id,
+      relatedModel: 'AssetComplaint',
+      user: req.user,
+    });
+
+    await notifyRoles(req, {
+      roles: ['Biomedical Engineer', 'Admin', 'Super Admin'],
+      title: req.body.priority === 'Critical' ? 'Critical Equipment Breakdown' : 'New equipment complaint',
+      message: `${asset.name} (${asset.assetId}) — ${req.body.priority || 'Medium'}: ${(req.body.problemDescription || req.body.description || 'issue').slice(0, 120)}`,
+      type: 'asset',
+      link: '/biomedical?tab=complaints',
+      relatedId: complaint._id,
+      relatedModel: 'AssetComplaint',
+      excludeUserId: req.user._id,
+    });
+
+    complaint._doc.workOrder = wo;
+  } catch (_) { /* ignore */ }
+
   res.status(201).json({ success: true, data: complaint });
 });
 
@@ -80,6 +126,27 @@ exports.updateComplaint = asyncHandler(async (req, res, next) => {
     .populate('asset', 'assetId name')
     .populate('reportedBy', 'name')
     .populate('closedBy', 'name');
+
+  const underRepair =
+    ['In Progress', 'Assigned', 'Under Repair'].includes(req.body.status) ||
+    req.body.assetStatus === 'Under Maintenance' ||
+    req.body.assetStatus === 'Repair In Progress';
+
+  if (underRepair && complaint.status !== req.body.status) {
+    try {
+      const { notifyRoles } = require('../utils/notify');
+      await notifyRoles(req, {
+        roles: ['Admin', 'Super Admin'],
+        title: 'Asset under repair',
+        message: `${updated.asset?.name || updated.assetName || 'Asset'} is ${req.body.status || 'under maintenance'}`,
+        type: 'asset',
+        link: '/asset-complaints',
+        relatedId: updated._id,
+        relatedModel: 'AssetComplaint',
+        excludeUserId: req.user._id,
+      });
+    } catch (_) { /* ignore */ }
+  }
 
   res.status(200).json({ success: true, data: updated });
 });

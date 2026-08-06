@@ -406,6 +406,24 @@ exports.createBill = asyncHandler(async (req, res, next) => {
     .populate("items.medicine", "name currentStock");
 
   const itemCount = req.body.items.length;
+
+  try {
+    const { notifyRoles } = require('../utils/notify');
+    const due = Number(populated.totalAmount || 0) - Number(populated.paidAmount || 0) - Number(populated.advanceAmount || 0);
+    if (due > 0.01) {
+      await notifyRoles(req, {
+        roles: ['Admin', 'Super Admin', 'Pharmacist', 'Accountant', 'Receptionist'],
+        title: 'Unpaid bill',
+        message: `Bill ${populated.billNumber} — ${populated.patient?.name || 'Patient'} owes ₹${due.toFixed(2)}`,
+        type: 'billing',
+        link: '/billing',
+        relatedId: populated._id,
+        relatedModel: 'Bill',
+        excludeUserId: req.user._id,
+      });
+    }
+  } catch (_) { /* ignore */ }
+
   res.status(201).json({
     success: true,
     data: populated,
@@ -588,6 +606,20 @@ exports.recordPayment = asyncHandler(async (req, res, next) => {
     .populate("patient", "patientId name phone")
     .populate("items.medicine", "name");
 
+  try {
+    const { notifyRoles } = require('../utils/notify');
+    await notifyRoles(req, {
+      roles: ['Admin', 'Super Admin', 'Pharmacist', 'Accountant', 'Receptionist'],
+      title: 'Payment received',
+      message: `₹${amount.toFixed(2)} on bill ${bill.billNumber} — ${populated.patient?.name || 'Patient'}`,
+      type: 'billing',
+      link: '/billing',
+      relatedId: bill._id,
+      relatedModel: 'Bill',
+      excludeUserId: req.user._id,
+    });
+  } catch (_) { /* ignore */ }
+
   res.status(200).json({ success: true, data: populated });
 });
 
@@ -607,7 +639,8 @@ exports.printInvoice = asyncHandler(async (req, res, next) => {
     format: "invoice",
   });
   await bill.save();
-  await generateInvoicePDF(bill, res);
+  const pageSize = String(req.query.size || 'A4').toUpperCase() === 'A5' ? 'A5' : 'A4';
+  await generateInvoicePDF(bill, res, undefined, { size: pageSize });
 });
 
 exports.printThermal = asyncHandler(async (req, res, next) => {

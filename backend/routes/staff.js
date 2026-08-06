@@ -5,7 +5,8 @@ const {
   getStaffMember, 
   createStaff, 
   updateStaff, 
-  toggleStaffStatus, 
+  toggleStaffStatus,
+  deleteStaff,
   getDoctors 
 } = require('../controllers/staffController');
 const { authenticateUser, authorizeRoles } = require('../middleware/auth');
@@ -22,7 +23,8 @@ router.route('/')
 
 router.route('/:id')
   .get(authorizeRoles('Super Admin', 'Admin'), getStaffMember)
-  .put(authorizeRoles('Super Admin', 'Admin'), updateStaff);
+  .put(authorizeRoles('Super Admin', 'Admin'), updateStaff)
+  .delete(authorizeRoles('Super Admin', 'Admin'), deleteStaff);
 
 router.put('/:id/toggle-status', authorizeRoles('Super Admin', 'Admin'), toggleStaffStatus);
 

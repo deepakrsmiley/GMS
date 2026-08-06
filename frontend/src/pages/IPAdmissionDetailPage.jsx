@@ -14,6 +14,7 @@ import Modal from '../components/common/Modal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useBranding } from '../hooks/useBranding';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
+import '../styles/dischargeSummary.css';
 
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-IN') : '—');
 const fmtDateTime = (v) => (v ? new Date(v).toLocaleString('en-IN') : '—');
@@ -140,14 +141,57 @@ const EMPTY_MATERNITY = {
   treatmentGivenAtReferral: '',
 };
 
+const DEFAULT_LAB_ROWS = [
+  { name: 'HB %', report: '' },
+  { name: 'HBsAg', report: '' },
+  { name: 'Bld Group', report: '' },
+  { name: 'HIV/VDRL', report: '' },
+  { name: 'Creatinine', report: '' },
+  { name: 'Blood Sugar', report: '' },
+  { name: 'BT', report: '' },
+  { name: 'CT', report: '' },
+];
+
 const EMPTY_FORM = {
-  diagnosis: '', clinicalFindings: '', procedures: '', treatmentGiven: '', hospitalCourse: '',
-  dama: 'No', referred: 'No', referredTo: '', absconded: 'No', death: 'No',
-  medicationsOnDischarge: '', followUpAdvice: '', dischargeInstructions: '', remarks: '',
-  // ── fields matching the printed discharge summary form ──
-  chiefComplaints: '', pastHistory: '', physicalExamination: '',
+  allergyAlert: '',
+  addressNote: '',
+  rchId: '',
+  diagnosis: '',
+  chiefComplaints: '',
+  pastHistory: 'Nil relevant',
+  physicalExamination: '',
   deliveryDate: '',
   obstetricHistory: { rmp: '', lmp: '', edd: '' },
+  labInvestigations: DEFAULT_LAB_ROWS.map((r) => ({ ...r })),
+  echoReport: '',
+  investigationsNote: 'Remaining reports all with patient including ECG, Scan etc...',
+  hospitalCourse: '',
+  babyDetails: '',
+  postnatalPeriod: '',
+  hospitalMedications: '',
+  conditionOnDischarge: '',
+  pvStatus: '',
+  medicationsOnDischarge: '',
+  motherWarnings: 'To report immediately to hospital in case of Fever, Headache, Vomiting, Blurring of vision, abdominal pain or foul smelling discharge or Bleeding P.V',
+  dietaryAdvice: 'To take normal diet, High protein diet and plenty of oral fluids.',
+  babyWarnings: 'To report immediately if Baby has Poor feeding, Fever, Yellowish discolouration of the baby.',
+  immunizationNote: 'IMMUNISATION SCHEDULED.',
+  supplementsAdvice: 'CONTINUE IRON AND CALCIUM SUPPLEMENTS THROUGHOUT LACTATION',
+  babyLabAdvice: 'Advised to do BLOOD GROUPING, SERUM BILIRUBIN, FREE T3T4TSH to the baby after 5 days',
+  customInstructions: '',
+  reviewAppointment: '',
+  emergencyContact: '',
+  clinicalFindings: '',
+  procedures: '',
+  treatmentGiven: '',
+  followUpAdvice: '',
+  dischargeInstructions: '',
+  dama: 'No',
+  referred: 'No',
+  referredTo: '',
+  absconded: 'No',
+  death: 'No',
+  remarks: '',
   maternityAdvice: { ...EMPTY_MATERNITY, dischargeDrugs: { ...EMPTY_MATERNITY.dischargeDrugs }, referral: { ...EMPTY_MATERNITY.referral } },
 };
 
@@ -231,6 +275,9 @@ export default function IPAdmissionDetailPage() {
       ...EMPTY_FORM,
       ...dd,
       deliveryDate: toDateTimeInputValue(dd.deliveryDate),
+      labInvestigations: Array.isArray(dd.labInvestigations) && dd.labInvestigations.length
+        ? dd.labInvestigations.map((r) => ({ name: r.name || '', report: r.report || '' }))
+        : DEFAULT_LAB_ROWS.map((r) => ({ ...r })),
       obstetricHistory: {
         rmp: dd.obstetricHistory?.rmp || '',
         lmp: toDateInputValue(dd.obstetricHistory?.lmp),
@@ -275,6 +322,19 @@ export default function IPAdmissionDetailPage() {
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const setNested = (parent, key) => (e) => setForm((f) => ({ ...f, [parent]: { ...f[parent], [key]: e.target.value } }));
+  const setLabRow = (idx, field) => (e) => setForm((f) => {
+    const rows = [...(f.labInvestigations || [])];
+    rows[idx] = { ...rows[idx], [field]: e.target.value };
+    return { ...f, labInvestigations: rows };
+  });
+  const addLabRow = () => setForm((f) => ({
+    ...f,
+    labInvestigations: [...(f.labInvestigations || []), { name: '', report: '' }],
+  }));
+  const removeLabRow = (idx) => setForm((f) => ({
+    ...f,
+    labInvestigations: (f.labInvestigations || []).filter((_, i) => i !== idx),
+  }));
   const setMaternity = (key) => (e) => setForm((f) => ({
     ...f,
     maternityAdvice: { ...f.maternityAdvice, [key]: e.target.value },
@@ -306,6 +366,7 @@ export default function IPAdmissionDetailPage() {
   };
   const ma = form.maternityAdvice || EMPTY_MATERNITY;
   const adviceChecked = new Set((ma.adviceChecked || []).map(Number));
+  const labRows = form.labInvestigations || [];
 
   const computedDischargeType = () => {
     if (form.death === 'Yes') return 'death';
@@ -380,6 +441,17 @@ export default function IPAdmissionDetailPage() {
 
   const patient = admission.patient || {};
   const isDischarged = admission.status === 'discharged';
+  const allergyLine = form.allergyAlert
+    || ((patient.allergies || []).length
+      ? `${(patient.allergies || []).join(', ').toUpperCase()} ALLERGY`
+      : '');
+  const addressDisplay = form.addressNote
+    || [
+      patient.address?.street,
+      [patient.address?.city, patient.address?.state, patient.address?.pincode].filter(Boolean).join(', '),
+      patient.phone ? `PH: ${patient.phone}` : '',
+    ].filter(Boolean).join('\n');
+  const rchDisplay = form.rchId || patient.rchId || '';
 
   const counts = {
     medications: admission.medications?.length || 0,
@@ -617,93 +689,229 @@ export default function IPAdmissionDetailPage() {
           )}
 
           {section === 'discharge' && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-              {/* Form */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5 space-y-5">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start ds-paper">
+              {/* Form — exact paper order */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-gray-700 p-5 space-y-3 max-h-[78vh] overflow-y-auto">
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">Discharge Summary</h3>
-                  <p className="text-xs text-gray-400">Fill the discharge summary details below</p>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">Discharge Summary</h3>
+                  <p className="text-xs text-slate-500">3 pages — same order as your printed discharge summary. Tamil → editable text box on page 3.</p>
                 </div>
 
-                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                  Fill the same sections as the printed hospital discharge summary. Print / Download uses this exact layout.
-                </p>
+                <div className="ds-page-banner">Page 1 of 3 <span>Header → Physical Examination</span></div>
 
-                <NumberedField n={1} label="Diagnosis">
-                  <textarea rows={2} className="input-field" value={form.diagnosis} onChange={set('diagnosis')} placeholder="Primi 36 weeks 6 days gestation with Oligohydramnios admitted for safe confinement." />
-                </NumberedField>
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Allergy alert (top of paper)</h4>
+                  <div className="ds-section__body">
+                    <input className="input-field" value={form.allergyAlert} onChange={set('allergyAlert')} placeholder="INJ. XONE ALLERGY (leave blank to use patient allergies)" />
+                  </div>
+                </div>
 
-                <NumberedField n={2} label="Menstrual History">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Patient info (auto + delivery date)</h4>
+                  <div className="ds-section__body space-y-2">
+                    <p className="text-xs text-slate-500">Name, age/sex, IP no, DOA, DOD, consultant &amp; department come from admission. Set delivery date below.</p>
                     <div>
-                      <label className="text-[11px] text-gray-400 mb-1 block">RMP</label>
-                      <input className="input-field" placeholder="3/28 DAYS CYCL" value={form.obstetricHistory.rmp} onChange={setNested('obstetricHistory', 'rmp')} />
-                    </div>
-                    <div>
-                      <label className="text-[11px] text-gray-400 mb-1 block">LMP</label>
-                      <input type="date" className="input-field" value={form.obstetricHistory.lmp} onChange={setNested('obstetricHistory', 'lmp')} />
-                    </div>
-                    <div>
-                      <label className="text-[11px] text-gray-400 mb-1 block">EDD</label>
-                      <input type="date" className="input-field" value={form.obstetricHistory.edd} onChange={setNested('obstetricHistory', 'edd')} />
+                      <label className="ds-label">D.O.Delivery</label>
+                      <input type="datetime-local" className="input-field" value={form.deliveryDate} onChange={set('deliveryDate')} />
                     </div>
                   </div>
-                  <div className="mt-2">
-                    <label className="text-[11px] text-gray-400 mb-1 block">D.O.DELIVERY (shown on summary)</label>
-                    <input type="datetime-local" className="input-field" value={form.deliveryDate} onChange={set('deliveryDate')} />
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Address / RCH ID</h4>
+                  <div className="ds-section__body ds-grid-2">
+                    <div>
+                      <label className="ds-label">Address (override — blank uses patient address)</label>
+                      <textarea rows={3} className="input-field" value={form.addressNote} onChange={set('addressNote')} placeholder="Street, village, PH: …" />
+                    </div>
+                    <div>
+                      <label className="ds-label">RCH ID</label>
+                      <input className="input-field" value={form.rchId} onChange={set('rchId')} placeholder="133011696962" />
+                    </div>
                   </div>
-                </NumberedField>
+                </div>
 
-                <NumberedField n={3} label="Chief Complaints">
-                  <textarea rows={4} className="input-field" value={form.chiefComplaints} onChange={set('chiefComplaints')} placeholder="Patient was admitted with 36 weeks 6 days gestation with C/O Pain Abdomen. No H/O Bleeding PV / No H/O draining PV. Fetal movements felt well." />
-                </NumberedField>
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Diagnosis</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={2} className="input-field" value={form.diagnosis} onChange={set('diagnosis')} placeholder="Primi 36 weeks 6 days gestation with Oligohydramnios admitted for safe confinement." />
+                  </div>
+                </div>
 
-                <NumberedField n={4} label="Past History">
-                  <textarea rows={2} className="input-field" value={form.pastHistory} onChange={set('pastHistory')} placeholder="Nil relevant" />
-                </NumberedField>
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Menstrual History</h4>
+                  <div className="ds-section__body">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="ds-label">RMP</label>
+                        <input className="input-field" placeholder="3/28 DAYS CYCL" value={form.obstetricHistory?.rmp || ''} onChange={setNested('obstetricHistory', 'rmp')} />
+                      </div>
+                      <div>
+                        <label className="ds-label">LMP</label>
+                        <input type="date" className="input-field" value={form.obstetricHistory?.lmp || ''} onChange={setNested('obstetricHistory', 'lmp')} />
+                      </div>
+                      <div>
+                        <label className="ds-label">EDD</label>
+                        <input type="date" className="input-field" value={form.obstetricHistory?.edd || ''} onChange={setNested('obstetricHistory', 'edd')} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                <NumberedField n={5} label="Physical Examination">
-                  <textarea rows={5} className="input-field" value={form.physicalExamination} onChange={set('physicalExamination')} placeholder={'Patient general condition fair, Not Pale, No P.E,\nBP-110/70mm/Hg, pulse-86/mint,\nCVS/RS- NAD,\nP/A- Uterus 36weeks, acting, Head unengaged, FHS - 140/min.\nP/V -Cx 25 %effaced/Osadmits 1 finger/memb +/ Vx at brim...\nFoleys induction done.'} />
-                </NumberedField>
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Chief Complaints</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={4} className="input-field" value={form.chiefComplaints} onChange={set('chiefComplaints')} placeholder="Patient was admitted with …" />
+                  </div>
+                </div>
 
-                <NumberedField n={6} label="Medications / Medicine on Discharge">
-                  <textarea
-                    rows={4}
-                    className="input-field"
-                    value={form.medicationsOnDischarge}
-                    onChange={set('medicationsOnDischarge')}
-                    placeholder={'1. Tab. Calpol 650mg 1-1-1 x 3 days\n2. Cap. Amoxicillin 500mg 1-0-1 x 5 days\n3. Syp. Asthakind 10ml - 0 - 10ml'}
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">Printed on discharge summary under MEDICATIONS ON DISCHARGE</p>
-                </NumberedField>
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Past History</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={2} className="input-field" value={form.pastHistory} onChange={set('pastHistory')} />
+                  </div>
+                </div>
 
-                <NumberedField n={7} label="Treatment Given">
-                  <textarea rows={2} className="input-field" value={form.treatmentGiven} onChange={set('treatmentGiven')} placeholder="IV Fluids, Antibiotics, Analgesics..." />
-                </NumberedField>
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Physical Examination</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={5} className="input-field" value={form.physicalExamination} onChange={set('physicalExamination')} placeholder="BP, pulse, CVS/RS, P/A, P/V…" />
+                  </div>
+                </div>
+
+                <div className="ds-page-banner">Page 2 of 3 <span>Lab → Condition on Discharge</span></div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Laboratory Investigation Reports</h4>
+                  <div className="ds-section__body">
+                    {labRows.map((row, idx) => (
+                      <div key={idx} className="ds-lab-row">
+                        <input className="input-field" placeholder="NAME" value={row.name} onChange={setLabRow(idx, 'name')} />
+                        <input className="input-field" placeholder="REPORT" value={row.report} onChange={setLabRow(idx, 'report')} />
+                        <button type="button" className="text-xs text-red-500 px-1" onClick={() => removeLabRow(idx)}>Remove</button>
+                      </div>
+                    ))}
+                    <button type="button" className="text-xs text-blue-600 font-medium mt-1" onClick={addLabRow}>+ Add lab row</button>
+                    <div className="mt-3">
+                      <label className="ds-label">Echo / imaging report</label>
+                      <textarea rows={4} className="input-field" value={form.echoReport} onChange={set('echoReport')} placeholder={'NO RWMA\nNORMAL LVSF EF 62 %\n…'} />
+                    </div>
+                    <div className="mt-2">
+                      <label className="ds-label">Note under investigations</label>
+                      <input className="input-field" value={form.investigationsNote} onChange={set('investigationsNote')} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Course of Treatment in Hospital</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={4} className="input-field" value={form.hospitalCourse} onChange={set('hospitalCourse')} placeholder={'LABOUR NATURAL WITH EPISIOTOMY:\nWith good uterine contraction…'} />
+                  </div>
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Baby Details</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={3} className="input-field" value={form.babyDetails} onChange={set('babyDetails')} placeholder="Live late preterm male Baby, Date… Weight… Apgar… Birth dose Vaccination…" />
+                  </div>
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Postnatal Period</h4>
+                  <div className="ds-section__body space-y-2">
+                    <div>
+                      <label className="ds-label">Status / narrative</label>
+                      <textarea rows={2} className="input-field" value={form.postnatalPeriod} onChange={set('postnatalPeriod')} placeholder="Uneventful. She received a course of antibiotics and analgesics." />
+                    </div>
+                    <div>
+                      <label className="ds-label">Hospital medications (injections during stay)</label>
+                      <textarea rows={4} className="input-field" value={form.hospitalMedications} onChange={set('hospitalMedications')} placeholder={'INJ. PIPTAZ 4.5 gm BD\nINJ. METROGYL I.V TDS\n…'} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Condition on Discharge</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={5} className="input-field" value={form.conditionOnDischarge} onChange={set('conditionOnDischarge')} placeholder={'General conditions Fair,\nNot Pale,\nNo P.E;\nBP-110/70…'} />
+                  </div>
+                </div>
+
+                <div className="ds-page-banner">Page 3 of 3 <span>Advice → Signature (Tamil → text box)</span></div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">P/V / clinical status (start of page 3)</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={2} className="input-field" value={form.pvStatus} onChange={set('pvStatus')} placeholder="P/V - Lochia healthy, No undue bleeding p.v" />
+                  </div>
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Further Advice on Discharge (medications)</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={5} className="input-field" value={form.medicationsOnDischarge} onChange={set('medicationsOnDischarge')} placeholder={'TAB: TETRAFAST DSR 1-0-1 X 5days.\nTAB: CHYMORAL AP 1-0-1 X 5days.\n…'} />
+                  </div>
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Patient instructions &amp; warnings</h4>
+                  <div className="ds-section__body space-y-2">
+                    <div>
+                      <label className="ds-label">Mother warnings</label>
+                      <textarea rows={2} className="input-field" value={form.motherWarnings} onChange={set('motherWarnings')} />
+                    </div>
+                    <div>
+                      <label className="ds-label">Dietary advice</label>
+                      <textarea rows={2} className="input-field" value={form.dietaryAdvice} onChange={set('dietaryAdvice')} />
+                    </div>
+                    <div>
+                      <label className="ds-label">Baby warnings</label>
+                      <textarea rows={2} className="input-field" value={form.babyWarnings} onChange={set('babyWarnings')} />
+                    </div>
+                    <div>
+                      <label className="ds-label">Immunisation</label>
+                      <input className="input-field" value={form.immunizationNote} onChange={set('immunizationNote')} />
+                    </div>
+                    <div>
+                      <label className="ds-label">Supplements</label>
+                      <input className="input-field" value={form.supplementsAdvice} onChange={set('supplementsAdvice')} />
+                    </div>
+                    <div>
+                      <label className="ds-label">Baby lab advice</label>
+                      <textarea rows={2} className="input-field" value={form.babyLabAdvice} onChange={set('babyLabAdvice')} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ds-section" style={{ borderColor: '#93c5fd', boxShadow: '0 0 0 1px #dbeafe' }}>
+                  <h4 className="ds-section__head">Custom instructions (replaces Tamil text)</h4>
+                  <div className="ds-section__body">
+                    <textarea rows={6} className="input-field" value={form.customInstructions} onChange={set('customInstructions')} placeholder="Type or paste any additional instructions for the patient / relatives here…" />
+                    <p className="ds-hint">This free-text box prints where the Tamil paragraphs appeared on the paper form.</p>
+                  </div>
+                </div>
+
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Follow-up &amp; emergency</h4>
+                  <div className="ds-section__body space-y-2">
+                    <div>
+                      <label className="ds-label">Review appointment</label>
+                      <textarea rows={2} className="input-field" value={form.reviewAppointment} onChange={set('reviewAppointment')} placeholder="Review with DR.… after 8 days in OPD. 17.07.2026 at 10:30am" />
+                    </div>
+                    <div>
+                      <label className="ds-label">Emergency contact</label>
+                      <input className="input-field" value={form.emergencyContact} onChange={set('emergencyContact')} placeholder="For emergency and for further appointment call …" />
+                    </div>
+                  </div>
+                </div>
 
                 <button type="button" onClick={() => setShowMore((v) => !v)} className="text-xs text-blue-600 hover:underline font-medium">
-                  {showMore ? 'Hide' : 'Show'} additional sections (course, follow-up, DAMA, etc.)
+                  {showMore ? 'Hide' : 'Show'} admin flags (DAMA / refer / death) &amp; maternity page-2 form
                 </button>
 
                 {showMore && (
                   <div className="space-y-4 border-t border-gray-100 dark:border-gray-700 pt-4">
-                    <NumberedField n={8} label="Clinical Findings">
-                      <textarea rows={2} className="input-field" value={form.clinicalFindings} onChange={set('clinicalFindings')} />
-                    </NumberedField>
-                    <NumberedField n={9} label="Procedure">
-                      <textarea rows={1} className="input-field" value={form.procedures} onChange={set('procedures')} placeholder="Nil" />
-                    </NumberedField>
-                    <NumberedField n={10} label="Course Given">
-                      <textarea rows={2} className="input-field" value={form.hospitalCourse} onChange={set('hospitalCourse')} />
-                    </NumberedField>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Follow-up Advice</label>
-                      <textarea rows={2} className="input-field" value={form.followUpAdvice} onChange={set('followUpAdvice')} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Discharge Instructions</label>
-                      <textarea rows={2} className="input-field" value={form.dischargeInstructions} onChange={set('dischargeInstructions')} />
-                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-sm font-medium mb-1">DAMA</label>
@@ -738,313 +946,184 @@ export default function IPAdmissionDetailPage() {
                       <label className="block text-sm font-medium mb-1">Remarks</label>
                       <textarea rows={2} className="input-field" value={form.remarks} onChange={set('remarks')} />
                     </div>
+
+                    <div className="border-t border-gray-100 pt-4 space-y-3">
+                      <h4 className="text-sm font-semibold">Optional maternity advice page (PDF page 2)</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Condition of mother at discharge</label>
+                          <select className="input-field" value={ma.motherCondition} onChange={setMaternity('motherCondition')}>
+                            <option value="">Select…</option>
+                            {MOTHER_CONDITIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Condition of baby at discharge</label>
+                          <select className="input-field" value={ma.babyCondition} onChange={setMaternity('babyCondition')}>
+                            <option value="">Select…</option>
+                            {BABY_CONDITIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Advice on discharge / Referral</label>
+                        <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto border border-gray-100 rounded-lg p-3">
+                          {ADVICE_ITEMS.map((item, idx) => (
+                            <label key={item} className="flex items-start gap-2 text-xs cursor-pointer">
+                              <input type="checkbox" className="mt-0.5" checked={adviceChecked.has(idx)} onChange={() => toggleAdvice(idx)} />
+                              <span>{item}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Review date (page 2)</label>
+                        <input type="date" className="input-field" value={ma.reviewDate} onChange={setMaternity('reviewDate')} />
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                {/* Page 2 — Maternity advice / referral form */}
-                <div className="border-t border-gray-100 dark:border-gray-700 pt-5 space-y-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Last page — Maternity Advice / Referral</h4>
-                    <p className="text-xs text-gray-400">Printed as page 2 of the A4 discharge PDF (exact form layout)</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Condition of mother at discharge</label>
-                      <select className="input-field" value={ma.motherCondition} onChange={setMaternity('motherCondition')}>
-                        <option value="">Select…</option>
-                        {MOTHER_CONDITIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Condition of baby at discharge</label>
-                      <select className="input-field" value={ma.babyCondition} onChange={setMaternity('babyCondition')}>
-                        <option value="">Select…</option>
-                        {BABY_CONDITIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Advice on discharge / Referral</label>
-                    <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto border border-gray-100 dark:border-gray-700 rounded-lg p-3">
-                      {ADVICE_ITEMS.map((item, idx) => (
-                        <label key={item} className="flex items-start gap-2 text-xs text-gray-700 dark:text-gray-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5"
-                            checked={adviceChecked.has(idx)}
-                            onChange={() => toggleAdvice(idx)}
-                          />
-                          <span>{item}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Review date</label>
-                    <input type="date" className="input-field" value={ma.reviewDate} onChange={setMaternity('reviewDate')} />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Discharge Drugs for Mother</label>
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <input className="input-field" placeholder="6. Tab. Iron (e.g. 1-0-1)" value={ma.dischargeDrugs?.iron || ''} onChange={setMaternityDrug('iron')} />
-                        <input className="input-field" placeholder="Days" value={ma.dischargeDrugs?.ironDays || ''} onChange={setMaternityDrug('ironDays')} />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input className="input-field" placeholder="7. Calcium & Vit. D3" value={ma.dischargeDrugs?.calcium || ''} onChange={setMaternityDrug('calcium')} />
-                        <input className="input-field" placeholder="Days" value={ma.dischargeDrugs?.calciumDays || ''} onChange={setMaternityDrug('calciumDays')} />
-                      </div>
-                      <input className="input-field" placeholder="8. Additional drug" value={ma.dischargeDrugs?.line8 || ''} onChange={setMaternityDrug('line8')} />
-                      <input className="input-field" placeholder="9. Additional drug" value={ma.dischargeDrugs?.line9 || ''} onChange={setMaternityDrug('line9')} />
-                      <input className="input-field" placeholder="10. Additional drug" value={ma.dischargeDrugs?.line10 || ''} onChange={setMaternityDrug('line10')} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">If referred</label>
-                    <div className="space-y-2">
-                      <input className="input-field" placeholder="Name of facility referred to" value={ma.referral?.facility || ''} onChange={setMaternityReferral('facility')} />
-                      <input className="input-field" placeholder="Mode of Referral" value={ma.referral?.mode || ''} onChange={setMaternityReferral('mode')} />
-                      <input className="input-field" placeholder="Reason for referral" value={ma.referral?.reason || ''} onChange={setMaternityReferral('reason')} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[11px] text-gray-400 mb-1 block">Advance notification</label>
-                          <select className="input-field" value={ma.referral?.advanceNotification || ''} onChange={setMaternityReferral('advanceNotification')}>
-                            <option value="">Yes / No</option>
-                            <option value="Yes">Yes</option>
-                            <option value="No">No</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-gray-400 mb-1 block">Accompanied by HCP</label>
-                          <select className="input-field" value={ma.referral?.accompanied || ''} onChange={setMaternityReferral('accompanied')}>
-                            <option value="">Yes / No</option>
-                            <option value="Yes">Yes</option>
-                            <option value="No">No</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Condition at Referral (Consciousness / Temp / Pulse / RR / BP / Others)</label>
-                    <textarea rows={2} className="input-field" value={ma.referralVitals || ''} onChange={setMaternity('referralVitals')} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Treatment given with time</label>
-                    <textarea rows={2} className="input-field" value={ma.treatmentGivenAtReferral || ''} onChange={setMaternity('treatmentGivenAtReferral')} />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-3 pt-2">
+                <div className="flex flex-wrap gap-3 pt-2 sticky bottom-0 bg-white dark:bg-gray-800 py-2">
                   <button type="button" onClick={handleReset} className="btn-secondary"><RotateCcw size={15} /> Reset</button>
                   <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveDraft} className="btn-secondary"><Save size={15} /> Save Draft</button>
-                  <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveAndPreview} className="btn-primary flex-1 justify-center"><Eye size={15} /> Save & Preview</button>
+                  <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveAndPreview} className="btn-primary flex-1 justify-center"><Eye size={15} /> Save &amp; Preview</button>
                 </div>
               </div>
 
-              {/* Live preview */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
+              {/* Live preview — 3 paper pages */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-gray-700 p-5">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-semibold text-gray-900 dark:text-white">Discharge Summary Preview</h3>
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-white">Discharge Summary Preview</h3>
+                    <p className="text-xs text-slate-500">Packed continuously — PDF pages only break when content fills the page</p>
+                  </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={handlePrint} className="btn-secondary text-xs py-1.5 px-3"><Printer size={13} /> Print</button>
                     <button type="button" onClick={handleDownloadPdf} className="btn-secondary text-xs py-1.5 px-3"><Download size={13} /> Download PDF</button>
                   </div>
                 </div>
 
-                {/* Exact paper-style preview */}
-                <div className="max-h-[70vh] overflow-y-auto space-y-4">
-                <div className="border border-gray-300 bg-white text-black p-5 font-serif text-[12px] leading-snug space-y-3">
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wide">Page 1 — Discharge Summary</p>
-                  {(patient.allergies || []).length > 0 && (
-                    <p className="text-center font-bold uppercase tracking-wide">
-                      {(patient.allergies || []).join(', ').toUpperCase()} ALLERGY
-                    </p>
-                  )}
+                <div className="max-h-[70vh] overflow-y-auto overflow-x-hidden ds-preview-stack">
+                  <article className="ds-preview-sheet">
+                    <span className="ds-preview-sheet__label">Live preview</span>
+                    {allergyLine && <p className="ds-preview-allergy">{allergyLine}</p>}
 
-                  <div className="text-center">
-                    <p className="text-xl font-bold uppercase tracking-wide">{branding.hospitalName || 'Hospital'}</p>
-                    {branding.address && <p className="text-[11px] mt-0.5">{branding.address}</p>}
-                    <p className="text-sm font-bold uppercase mt-2 tracking-wider">Discharge Summary</p>
-                  </div>
-
-                  <table className="w-full border border-black text-[11px]">
-                    <tbody>
-                      {[
-                        ['PATIENT NAME', (patient.name || '').toUpperCase(), 'D.O.A', fmtPaperDT(admission.admissionDate)],
-                        ['AGE/SEX', `${patient.age != null ? `${patient.age} YRS` : ''} / ${(patient.gender || '').toUpperCase()}`, 'D.O.DELIVERY', form.deliveryDate ? fmtPaperDT(form.deliveryDate) : '—'],
-                        ['IP.NO', admission.admissionNumber || '—', 'D.O.D', admission.dischargeDate ? fmtPaperDate(admission.dischargeDate) : '—'],
-                        ['CONSULTANT', admission.doctor?.name ? `DR.${admission.doctor.name.replace(/^dr\.?\s*/i, '').toUpperCase()}` : '—', 'DEPARTMENT', (admission.department?.name || '').toUpperCase()],
-                      ].map(([l1, v1, l2, v2]) => (
-                        <tr key={l1} className="border-b border-black last:border-0">
-                          <td className="border-r border-black px-2 py-1.5 w-1/2 align-top">
-                            <span className="font-bold">{l1}:</span> {v1}
-                          </td>
-                          <td className="px-2 py-1.5 w-1/2 align-top">
-                            <span className="font-bold">{l2}:</span> {v2}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  <div className="flex justify-between gap-4 text-[11px]">
-                    <div>
-                      <p className="font-bold underline">ADDRESS:</p>
-                      <p className="uppercase">{patient.address?.street || '—'}</p>
-                      <p className="uppercase">{[patient.address?.city, patient.address?.state, patient.address?.pincode].filter(Boolean).join(', ')}</p>
-                      {patient.phone && <p>PH: {patient.phone}</p>}
+                    <div className="text-center">
+                      <h1>{branding.hospitalName || 'Hospital'}</h1>
+                      {branding.address && <p className="text-[10.5px] mt-0.5 text-slate-600">{branding.address}</p>}
+                      <p className="ds-title">Discharge Summary</p>
                     </div>
-                    <div className="text-right font-bold whitespace-nowrap">
-                      {patient.patientId && <p>UHID - {patient.patientId}</p>}
-                      {patient.rchId && <p>RCH ID - {patient.rchId}</p>}
-                    </div>
-                  </div>
 
-                  <div className="space-y-3 text-[11.5px]">
-                    <div>
-                      <p className="font-bold underline inline">DIAGNOSIS:</p>
-                      <p className="mt-0.5 whitespace-pre-wrap">{form.diagnosis || '—'}</p>
-                    </div>
-                    {(form.obstetricHistory.rmp || form.obstetricHistory.lmp || form.obstetricHistory.edd) && (
+                    <table className="ds-info-table">
+                      <tbody>
+                        {[
+                          ['PATIENT NAME', (patient.name || '').toUpperCase(), 'D.O.A', fmtPaperDT(admission.admissionDate)],
+                          ['AGE/SEX', `${patient.age != null ? `${patient.age} YRS` : ''} / ${(patient.gender || '').toUpperCase()}`, 'D.O.DELIVERY', form.deliveryDate ? fmtPaperDT(form.deliveryDate) : '—'],
+                          ['IP.NO', admission.admissionNumber || '—', 'D.O.D', admission.dischargeDate ? fmtPaperDate(admission.dischargeDate) : '—'],
+                          ['CONSULTANT', admission.doctor?.name ? `DR.${admission.doctor.name.replace(/^dr\.?\s*/i, '').toUpperCase()}` : '—', 'DEPARTMENT', (admission.department?.name || '').toUpperCase()],
+                        ].map(([l1, v1, l2, v2]) => (
+                          <tr key={l1}>
+                            <td><strong>{l1}:</strong> {v1}</td>
+                            <td><strong>{l2}:</strong> {v2}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    <div className="ds-preview-addr">
                       <div>
-                        <p className="font-bold underline inline">MENSTRUAL HISTORY:</p>
-                        <p className="mt-0.5">
-                          {form.obstetricHistory.rmp && <>RMP, {form.obstetricHistory.rmp}<br /></>}
-                          {(form.obstetricHistory.lmp || form.obstetricHistory.edd) && (
+                        <p className="font-bold underline">ADDRESS:</p>
+                        <p className="ds-block uppercase">{addressDisplay || '—'}</p>
+                      </div>
+                      <div className="text-right font-bold whitespace-nowrap">
+                        {patient.patientId && <p>UHID - {patient.patientId}</p>}
+                        {rchDisplay && <p>RCH ID - {rchDisplay}</p>}
+                      </div>
+                    </div>
+
+                    <p className="ds-ul-head">Diagnosis:</p>
+                    <p className="ds-block">{form.diagnosis || '—'}</p>
+                    {(form.obstetricHistory?.rmp || form.obstetricHistory?.lmp || form.obstetricHistory?.edd) && (
+                      <>
+                        <p className="ds-ul-head">Menstrual History:</p>
+                        <p className="ds-block">
+                          {form.obstetricHistory?.rmp && <>RMP, {form.obstetricHistory.rmp}<br /></>}
+                          {(form.obstetricHistory?.lmp || form.obstetricHistory?.edd) && (
                             <>LMP - {fmtDotDate(form.obstetricHistory.lmp) || '—'}&nbsp;&nbsp;&nbsp;EDD - {fmtDotDate(form.obstetricHistory.edd) || '—'}</>
                           )}
                         </p>
-                      </div>
+                      </>
                     )}
-                    <div>
-                      <p className="font-bold underline inline">CHIEF COMPLAINTS:</p>
-                      <p className="mt-0.5 whitespace-pre-wrap">{form.chiefComplaints || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="font-bold underline inline">PAST HISTORY:</p>
-                      <p className="mt-0.5 whitespace-pre-wrap">{form.pastHistory || 'Nil relevant'}</p>
-                    </div>
-                    <div>
-                      <p className="font-bold underline inline">PHYSICAL EXAMINATION:</p>
-                      <p className="mt-0.5 whitespace-pre-wrap">{form.physicalExamination || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="font-bold underline inline">MEDICATIONS ON DISCHARGE:</p>
-                      <p className="mt-0.5 whitespace-pre-wrap">{form.medicationsOnDischarge || '—'}</p>
-                    </div>
-                    {form.treatmentGiven && (
-                      <div>
-                        <p className="font-bold underline inline">TREATMENT GIVEN:</p>
-                        <p className="mt-0.5 whitespace-pre-wrap">{form.treatmentGiven}</p>
-                      </div>
-                    )}
-                  </div>
+                    <p className="ds-ul-head">Chief Complaints:</p>
+                    <p className="ds-block">{form.chiefComplaints || '—'}</p>
+                    <p className="ds-ul-head">Past History:</p>
+                    <p className="ds-block">{form.pastHistory || 'Nil relevant'}</p>
+                    <p className="ds-ul-head">Physical Examination:</p>
+                    <p className="ds-block">{form.physicalExamination || '—'}</p>
 
-                  <div className="flex justify-between items-end pt-8 text-[11px]">
-                    <p>Date: {fmtPaperDate(admission.dischargeDate || new Date())}</p>
-                    <div className="text-center w-40">
-                      <div className="border-t border-black pt-1 font-bold">Consultant Signature</div>
-                      <p>Dr. {admission.doctor?.name || '—'}</p>
-                    </div>
-                  </div>
-                </div>
+                    <p className="ds-ul-head">Laboratory Investigation Reports:</p>
+                    <table className="ds-info-table" style={{ fontSize: 11 }}>
+                      <tbody>
+                        {Array.from({ length: Math.max(1, Math.ceil((labRows.filter((r) => r.name || r.report).length || 1) / 2)) }).map((_, i) => {
+                          const filled = labRows.filter((r) => r.name || r.report);
+                          const a = filled[i * 2] || { name: '—', report: '—' };
+                          const b = filled[i * 2 + 1];
+                          return (
+                            <tr key={i}>
+                              <td><strong>NAME:</strong> {a.name} &nbsp; <strong>REPORT:</strong> {a.report}</td>
+                              <td>{b ? <><strong>NAME:</strong> {b.name} &nbsp; <strong>REPORT:</strong> {b.report}</> : ''}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
 
-                {/* Page 2 — Maternity advice form (exact layout) */}
-                <div className="border border-black bg-white text-black font-sans text-[9px] leading-tight" style={{ aspectRatio: '210/297' }}>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wide px-2 pt-1 font-serif">Page 2 — Maternity Advice / Referral (A4)</p>
-                  <div className="border border-black m-1.5 flex flex-col min-h-[520px]">
-                    {/* Condition row */}
-                    <div className="grid grid-cols-2 border-b border-black">
-                      <div className="border-r border-black p-1.5">
-                        <p className="font-bold text-[10px]">Condition of mother at discharge:</p>
-                        <p className="mt-1">
-                          {MOTHER_CONDITIONS.map((o, i) => (
-                            <span key={o}>{i > 0 ? ' / ' : ''}{ma.motherCondition === o ? `[✓] ${o}` : `[ ] ${o}`}</span>
-                          ))}
-                        </p>
-                      </div>
-                      <div className="p-1.5">
-                        <p className="font-bold text-[10px]">Condition of baby at discharge:</p>
-                        <p className="mt-1">
-                          {BABY_CONDITIONS.map((o, i) => (
-                            <span key={o}>{i > 0 ? ' / ' : ''}{ma.babyCondition === o ? `[✓] ${o}` : `[ ] ${o}`}</span>
-                          ))}
-                        </p>
-                      </div>
-                    </div>
+                    <p className="ds-ul-head">Echo / Imaging:</p>
+                    <p className="ds-block">{form.echoReport || '—'}</p>
+                    {form.investigationsNote && <p className="ds-block italic">{form.investigationsNote}</p>}
 
-                    {/* Advice + Danger */}
-                    <div className="grid grid-cols-[1.1fr_0.9fr] border-b border-black flex-1">
-                      <div className="border-r border-black p-1.5">
-                        <p className="font-bold text-[10px] mb-1">Advice on discharge / Referral:</p>
-                        {ADVICE_ITEMS.map((item, idx) => (
-                          <p key={item} className="flex gap-1.5 mb-0.5">
-                            <span className="inline-block w-2.5 h-2.5 border border-black shrink-0 mt-0.5 text-[7px] leading-none text-center">
-                              {adviceChecked.has(idx) ? '✓' : ''}
-                            </span>
-                            <span>{item}</span>
-                          </p>
-                        ))}
-                        <p className="mt-2">
-                          Review date {ma.reviewDate ? fmtPaperDate(ma.reviewDate) : '_______________'} / Immediately if any danger symptoms present
-                        </p>
-                        <p className="font-bold text-[10px] mt-2 mb-1">Discharge Drugs for Mother</p>
-                        <p>6. Tab. Iron {ma.dischargeDrugs?.iron || '___ - ___ - ___'} x {ma.dischargeDrugs?.ironDays || '___'} days (Before food)</p>
-                        <p>7. Tab. Calcium &amp; Vit. D3 {ma.dischargeDrugs?.calcium || '1 - 1 - 0'} x {ma.dischargeDrugs?.calciumDays || '___'} days (After food)</p>
-                        <p>8. {ma.dischargeDrugs?.line8 || '_________________________________'}</p>
-                        <p>9. {ma.dischargeDrugs?.line9 || '_________________________________'}</p>
-                        <p>10. {ma.dischargeDrugs?.line10 || '________________________________'}</p>
-                      </div>
-                      <div className="p-1.5">
-                        <p className="font-bold text-[10px] mb-1">Danger Symptoms for mother</p>
-                        {DANGER_MOTHER.map((item) => (
-                          <p key={item} className="mb-0.5">• {item}</p>
-                        ))}
-                        <p className="font-bold text-[10px] mt-2 mb-1">Danger Symptoms for Baby</p>
-                        {DANGER_BABY.map((item) => (
-                          <p key={item} className="mb-0.5">• {item}</p>
-                        ))}
-                      </div>
-                    </div>
+                    <p className="ds-ul-head">Course of Treatment in Hospital:</p>
+                    <p className="ds-block">{form.hospitalCourse || '—'}</p>
+                    <p className="ds-ul-head">Baby Details:</p>
+                    <p className="ds-block">{form.babyDetails || '—'}</p>
+                    <p className="ds-ul-head">Postnatal Period:</p>
+                    {form.postnatalPeriod && <p className="ds-block">{form.postnatalPeriod}</p>}
+                    <p className="ds-block">{form.hospitalMedications || '—'}</p>
+                    <p className="ds-ul-head">Condition on Discharge:</p>
+                    <p className="ds-block">{form.conditionOnDischarge || '—'}</p>
 
-                    {/* If referred */}
-                    <div className="border-b border-black p-1.5 grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="font-bold text-[10px]">If referred:</p>
-                        <p className="mt-1">Name of facility referred to : {ma.referral?.facility || '.............................................'}</p>
-                        <p>Mode of Referral : {ma.referral?.mode || '.............................................................'}</p>
-                        <p>Reason for referral : {ma.referral?.reason || '...........................................................'}</p>
-                      </div>
-                      <div className="pt-4">
-                        <p>Advance notification given – {ma.referral?.advanceNotification || 'Yes / No'}</p>
-                        <p className="mt-2">Accompanied by Health Care Provider with Emergency Drug tray / Delivery tray – {ma.referral?.accompanied || 'Yes / No'}</p>
-                      </div>
-                    </div>
+                    {form.pvStatus && <p className="ds-block">{form.pvStatus}</p>}
 
-                    {/* Referral vitals */}
-                    <div className="border-b border-black p-1.5 min-h-[56px]">
-                      <p className="font-bold text-[10px]">Condition at Referral Consciousness / Temperature / Pulse / RR / BP / Others</p>
-                      <p className="mt-1 whitespace-pre-wrap">{ma.referralVitals || ''}</p>
-                    </div>
+                    <p className="ds-ul-head">Further Advice on Discharge:</p>
+                    <p className="ds-block">{form.medicationsOnDischarge || '—'}</p>
+                    {form.motherWarnings && <p className="ds-block">{form.motherWarnings}</p>}
+                    {form.dietaryAdvice && <p className="ds-block">{form.dietaryAdvice}</p>}
+                    {form.babyWarnings && <p className="ds-block">{form.babyWarnings}</p>}
+                    {form.immunizationNote && <p className="ds-block font-bold">{form.immunizationNote}</p>}
+                    {form.supplementsAdvice && <p className="ds-block font-bold uppercase">{form.supplementsAdvice}</p>}
+                    {form.babyLabAdvice && <p className="ds-block">{form.babyLabAdvice}</p>}
 
-                    {/* Treatment */}
-                    <div className="p-1.5 min-h-[56px] flex-1">
-                      <p className="font-bold text-[10px]">Treatment given with time:</p>
-                      <p className="mt-1 whitespace-pre-wrap">{ma.treatmentGivenAtReferral || ''}</p>
+                    <p className="ds-ul-head">Additional Instructions:</p>
+                    <p className="ds-block">{form.customInstructions || '—'}</p>
+
+                    {form.reviewAppointment && <p className="ds-block">• {form.reviewAppointment}</p>}
+                    {form.emergencyContact && <p className="ds-block">• {form.emergencyContact}</p>}
+
+                    <div className="ds-preview-sheet__footer">
+                      <p>Date: {fmtPaperDate(admission.dischargeDate || new Date())}</p>
+                      <div className="ds-preview-sheet__sig">
+                        Consultant Signature
+                        <p className="font-normal mt-0.5">Dr. {admission.doctor?.name || '—'}</p>
+                        {admission.doctor?.specialization && <p className="font-normal text-[10px]">{admission.doctor.specialization}</p>}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </article>
                 </div>
               </div>
             </div>
           )}
+
         </div>
       </div>
 

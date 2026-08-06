@@ -3,7 +3,14 @@ const mongoose = require('mongoose');
 const notificationSchema = new mongoose.Schema({
   title: { type: String, required: true },
   message: { type: String, required: true },
-  type: { type: String, enum: ['info', 'success', 'warning', 'error', 'queue', 'lab', 'pharmacy', 'emergency'], default: 'info' },
+  type: {
+    type: String,
+    enum: [
+      'info', 'success', 'warning', 'error', 'queue', 'lab', 'pharmacy', 'emergency',
+      'chat', 'billing', 'appointment', 'asset', 'system', 'ip',
+    ],
+    default: 'info',
+  },
   recipient: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   recipientRole: String,
   isRead: { type: Boolean, default: false },

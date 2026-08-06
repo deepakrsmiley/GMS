@@ -68,6 +68,7 @@ export default function OPServiceUsageModal({ registration, isOpen, onClose }) {
       toast.success('Usage logged');
       setForm(emptyForm());
       queryClient.invalidateQueries({ queryKey: ['opQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['opPharmacyPending'] });
       queryClient.invalidateQueries({ queryKey: ['op-registration', registration._id] });
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to log usage'),
@@ -78,6 +79,7 @@ export default function OPServiceUsageModal({ registration, isOpen, onClose }) {
     onSuccess: () => {
       toast.success('Entry removed');
       queryClient.invalidateQueries({ queryKey: ['opQueue'] });
+      queryClient.invalidateQueries({ queryKey: ['opPharmacyPending'] });
       queryClient.invalidateQueries({ queryKey: ['op-registration', registration._id] });
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to remove entry'),
@@ -128,7 +130,7 @@ export default function OPServiceUsageModal({ registration, isOpen, onClose }) {
           <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 mb-3">
             <span>No rate list set up yet — you can still type a service and price below.</span>
             <Link
-              to="/settings/services"
+              to="/masters/services"
               onClick={onClose}
               className="flex items-center gap-1 font-medium whitespace-nowrap hover:underline"
             >

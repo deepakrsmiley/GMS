@@ -1,0 +1,483 @@
+/* Corporate Patient 360° Profile */
+
+.p360 {
+  --p360-ink: #0f172a;
+  --p360-muted: #64748b;
+  --p360-line: #dbeafe;
+  --p360-surface: #ffffff;
+  --p360-canvas: #eff6ff;
+  --p360-navy: #1e3a8a;
+  --p360-accent: #2563eb;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  color: var(--p360-ink);
+}
+
+.dark .p360 {
+  --p360-ink: #f1f5f9;
+  --p360-muted: #94a3b8;
+  --p360-line: #1e3a5f;
+  --p360-surface: #1e293b;
+  --p360-canvas: #0f172a;
+  --p360-navy: #1e3a8a;
+  --p360-accent: #3b82f6;
+}
+
+.p360-topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.p360-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--p360-line);
+  background: var(--p360-surface);
+  color: var(--p360-muted);
+  cursor: pointer;
+}
+
+.p360-back:hover {
+  background: var(--p360-canvas);
+  color: var(--p360-accent);
+}
+
+.p360-topbar__eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--p360-muted);
+  margin: 0 0 0.15rem;
+}
+
+.p360-topbar__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--p360-ink);
+}
+
+.p360-hero {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+  color: #fff;
+  border-radius: 0.5rem;
+  padding: 1.15rem 1.35rem;
+}
+
+.p360-hero__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.p360-avatar {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.p360-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.p360-hero__identity {
+  flex: 1;
+  min-width: 220px;
+}
+
+.p360-hero__name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.p360-hero__name {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-transform: capitalize;
+}
+
+.p360-uhid {
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.p360-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.p360-badge--ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.p360-badge--alert {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.p360-badge--vip {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.p360-hero__meta {
+  margin: 0.4rem 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.p360-hero__contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 0.55rem;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.p360-hero__contacts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.p360-hero__facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem 1rem;
+  min-width: 200px;
+}
+
+.p360-fact__label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0 0 0.1rem;
+}
+
+.p360-fact__value {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.p360-allergy {
+  margin-top: 0.85rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.3rem;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(254, 202, 202, 0.35);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.p360-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+@media (min-width: 768px) {
+  .p360-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1100px) {
+  .p360-kpis {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
+.p360-kpi {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.4rem;
+  padding: 0.65rem 0.7rem;
+}
+
+.p360-kpi__label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0 0 0.25rem;
+}
+
+.p360-kpi__value {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.p360-kpi--warn .p360-kpi__value {
+  color: #fecaca;
+}
+
+.p360-last-visit {
+  margin: 0.75rem 0 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.p360-alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.p360-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.3rem;
+  border: 1px solid transparent;
+}
+
+.p360-alert--critical {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.p360-alert--warning {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.p360-alert--info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.p360-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .p360-layout {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}
+
+.p360-nav {
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .p360-nav {
+    width: 13.5rem;
+    flex-shrink: 0;
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.p360-nav__card {
+  background: var(--p360-surface);
+  border: 1px solid var(--p360-line);
+  border-radius: 0.5rem;
+  padding: 0.4rem;
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+@media (min-width: 1024px) {
+  .p360-nav__card {
+    flex-direction: column;
+    overflow-x: visible;
+  }
+}
+
+.p360-nav__btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border: none;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--p360-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.p360-nav__btn:hover {
+  background: var(--p360-canvas);
+  color: var(--p360-accent);
+}
+
+.p360-nav__btn.is-active {
+  background: var(--p360-accent);
+  color: #fff;
+}
+
+.p360-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.p360-panel {
+  background: var(--p360-surface);
+  border: 1px solid var(--p360-line);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.p360-panel__head {
+  padding: 0.75rem 1rem;
+  background: var(--p360-canvas);
+  border-bottom: 1px solid var(--p360-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.p360-panel__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--p360-accent);
+}
+
+.p360-panel__body {
+  padding: 1rem 1.1rem;
+}
+
+.p360-overview {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .p360-overview {
+    grid-template-columns: 1.4fr 1fr;
+  }
+}
+
+.p360-overview__card {
+  border: 1px solid var(--p360-line);
+  border-radius: 0.4rem;
+  padding: 0.9rem 1rem;
+  background: #f8fafc;
+}
+
+.dark .p360-overview__card {
+  background: #0f172a;
+}
+
+.p360-overview__card h4 {
+  margin: 0 0 0.4rem;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--p360-accent);
+}
+
+.p360-overview__card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--p360-muted);
+}
+
+.p360-overview__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.p360-overview__list li {
+  font-size: 12px;
+  color: var(--p360-ink);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--p360-line);
+}
+
+.p360-overview__list li:last-child {
+  border-bottom: none;
+}
+
+.p360-overview__list span {
+  color: var(--p360-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Tighten history tables inside 360 */
+.p360-content .bg-white,
+.p360-content .dark\:bg-gray-800 {
+  border-radius: 0.5rem !important;
+  border-color: var(--p360-line) !important;
+  box-shadow: none !important;
+}

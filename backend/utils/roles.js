@@ -9,6 +9,9 @@ const ROLE_ALIASES = {
   'lab technician': 'Lab Technician',
   accountant: 'Accountant',
   nurse: 'Nurse',
+  biomedical_engineer: 'Biomedical Engineer',
+  'biomedical engineer': 'Biomedical Engineer',
+  bme: 'Biomedical Engineer',
   patient: 'Patient',
 };
 
@@ -21,6 +24,7 @@ const CANONICAL_ROLES = [
   'Lab Technician',
   'Accountant',
   'Nurse',
+  'Biomedical Engineer',
   'Patient',
 ];
 

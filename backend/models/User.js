@@ -6,14 +6,22 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Name is required'], trim: true },
   email: { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, match: [/^\S+@\S+\.\S+$/, 'Invalid email'] },
   password: { type: String, required: [true, 'Password is required'], minlength: 6, select: false },
-  role: { type: String, enum: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Accountant', 'Nurse', 'Patient'], default: 'Patient' },
+  role: { type: String, enum: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Accountant', 'Nurse', 'Biomedical Engineer', 'Patient'], default: 'Patient' },
   department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
   specialization: String,
   phone: String,
   employeeId: { type: String, unique: true, sparse: true },
+  /** Legacy URL / data-URI string (kept for older records) */
   avatar: String,
+  /** Profile photo stored in MongoDB as binary */
+  profilePhoto: {
+    data: Buffer,
+    contentType: String,
+  },
   isActive: { type: Boolean, default: true },
   lastLogin: Date,
+  lastLoginIp: String,
+  lastLoginUserAgent: String,
   permissions: [String],
   shift: { type: String, enum: ['morning', 'afternoon', 'night', 'rotating'], default: 'morning' },
   qualification: String,

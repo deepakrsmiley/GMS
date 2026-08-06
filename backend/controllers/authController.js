@@ -6,18 +6,21 @@ const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 const sendTokenResponse = require('../utils/sendToken');
 const logger = require('../utils/logger');
+const { serializeUser, parseDataUriPhoto } = require('../utils/userAvatar');
 
-// Helper function to create audit logs
-const createAuditLog = async (userId, action, description, req) => {
+// Helper function to create audit logs (userId may be null for unknown-email failures)
+const createAuditLog = async (userId, action, description, req, metadata = undefined) => {
   try {
-    await ActivityLog.create({
-      user: userId,
+    const payload = {
       action,
       module: 'Authentication',
       description,
       ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1',
       userAgent: req.headers['user-agent'] || 'Unknown',
-    });
+    };
+    if (userId) payload.user = userId;
+    if (metadata) payload.metadata = metadata;
+    await ActivityLog.create(payload);
   } catch (err) {
     logger.error(`Audit log creation failed: ${err.message}`);
   }
@@ -51,6 +54,10 @@ exports.login = asyncHandler(async (req, res, next) => {
 
   if (!user) {
     logger.warn(`LOGIN failed: user not found for ${normalizedEmail}`);
+    await createAuditLog(null, 'Login Failure', 'Unknown email login attempt', req, {
+      email: normalizedEmail,
+      reason: 'user_not_found',
+    });
     return next(new ErrorResponse('Invalid credentials', 401));
   }
 
@@ -93,13 +100,36 @@ exports.login = asyncHandler(async (req, res, next) => {
   }
 
   // Reset lock and login attempts on success
+  const ip = req.ip || req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || '';
+  const ua = req.headers?.['user-agent'] || '';
+  const prevIp = user.lastLoginIp;
+  const prevUa = user.lastLoginUserAgent;
+  const isNewDevice = !!(prevIp || prevUa) && (prevIp !== String(ip) || prevUa !== String(ua));
+
   user.failedLoginAttempts = 0;
   user.accountLockedUntil = undefined;
   user.lastLogin = new Date();
+  user.lastLoginIp = String(ip);
+  user.lastLoginUserAgent = String(ua).slice(0, 400);
   await user.save({ validateBeforeSave: false });
 
   // Log successful login
   await createAuditLog(user._id, 'Login Success', 'User logged in successfully', req);
+
+  if (isNewDevice) {
+    try {
+      const { notifyRoles } = require('../utils/notify');
+      await notifyRoles(req, {
+        roles: ['Super Admin'],
+        title: 'Login from new device',
+        message: `${user.name} (${user.role}) signed in from a new IP/device`,
+        type: 'system',
+        link: '/masters/staff',
+        relatedId: user._id,
+        relatedModel: 'User',
+      });
+    } catch (_) { /* ignore */ }
+  }
 
   logger.info(`LOGIN successful for ${normalizedEmail} (${user.role})`);
   sendTokenResponse(user, 200, res);
@@ -138,7 +168,101 @@ exports.getMe = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: user,
+    data: serializeUser(user),
+  });
+});
+
+// @desc    Update own profile (name, phone, email, professional details)
+// @route   PUT /api/auth/updateprofile
+// @access  Private
+exports.updateProfile = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return next(new ErrorResponse('User not found', 404));
+  }
+
+  const {
+    name,
+    email,
+    phone,
+    specialization,
+    qualification,
+    experience,
+    shift,
+    consultationFee,
+    followUpFee,
+    morningSessionStart,
+    morningSessionEnd,
+    eveningSessionStart,
+    eveningSessionEnd,
+    avatar,
+  } = req.body;
+
+  if (name !== undefined) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return next(new ErrorResponse('Name is required', 400));
+    user.name = trimmed;
+  }
+
+  if (email !== undefined) {
+    const nextEmail = String(email || '').toLowerCase().trim();
+    if (!nextEmail || !/^\S+@\S+\.\S+$/.test(nextEmail)) {
+      return next(new ErrorResponse('Valid email is required', 400));
+    }
+    if (nextEmail !== user.email) {
+      const taken = await User.findOne({ email: nextEmail, _id: { $ne: user._id } });
+      if (taken) return next(new ErrorResponse('Email already in use', 400));
+      user.email = nextEmail;
+    }
+  }
+
+  if (phone !== undefined) user.phone = String(phone || '').trim();
+  if (specialization !== undefined) user.specialization = String(specialization || '').trim();
+  if (qualification !== undefined) user.qualification = String(qualification || '').trim();
+  if (experience !== undefined) {
+    const n = Number(experience);
+    user.experience = Number.isFinite(n) ? n : user.experience;
+  }
+  if (shift !== undefined && ['morning', 'afternoon', 'night', 'rotating'].includes(shift)) {
+    user.shift = shift;
+  }
+  if (consultationFee !== undefined) {
+    const n = Number(consultationFee);
+    if (Number.isFinite(n) && n >= 0) user.consultationFee = n;
+  }
+  if (followUpFee !== undefined) {
+    const n = Number(followUpFee);
+    if (Number.isFinite(n) && n >= 0) user.followUpFee = n;
+  }
+  if (morningSessionStart !== undefined) user.morningSessionStart = String(morningSessionStart || '');
+  if (morningSessionEnd !== undefined) user.morningSessionEnd = String(morningSessionEnd || '');
+  if (eveningSessionStart !== undefined) user.eveningSessionStart = String(eveningSessionStart || '');
+  if (eveningSessionEnd !== undefined) user.eveningSessionEnd = String(eveningSessionEnd || '');
+
+  // Photo: store binary Buffer in MongoDB (profilePhoto)
+  if (avatar !== undefined) {
+    if (!avatar) {
+      user.set('profilePhoto', undefined);
+      user.avatar = '';
+      user.markModified('profilePhoto');
+    } else {
+      const parsed = parseDataUriPhoto(avatar);
+      if (parsed.error) return next(new ErrorResponse(parsed.error, 400));
+      user.profilePhoto = { data: parsed.data, contentType: parsed.contentType };
+      user.avatar = '';
+      user.markModified('profilePhoto');
+    }
+  }
+
+  await user.save();
+  await createAuditLog(user._id, 'Profile Update', 'User updated their own profile', req);
+
+  // Re-load so Buffer is read fresh from MongoDB and avatar data-URI is rebuilt
+  const fresh = await User.findById(user._id).populate('department');
+  res.status(200).json({
+    success: true,
+    message: 'Profile updated successfully',
+    data: serializeUser(fresh),
   });
 });
 
@@ -174,6 +298,19 @@ exports.updatePassword = asyncHandler(async (req, res, next) => {
 
   // Audit Log
   await createAuditLog(user._id, 'Password Change', 'Password updated successfully when logged in', req);
+
+  try {
+    const { notifyRoles } = require('../utils/notify');
+    await notifyRoles(req, {
+      roles: ['Super Admin'],
+      title: 'Password changed',
+      message: `${user.name} (${user.role}) changed their password`,
+      type: 'system',
+      link: '/masters/staff',
+      relatedId: user._id,
+      relatedModel: 'User',
+    });
+  } catch (_) { /* ignore */ }
 
   // Clear cookie and force re-login by sending response indicating password changed
   res.cookie('token', 'none', {
@@ -215,12 +352,30 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
   // Console log in all modes
   console.log(`\n--- RESET PASSWORD OTP FOR ${user.email}: ${otp} ---\n`);
 
-  // Respond
+  // Respond — OTP is also sent to Super Admin notifications (no email server required yet).
+  // In non-production, return OTP in the response so the login UI can show it.
+  const exposeOtp =
+    process.env.NODE_ENV !== 'production' || process.env.ALLOW_OTP_IN_RESPONSE === 'true';
+
+  try {
+    const { notifyRoles } = require('../utils/notify');
+    await notifyRoles(req, {
+      roles: ['Super Admin', 'Admin'],
+      title: 'Password reset OTP',
+      message: `${user.name} (${user.email}) — OTP ${otp} (valid 10 minutes). Share only with this staff member.`,
+      type: 'system',
+      link: '/masters/staff',
+      relatedId: user._id,
+      relatedModel: 'User',
+    });
+  } catch (_) { /* ignore */ }
+
   res.status(200).json({
     success: true,
-    message: 'Verification code sent to email (mock). Check console/logs.',
-    // Return code in response under development mode for convenience
-    otp: process.env.NODE_ENV === 'development' ? otp : undefined
+    message: exposeOtp
+      ? 'Verification code generated. Enter it below to set a new password.'
+      : 'Verification code sent. Ask Super Admin for the OTP from notifications, or check server logs.',
+    otp: exposeOtp ? otp : undefined,
   });
 });
 
@@ -267,6 +422,19 @@ exports.resetPassword = asyncHandler(async (req, res, next) => {
 
   // Audit Log
   await createAuditLog(user._id, 'Password Reset', 'Password reset using OTP verification code', req);
+
+  try {
+    const { notifyRoles } = require('../utils/notify');
+    await notifyRoles(req, {
+      roles: ['Super Admin'],
+      title: 'Password reset completed',
+      message: `${user.name} (${user.email}) reset their password via OTP`,
+      type: 'system',
+      link: '/masters/staff',
+      relatedId: user._id,
+      relatedModel: 'User',
+    });
+  } catch (_) { /* ignore */ }
 
   res.status(200).json({
     success: true,

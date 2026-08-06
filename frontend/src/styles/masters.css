@@ -1,0 +1,176 @@
+/* Unified Hospital Masters hub */
+
+.masters-shell {
+  --ms-ink: #1e293b;
+  --ms-muted: #64748b;
+  --ms-line: #dbeafe;
+  --ms-surface: #ffffff;
+  --ms-canvas: #eff6ff;
+  --ms-navy: #2563eb;
+  --ms-accent: #2563eb;
+  font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
+  color: var(--ms-ink);
+  max-width: 1600px;
+}
+
+.dark .masters-shell {
+  --ms-ink: #f1f5f9;
+  --ms-muted: #94a3b8;
+  --ms-line: #1e3a5f;
+  --ms-surface: #1e293b;
+  --ms-canvas: #0f172a;
+  --ms-navy: #3b82f6;
+  --ms-accent: #3b82f6;
+}
+
+.masters-masthead {
+  background: var(--ms-navy);
+  color: #fff;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.85rem;
+}
+
+.masters-masthead__eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.25rem;
+}
+
+.masters-masthead__title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.masters-masthead__sub {
+  margin-top: 0.3rem;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 40rem;
+}
+
+.masters-workspace {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .masters-workspace {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
+.masters-rail {
+  background: var(--ms-surface);
+  border: 1px solid var(--ms-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+@media (min-width: 1100px) {
+  .masters-rail {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.masters-rail__head {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--ms-line);
+  background: var(--ms-canvas);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ms-muted);
+}
+
+.masters-rail__nav {
+  padding: 0.5rem;
+  max-height: 72vh;
+  overflow-y: auto;
+}
+
+.masters-rail__group + .masters-rail__group {
+  margin-top: 0.55rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ms-line);
+}
+
+.masters-rail__group-title {
+  padding: 0.15rem 0.5rem 0.35rem;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.masters-rail__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.55rem;
+  margin-bottom: 1px;
+  border-left: 2px solid transparent;
+  border-radius: 0 2px 2px 0;
+  color: var(--ms-muted);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.masters-rail__item:hover {
+  background: var(--ms-canvas);
+  color: var(--ms-ink);
+}
+
+.masters-rail__item.is-active {
+  background: #eff6ff;
+  color: var(--ms-accent);
+  border-left-color: var(--ms-accent);
+}
+
+.dark .masters-rail__item.is-active {
+  background: #1e3a5f;
+}
+
+.masters-content {
+  min-width: 0;
+  background: var(--ms-surface);
+  border: 1px solid var(--ms-line);
+  border-radius: 2px;
+  padding: 1rem;
+}
+
+.masters-content > .space-y-6,
+.masters-content > .space-y-5,
+.masters-content > .staff-shell {
+  margin: 0;
+}
+
+.masters-hint {
+  font-size: 12px;
+  color: var(--ms-muted);
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--ms-line);
+  border-radius: 2px;
+  background: var(--ms-canvas);
+  margin-bottom: 0.85rem;
+}
+
+.masters-hint a {
+  color: var(--ms-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.masters-hint a:hover {
+  text-decoration: underline;
+}

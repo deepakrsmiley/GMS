@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Printer, X } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
 
@@ -12,6 +12,15 @@ const fmtDate = (d) => {
   const day = String(dt.getDate()).padStart(2, '0');
   const mon = dt.toLocaleString('en-IN', { month: 'short' });
   return `${day}-${mon}-${dt.getFullYear()}`;
+};
+const fmtTime = (d) => {
+  if (!d) return 'N/A';
+  return new Date(d).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
 };
 const fmtMonthYear = (d) => {
   if (!d) return '-';
@@ -38,17 +47,17 @@ function numberToWords(num) {
   return conv(r)+' RUPEES'+(p>0?' AND '+conv(p)+' PAISA':'')+' ONLY';
 }
 
-/* ─── shared cell styles ─────────────────────────────── */
+/* ─── shared cell styles (regular weight, high contrast) ─ */
 const TH = {
-  padding:'8px 6px', textAlign:'center', fontSize:10,
-  border:'1px solid rgba(255,255,255,0.3)', fontWeight:600, lineHeight:1.4,
-  whiteSpace:'nowrap', letterSpacing:'0.3px',
+  padding:'9px 5px', textAlign:'center', fontSize:11.5,
+  border:'1px solid rgba(255,255,255,0.35)', fontWeight:500, lineHeight:1.4,
+  whiteSpace:'nowrap', letterSpacing:'0.15px',
 };
-const TD  = { padding:'6px 7px', border:'1px solid #e0e0e0', verticalAlign:'middle', lineHeight:1.4, fontSize:'10.5px' };
+const TD  = { padding:'8px 6px', border:'1px solid #d1d5db', verticalAlign:'middle', lineHeight:1.45, fontSize:'12.5px', fontWeight:400, color:'#111827' };
 const TDc = { ...TD, textAlign:'center' };
-const TDr = { ...TD, textAlign:'right', fontFamily:"'Courier New', monospace"  };
-const TH2 = { padding:'6px 8px', border:'1px solid #d0d0d0', fontWeight:600, fontSize:'10.5px', letterSpacing:'0.2px' };
-const TD2 = { padding:'6px 8px', border:'1px solid #e0e0e0', fontSize:'10.5px' };
+const TDr = { ...TD, textAlign:'right', fontFamily:"'Courier New', monospace" };
+const TH2 = { padding:'8px 8px', border:'1px solid #d1d5db', fontWeight:500, fontSize:'12.5px', letterSpacing:'0.15px', color:'#111827' };
+const TD2 = { padding:'8px 8px', border:'1px solid #d1d5db', fontSize:'12.5px', fontWeight:400, color:'#111827' };
 
 /* ─── NORMALISE ─── */
 function normalise(bill) {
@@ -82,6 +91,9 @@ function normalise(bill) {
 
   const customerName = bill.patient?.name || 'Walk-in Customer';
   const patientId    = bill.patient?.patientId || '';
+  const patientAge   = bill.patient?.age ?? '';
+  const patientGender= bill.patient?.gender || '';
+  const patientPhone = bill.patient?.phone || '';
   const placeOfSupply= bill.placeOfSupply || '';
   const invoiceNo    = bill.billNumber || String(bill._id || '').slice(-6).toUpperCase();
   const invoiceDate  = bill.createdAt;
@@ -100,6 +112,7 @@ function normalise(bill) {
   return {
     items, subtotal, totalDiscount, taxableValue, totalGst,
     grandTotal, totalQty, customerName, patientId,
+    patientAge, patientGender, patientPhone,
     placeOfSupply, invoiceNo, invoiceDate,
     paidAmount, dueAmount, hsnCodes, gstMap,
   };
@@ -116,60 +129,91 @@ function getContrastColor(hexColor) {
 }
 
 /* ─── MAIN COMPONENT ─────────────────────────────────── */
-export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadThermal }) {
+export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadPdfA5, onDownloadThermal }) {
   const { branding } = useBranding();
   const data = normalise(bill);
+  const [paperSize, setPaperSize] = useState('A4'); // A4 | A5
 
   if (!data) return null;
 
   const primaryColor = branding.primaryColor || '#1a6b3c';
   const textColor = getContrastColor(primaryColor);
   const lightColor = primaryColor + '15';
+  const isA5 = paperSize === 'A5';
+  const pageWidth = isA5 ? 560 : 794;
+  const baseFont = isA5 ? 12.5 : 13.5;
+
+  const toolbarBtn = (active) => ({
+    display:'flex', alignItems:'center', gap:8,
+    padding:'8px 14px',
+    background: active ? '#fff' : lightColor,
+    color: primaryColor,
+    border: active ? '2px solid #fff' : `1px solid ${primaryColor}`,
+    borderRadius:6, fontWeight:700, fontSize:'12px', cursor:'pointer',
+    fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif",
+  });
 
   return (
     <>
       {/* ── Toolbar (hidden on print) ── */}
       <div style={{
         position:'fixed', top:0, left:0, right:0, zIndex:10001,
-        background:primaryColor, display:'flex', gap:12,
-        padding:'10px 20px', justifyContent:'flex-end',
+        background:primaryColor, display:'flex', gap:10, flexWrap:'wrap',
+        padding:'10px 20px', justifyContent:'flex-end', alignItems:'center',
         boxShadow:'0 2px 8px rgba(0,0,0,0.15)',
       }}>
-        <button onClick={() => window.print()} style={{
+        <span style={{ color:'#fff', fontSize:12, fontWeight:600, marginRight:'auto' }}>
+          Paper size
+        </span>
+        <button type="button" onClick={() => setPaperSize('A4')} style={toolbarBtn(paperSize === 'A4')}>
+          A4
+        </button>
+        <button type="button" onClick={() => setPaperSize('A5')} style={toolbarBtn(paperSize === 'A5')}>
+          A5
+        </button>
+        <button type="button" onClick={() => window.print()} style={{
           display:'flex', alignItems:'center', gap:8,
           padding:'8px 20px', background:'#fff', color:primaryColor,
           border:'none', borderRadius:6, fontWeight:600, fontSize:'13px', cursor:'pointer',
-          fontFamily:"'Segoe UI', sans-serif", boxShadow:'0 1px 3px rgba(0,0,0,0.1)',
-          transition:'all 0.2s',
+          fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif", boxShadow:'0 1px 3px rgba(0,0,0,0.1)',
         }}>
-          <Printer size={16}/> Print
+          <Printer size={16}/> Print {paperSize}
         </button>
         {onDownloadPdf && (
-          <button onClick={() => onDownloadPdf(bill._id)} style={{
+          <button type="button" onClick={() => onDownloadPdf(bill._id)} style={{
             display:'flex', alignItems:'center', gap:8,
-            padding:'8px 20px', background:lightColor, color:primaryColor,
-            border:`1px solid ${primaryColor}`, borderRadius:6, fontWeight:600, fontSize:'13px', cursor:'pointer',
-            fontFamily:"'Segoe UI', sans-serif", transition:'all 0.2s',
+            padding:'8px 16px', background:lightColor, color:primaryColor,
+            border:`1px solid ${primaryColor}`, borderRadius:6, fontWeight:600, fontSize:'12px', cursor:'pointer',
+            fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif",
           }}>
-            Download PDF
+            PDF A4
+          </button>
+        )}
+        {onDownloadPdfA5 && (
+          <button type="button" onClick={() => onDownloadPdfA5(bill._id)} style={{
+            display:'flex', alignItems:'center', gap:8,
+            padding:'8px 16px', background:lightColor, color:primaryColor,
+            border:`1px solid ${primaryColor}`, borderRadius:6, fontWeight:600, fontSize:'12px', cursor:'pointer',
+            fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif",
+          }}>
+            PDF A5
           </button>
         )}
         {onDownloadThermal && (
-          <button onClick={() => onDownloadThermal(bill._id)} style={{
+          <button type="button" onClick={() => onDownloadThermal(bill._id)} style={{
             display:'flex', alignItems:'center', gap:8,
-            padding:'8px 20px', background:lightColor, color:primaryColor,
-            border:`1px solid ${primaryColor}`, borderRadius:6, fontWeight:600, fontSize:'13px', cursor:'pointer',
-            fontFamily:"'Segoe UI', sans-serif", transition:'all 0.2s',
+            padding:'8px 16px', background:lightColor, color:primaryColor,
+            border:`1px solid ${primaryColor}`, borderRadius:6, fontWeight:600, fontSize:'12px', cursor:'pointer',
+            fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif",
           }}>
-            Thermal PDF
+            Thermal
           </button>
         )}
-        <button onClick={onClose} style={{
+        <button type="button" onClick={onClose} style={{
           display:'flex', alignItems:'center', gap:8,
-          padding:'8px 20px', background:'#f3f4f6', color:'#374151',
+          padding:'8px 16px', background:'#f3f4f6', color:'#374151',
           border:'none', borderRadius:6, fontWeight:600, fontSize:'13px', cursor:'pointer',
-          fontFamily:"'Segoe UI', sans-serif", boxShadow:'0 1px 3px rgba(0,0,0,0.1)',
-          transition:'all 0.2s',
+          fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif",
         }}>
           <X size={16}/> Close
         </button>
@@ -180,21 +224,21 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
         position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.65)',
         overflowY:'auto', paddingTop:60, paddingBottom:40,
         display:'flex', justifyContent:'center',
-        fontFamily:"'Segoe UI', 'Roboto', -apple-system, sans-serif",
+        fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif",
       }}>
         {/* ══════════════ INVOICE ROOT ══════════════ */}
-        <div id="invoice-print-root" style={{
-          background:'#fff', width:794,
-          fontFamily:"'Segoe UI', 'Roboto', -apple-system, sans-serif",
-          fontSize:'11px', color:'#1f2937',
-          border:`3px solid ${primaryColor}`, boxShadow:'0 8px 40px rgba(0,0,0,0.25)',
+        <div id="invoice-print-root" data-paper={paperSize} style={{
+          background:'#fff', width:pageWidth,
+          fontFamily:"'IBM Plex Sans', 'Segoe UI', sans-serif",
+          fontSize:`${baseFont}px`, color:'#111827', fontWeight:400,
+          border:`2px solid ${primaryColor}`, boxShadow:'0 8px 40px rgba(0,0,0,0.25)',
           borderRadius:'2px',
         }}>
 
           {/* ══ HEADER ══ */}
           <div style={{
             display:'flex', justifyContent:'space-between', alignItems:'center',
-            padding:'16px 20px 12px', borderBottom:`3px solid ${primaryColor}`,
+            padding:'16px 20px 12px', borderBottom:`2px solid ${primaryColor}`,
             background:'#fafbfc',
           }}>
             {/* Left */}
@@ -206,7 +250,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
                     width:72, height:72, background:lightColor,
                     border:`2px solid ${primaryColor}`, borderRadius:8,
                     display:'flex', alignItems:'center', justifyContent:'center',
-                    fontWeight:800, fontSize:11, color:primaryColor, textAlign:'center',
+                    fontWeight:400, fontSize:11, color:primaryColor, textAlign:'center',
                     fontFamily:"'Segoe UI', sans-serif",
                   }}>
                     {branding.hospitalName?.split(' ').slice(0, 2).join('\n') || 'MEDI\nCARE'}
@@ -214,14 +258,14 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
                 )
               }
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:28, fontWeight:800, color:primaryColor, lineHeight:1.1, letterSpacing:'-0.5px' }}>
+                <div style={{ fontSize:24, fontWeight:500, color:primaryColor, lineHeight:1.1, letterSpacing:'-0.5px' }}>
                   {branding.hospitalName || 'Healthcare Center'}
                 </div>
-                <div style={{ fontSize:11, color:'#4b5563', marginTop:4, fontWeight:500 }}>
+                <div style={{ fontSize:12, color:'#374151', marginTop:4, fontWeight:400 }}>
                   📍 {branding.address || '13 Health Street, Mumbai, Maharashtra, India'}
                 </div>
                 {branding.phone && (
-                  <div style={{ fontSize:11, color:'#4b5563', fontWeight:500 }}>
+                  <div style={{ fontSize:12, color:'#374151', fontWeight:400 }}>
                     📞 {branding.phone}
                   </div>
                 )}
@@ -234,7 +278,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
               padding:'12px 20px', textAlign:'center', minWidth:120,
               background:lightColor, marginLeft:20,
             }}>
-              <div style={{ fontSize:13, fontWeight:700, color:primaryColor, whiteSpace:'nowrap', letterSpacing:'1px', textTransform:'uppercase' }}>
+              <div style={{ fontSize:13, fontWeight:400, color:primaryColor, whiteSpace:'nowrap', letterSpacing:'1px', textTransform:'uppercase' }}>
                 {bill.status?.toUpperCase() || 'ISSUED'}
               </div>
             </div>
@@ -246,7 +290,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
             borderBottom:'1px solid #d1d5db', background:'#fafbfc',
           }}>
             <div style={{
-              fontSize:16, fontWeight:800, color:primaryColor,
+              fontSize:15, fontWeight:500, color:primaryColor,
               letterSpacing:'1px', textTransform:'uppercase',
             }}>
               TAX INVOICE
@@ -259,31 +303,45 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
             {/* Customer */}
             <div style={{ borderRight:'1px solid #d1d5db' }}>
               <div style={{
-                background:primaryColor, color:textColor, fontWeight:700,
+                background:primaryColor, color:textColor, fontWeight:400,
                 fontSize:'12px', textAlign:'center', padding:'6px', letterSpacing:'0.3px',
               }}>PATIENT DETAILS</div>
               <div style={{ padding:'10px 12px' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'10.5px' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize: isA5 ? '12px' : '13px' }}>
                   <tbody>
-                    {/* Patient Name + lifelong UHID from registration */}
                     <tr style={{ borderBottom:'1px solid #f0f0f0' }}>
-                      <td style={{ fontWeight:600, width:80, paddingBottom:6, paddingRight:10, color:'#4b5563', verticalAlign:'top' }}>Name</td>
-                      <td style={{ paddingBottom:6, color:'#1f2937', fontWeight:500 }}>{data.customerName}</td>
+                      <td style={{ fontWeight:400, width:88, paddingBottom:6, paddingRight:10, color:'#374151', verticalAlign:'top' }}>Name</td>
+                      <td style={{ paddingBottom:6, color:'#111827', fontWeight:400 }}>{data.customerName}</td>
                     </tr>
                     <tr style={{ borderBottom:'1px solid #f0f0f0' }}>
-                      <td style={{ fontWeight:600, width:80, paddingBottom:6, paddingRight:10, color:'#4b5563', verticalAlign:'top' }}>UHID</td>
-                      <td style={{ paddingBottom:6, color:'#1e40af', fontWeight:700, fontFamily:"'Courier New', monospace" }}>
+                      <td style={{ fontWeight:400, width:88, paddingBottom:6, paddingRight:10, color:'#374151', verticalAlign:'top' }}>UHID</td>
+                      <td style={{ paddingBottom:6, color:'#111827', fontWeight:400, fontFamily:"'Courier New', monospace" }}>
                         {data.patientId || '—'}
                       </td>
                     </tr>
-                    <tr>
-                      <td style={{ fontWeight:600, paddingBottom:2, paddingRight:10, color:'#4b5563', verticalAlign:'top' }}>
-                        Place of<br/>Supply
-                      </td>
-                      <td style={{ paddingBottom:2, color:'#1f2937', fontWeight:500 }}>
-                        {data.placeOfSupply}
+                    <tr style={{ borderBottom:'1px solid #f0f0f0' }}>
+                      <td style={{ fontWeight:400, width:88, paddingBottom:6, paddingRight:10, color:'#374151', verticalAlign:'top' }}>Age / Sex</td>
+                      <td style={{ paddingBottom:6, color:'#111827', fontWeight:400 }}>
+                        {data.patientAge !== '' && data.patientAge != null ? data.patientAge : '—'}
+                        {data.patientGender ? ` / ${data.patientGender}` : ''}
                       </td>
                     </tr>
+                    <tr style={{ borderBottom:'1px solid #f0f0f0' }}>
+                      <td style={{ fontWeight:400, width:88, paddingBottom:6, paddingRight:10, color:'#374151', verticalAlign:'top' }}>Phone</td>
+                      <td style={{ paddingBottom:6, color:'#111827', fontWeight:400 }}>
+                        {data.patientPhone || '—'}
+                      </td>
+                    </tr>
+                    {data.placeOfSupply ? (
+                      <tr>
+                        <td style={{ fontWeight:400, paddingBottom:2, paddingRight:10, color:'#374151', verticalAlign:'top' }}>
+                          Place of Supply
+                        </td>
+                        <td style={{ paddingBottom:2, color:'#111827', fontWeight:400 }}>
+                          {data.placeOfSupply}
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
@@ -291,27 +349,33 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
 
             {/* Invoice meta */}
             <div style={{ padding:'12px 14px' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'10.5px' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize: isA5 ? '12px' : '13px' }}>
                 <tbody>
-                  {/* ✅ KEEP: Invoice No. and Date */}
                   <tr>
-                    <td style={{ paddingBottom:8, color:'#4b5563', fontWeight:600 }}>Invoice No.</td>
-                    <td style={{ fontWeight:700, fontSize:13, paddingBottom:8, textAlign:'center', color:primaryColor, fontFamily:"'Courier New', monospace" }}>
+                    <td style={{ paddingBottom:6, color:'#374151', fontWeight:400 }}>Invoice No.</td>
+                    <td style={{ fontWeight:400, fontSize:14, paddingBottom:6, textAlign:'right', color:primaryColor, fontFamily:"'Courier New', monospace" }}>
                       {data.invoiceNo}
                     </td>
-                    <td style={{ paddingBottom:8, paddingLeft:12, color:'#4b5563', fontWeight:600 }}>Date</td>
-                    <td style={{ fontWeight:600, paddingBottom:8, textAlign:'right', color:'#1f2937', fontFamily:"'Courier New', monospace" }}>
+                  </tr>
+                  <tr>
+                    <td style={{ paddingBottom:6, color:'#374151', fontWeight:400 }}>Date</td>
+                    <td style={{ fontWeight:400, paddingBottom:6, textAlign:'right', color:'#111827', fontFamily:"'Courier New', monospace" }}>
                       {fmtDate(data.invoiceDate)}
                     </td>
                   </tr>
-                  {/* ❌ REMOVED: Payment Mode row */}
+                  <tr>
+                    <td style={{ paddingBottom:2, color:'#374151', fontWeight:400 }}>Time</td>
+                    <td style={{ fontWeight:400, paddingBottom:2, textAlign:'right', color:'#111827', fontFamily:"'Courier New', monospace" }}>
+                      {fmtTime(data.invoiceDate)}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </div>
 
           {/* ══ ITEMS TABLE ══ */}
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'10px', borderBottom:'1px solid #d1d5db' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px', borderBottom:'1px solid #d1d5db' }}>
             <thead>
               <tr style={{ background:primaryColor, color:textColor }}>
                 <th style={{ ...TH, width:'4%'  }}>Sr.</th>
@@ -336,11 +400,11 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
                   <tr key={i} style={{ background: i%2===0 ? '#fff' : '#f9fafb' }}>
                     <td style={TDc}>{i+1}</td>
                     <td style={{ ...TD, textAlign:'left' }}>
-                      <div style={{ fontWeight:600, color:'#1f2937' }}>
+                      <div style={{ fontWeight:400, color:'#111827' }}>
                         {item.genericName || item.medicineName}
                       </div>
                       {item.genericName && item.medicineName && item.genericName !== item.medicineName && (
-                        <div style={{ fontSize:9, color:'#6b7280', marginTop:2 }}>{item.medicineName}</div>
+                        <div style={{ fontSize:11, color:'#4b5563', marginTop:2 }}>{item.medicineName}</div>
                       )}
                     </td>
                     <td style={TDc}>{item.batchNumber}</td>
@@ -358,10 +422,10 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
               })}
             </tbody>
             <tfoot>
-              <tr style={{ borderTop:`2px solid ${primaryColor}`, fontWeight:700, background:'#f9fafb' }}>
-                <td colSpan={6} style={{ ...TD, textAlign:'right', fontWeight:700, color:'#1f2937' }}>TOTAL</td>
+              <tr style={{ borderTop:`2px solid ${primaryColor}`, fontWeight:400, background:'#f9fafb' }}>
+                <td colSpan={6} style={{ ...TD, textAlign:'right', fontWeight:400, color:'#111827' }}>TOTAL</td>
                 <td style={TDc} colSpan={5}></td>
-                <td style={{ ...TDr, fontSize:12, fontWeight:800, color:primaryColor, background:lightColor }}>
+                <td style={{ ...TDr, fontSize:12, fontWeight:400, color:primaryColor, background:lightColor }}>
                   {fmtINR(data.grandTotal)}
                 </td>
               </tr>
@@ -369,15 +433,15 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
           </table>
 
           {/* ══ TOTAL IN WORDS ══ */}
-          <div style={{ padding:'10px 12px', borderBottom:'1px solid #d1d5db', background:'#f9fafb' }}>
-            <span style={{ fontWeight:600, color:'#4b5563', fontSize:'11px', letterSpacing:'0.2px' }}>TOTAL IN WORDS</span>
-            <div style={{ fontWeight:700, fontSize:'11.5px', marginTop:4, textTransform:'uppercase', color:'#1f2937', letterSpacing:'0.3px', fontFamily:"'Courier New', monospace" }}>
+          <div className="inv-print-totals" style={{ padding:'10px 12px', borderBottom:'1px solid #d1d5db', background:'#f9fafb' }}>
+            <span style={{ fontWeight:400, color:'#374151', fontSize:'12px', letterSpacing:'0.2px' }}>TOTAL IN WORDS</span>
+            <div style={{ fontWeight:400, fontSize:'13px', marginTop:4, textTransform:'uppercase', color:'#111827', letterSpacing:'0.3px', fontFamily:"'Courier New', monospace" }}>
               {numberToWords(data.grandTotal)}
             </div>
           </div>
 
           {/* ══ SUMMARY TABLE ══ */}
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'10.5px', borderBottom:'1px solid #d1d5db' }}>
+          <table className="inv-print-totals" style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px', borderBottom:'1px solid #d1d5db' }}>
             <thead>
               <tr style={{ background:'#f0f0f0' }}>
                 <th style={{ ...TH2, textAlign:'left', width:'50%', color:'#374151' }}>Description</th>
@@ -388,44 +452,42 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
             </thead>
             <tbody>
               <tr style={{ background:'#fff' }}>
-                <td style={{ ...TD2, textAlign:'left', fontWeight:600, color:'#4b5563' }}>Subtotal</td>
-                <td style={{ ...TD2, textAlign:'right', color:'#1f2937', fontWeight:600 }}>{fmt2(data.subtotal)}</td>
-                <td style={{ ...TD2, textAlign:'center', color:'#6b7280' }}>—</td>
-                <td style={{ ...TD2, textAlign:'right', color:'#1f2937', fontWeight:600 }}>{fmt2(data.subtotal)}</td>
+                <td style={{ ...TD2, textAlign:'left', fontWeight:400, color:'#374151' }}>Subtotal</td>
+                <td style={{ ...TD2, textAlign:'right', color:'#111827', fontWeight:400 }}>{fmt2(data.subtotal)}</td>
+                <td style={{ ...TD2, textAlign:'center', color:'#4b5563' }}>—</td>
+                <td style={{ ...TD2, textAlign:'right', color:'#111827', fontWeight:400 }}>{fmt2(data.subtotal)}</td>
               </tr>
               {data.totalDiscount > 0 && (
                 <tr style={{ background:'#fef3c7' }}>
-                  <td style={{ ...TD2, textAlign:'left', fontWeight:600, color:'#d97706' }}>Discount</td>
-                  <td style={{ ...TD2, textAlign:'right', color:'#d97706', fontWeight:600 }}>−{fmt2(data.totalDiscount)}</td>
+                  <td style={{ ...TD2, textAlign:'left', fontWeight:400, color:'#d97706' }}>Discount</td>
+                  <td style={{ ...TD2, textAlign:'right', color:'#d97706', fontWeight:400 }}>−{fmt2(data.totalDiscount)}</td>
                   <td style={{ ...TD2, textAlign:'center', color:'#d97706' }}>—</td>
-                  <td style={{ ...TD2, textAlign:'right', color:'#d97706', fontWeight:600 }}>−{fmt2(data.totalDiscount)}</td>
+                  <td style={{ ...TD2, textAlign:'right', color:'#d97706', fontWeight:400 }}>−{fmt2(data.totalDiscount)}</td>
                 </tr>
               )}
-              <tr style={{ fontWeight:700, background:'#f0f0f0', borderTop:'1px solid #d1d5db', borderBottom:'1px solid #d1d5db' }}>
-                <td style={{ ...TD2, textAlign:'left', fontWeight:700, color:'#1f2937' }}>Taxable Value</td>
-                <td style={{ ...TD2, textAlign:'right', fontWeight:700, color:'#1f2937' }}>{fmt2(data.taxableValue)}</td>
-                <td style={{ ...TD2, textAlign:'center', color:'#6b7280' }}>—</td>
-                <td style={{ ...TD2, textAlign:'right', fontWeight:700, color:'#1f2937' }}>{fmt2(data.taxableValue)}</td>
+              <tr style={{ fontWeight:400, background:'#f0f0f0', borderTop:'1px solid #d1d5db', borderBottom:'1px solid #d1d5db' }}>
+                <td style={{ ...TD2, textAlign:'left', fontWeight:400, color:'#111827' }}>Taxable Value</td>
+                <td style={{ ...TD2, textAlign:'right', fontWeight:400, color:'#111827' }}>{fmt2(data.taxableValue)}</td>
+                <td style={{ ...TD2, textAlign:'center', color:'#4b5563' }}>—</td>
+                <td style={{ ...TD2, textAlign:'right', fontWeight:400, color:'#111827' }}>{fmt2(data.taxableValue)}</td>
               </tr>
               <tr style={{ background:'#fff' }}>
-                <td style={{ ...TD2, textAlign:'left', color:'#4b5563', fontWeight:600 }}>IGST on Taxable</td>
-                <td style={{ ...TD2, textAlign:'right', color:'#6b7280' }}>—</td>
-                <td style={{ ...TD2, textAlign:'center', color:'#1f2937', fontWeight:600 }}>{Object.keys(data.gstMap).join('/')}</td>
-                <td style={{ ...TD2, textAlign:'right', color:'#1f2937', fontWeight:600 }}>{fmt2(data.totalGst)}</td>
+                <td style={{ ...TD2, textAlign:'left', color:'#374151', fontWeight:400 }}>IGST on Taxable</td>
+                <td style={{ ...TD2, textAlign:'right', color:'#4b5563' }}>—</td>
+                <td style={{ ...TD2, textAlign:'center', color:'#111827', fontWeight:400 }}>{Object.keys(data.gstMap).join('/')}</td>
+                <td style={{ ...TD2, textAlign:'right', color:'#111827', fontWeight:400 }}>{fmt2(data.totalGst)}</td>
               </tr>
-              <tr style={{ fontWeight:800, background:primaryColor, color:textColor }}>
-                <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'left', fontWeight:800 }}>GRAND TOTAL</td>
+              <tr style={{ fontWeight:400, background:primaryColor, color:textColor }}>
+                <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'left', fontWeight:400 }}>GRAND TOTAL</td>
                 <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'right' }}>—</td>
                 <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'center' }}>—</td>
-                <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'right', fontWeight:800, fontSize:'12px' }}>{fmt2(data.grandTotal)}</td>
+                <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'right', fontWeight:400, fontSize:'12px' }}>{fmt2(data.grandTotal)}</td>
               </tr>
             </tbody>
           </table>
 
           {/* ══ AUTHORISED SIGNATORY + PATIENT SIGNATURE ══ */}
-          {/* ❌ REMOVED: Bank Details section entirely */}
-          {/* ❌ REMOVED: Terms & Conditions section entirely */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', borderBottom:'1px solid #d1d5db' }}>
+          <div className="inv-print-footer" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', borderBottom:'1px solid #d1d5db' }}>
 
             {/* Authorised Signatory */}
             <div style={{
@@ -435,16 +497,16 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
               alignItems:'center', justifyContent:'space-between',
               textAlign:'center', minHeight:120,
             }}>
-              <div style={{ fontSize:'10.5px', color:'#4b5563', lineHeight:1.7, fontWeight:500 }}>
+              <div style={{ fontSize:'12px', color:'#374151', lineHeight:1.7, fontWeight:400 }}>
                 Certified that the particulars given above are<br/>true and correct.
               </div>
               <div>
-                <div style={{ fontWeight:700, fontSize:'11.5px', color:primaryColor, marginTop:10, letterSpacing:'0.3px' }}>
+                <div style={{ fontWeight:400, fontSize:'12.5px', color:primaryColor, marginTop:10, letterSpacing:'0.2px' }}>
                   For {branding.hospitalName || 'Healthcare Center'}
                 </div>
                 <div style={{
-                  fontSize:'10.5px', color:'#4b5563', marginTop:38,
-                  borderTop:`1px solid #d1d5db`, paddingTop:6, fontWeight:600,
+                  fontSize:'12px', color:'#374151', marginTop:38,
+                  borderTop:`1px solid #d1d5db`, paddingTop:6, fontWeight:400,
                 }}>
                   Authorised Signatory
                 </div>
@@ -458,9 +520,9 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
               minHeight:120,
             }}>
               <div style={{
-                fontSize:'10.5px', color:'#4b5563',
+                fontSize:'12px', color:'#374151',
                 borderTop:'1px solid #d1d5db', paddingTop:6,
-                textAlign:'center', width:'75%', fontWeight:600,
+                textAlign:'center', width:'75%', fontWeight:400,
               }}>
                 Patient Signature
               </div>
@@ -468,10 +530,10 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
           </div>
 
           {/* ══ FOOTER ══ */}
-          <div style={{
+          <div className="inv-print-footer" style={{
             textAlign:'center', padding:'10px 16px',
-            fontSize:'11px', color:'#4b5563', background:'#f9fafb',
-            borderTop:'1px solid #e5e7eb', fontStyle:'italic', fontWeight:500, letterSpacing:'0.2px',
+            fontSize:'13px', color:'#374151', background:'#f9fafb',
+            borderTop:'1px solid #e5e7eb', fontStyle:'italic', fontWeight:400, letterSpacing:'0.2px',
           }}>
             {branding.footerNote || 'Thank you for choosing our hospital. We look forward to serving you again.'}
           </div>
@@ -481,22 +543,37 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadT
 
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 5mm; }
+          @page {
+            size: ${paperSize} portrait;
+            margin: ${isA5 ? '8mm' : '10mm'};
+          }
           body * { visibility: hidden !important; }
           #invoice-print-root,
           #invoice-print-root * { visibility: visible !important; }
           #invoice-print-root {
-            position: fixed !important;
+            /* absolute (not fixed) so overflow continues on next pages */
+            position: absolute !important;
             left: 0 !important; top: 0 !important;
             width: 100% !important;
+            max-width: ${isA5 ? '148mm' : '210mm'} !important;
+            height: auto !important;
+            overflow: visible !important;
             box-shadow: none !important;
             border-radius: 0 !important;
+            font-size: ${isA5 ? '10.5pt' : '11pt'} !important;
+            line-height: 1.35 !important;
           }
           #invoice-print-root, #invoice-print-root * {
-            font-weight: 700 !important;
-            color: #000 !important;
+            font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+          #invoice-print-root table { page-break-inside: auto !important; }
+          #invoice-print-root thead { display: table-header-group !important; }
+          #invoice-print-root tbody tr { page-break-inside: avoid !important; page-break-after: auto !important; }
+          #invoice-print-root .inv-print-totals,
+          #invoice-print-root .inv-print-footer {
+            page-break-inside: avoid !important;
           }
         }
       `}</style>

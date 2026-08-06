@@ -1,4 +1,5 @@
 import { hasRole, normalizeRole } from '../utils/roles';
+import { hasPermission } from './permissions';
 
 /**
  * Role-based navigation for the 6 main enterprise roles + Super Admin.
@@ -7,53 +8,51 @@ import { hasRole, normalizeRole } from '../utils/roles';
  * gates visibility/access — the `roles` array is only the fallback default.
  */
 export const NAV_ITEMS = [
-  { id: 'dashboard',        to: '/dashboard',               label: 'Dashboard',          icon: 'LayoutDashboard', permission: 'VIEW_DASHBOARD',        roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician'] },
+  { id: 'dashboard',        to: '/dashboard',               label: 'Dashboard',          icon: 'LayoutDashboard', permission: 'VIEW_DASHBOARD',        roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Biomedical Engineer'] },
   { id: 'patients',         to: '/patients',                label: 'Patient Registration',icon: 'Users',          permission: 'VIEW_PATIENT',           roles: ['Super Admin', 'Admin', 'Receptionist'] },
   { id: 'op-reg',           to: '/op-queue',                label: 'OP Registration',    icon: 'Activity',        permission: 'CREATE_OP_QUEUE',        roles: ['Super Admin', 'Admin', 'Receptionist'] },
   { id: 'doctor-queue',     to: '/op-queue',                label: 'Doctor Queue',       icon: 'Stethoscope',     permission: 'VIEW_OP_QUEUE',          roles: ['Super Admin', 'Doctor', 'Receptionist'] },
   { id: 'appointments',     to: '/appointments',            label: 'Appointments',       icon: 'Calendar',        permission: 'VIEW_APPOINTMENT',       roles: ['Super Admin', 'Admin', 'Receptionist'] },
   { id: 'ip-patients',      to: '/ip-admissions',           label: 'IP Admissions',      icon: 'Building2',       permission: 'VIEW_IP_ADMISSION',      roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist'] },
+  { id: 'nurse-station',    to: '/nurse-station',           label: 'Nurse Station',      icon: 'HeartPulse',      permission: 'VIEW_NURSE_STATION',      roles: ['Super Admin', 'Admin', 'Doctor', 'Nurse'] },
   { id: 'billing',          to: '/billing',                 label: 'Billing',            icon: 'Receipt',         permission: 'VIEW_BILLING',           roles: ['Super Admin', 'Admin', 'Pharmacist'] },
   { id: 'prescriptions',    to: '/pharmacy?tab=prescriptions', label: 'Prescriptions',  icon: 'ClipboardList',   permission: 'VIEW_PRESCRIPTION',      roles: ['Super Admin', 'Doctor', 'Pharmacist', 'Receptionist'] },
-  { id: 'pharmacy',         to: '/pharmacy?tab=inventory',  label: 'Medicines / Pharmacy', icon: 'Pill',          permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-
-  // ── NEW: Pharmacy Billing Reports ──────────────────────────────────────────
+  { id: 'pharmacy',         to: '/pharmacy?tab=prescriptions', label: 'Pharmacy',        icon: 'Pill',            permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
   { id: 'pharmacy-billing', to: '/pharmacy-billing',        label: 'Pharmacy Reports',   icon: 'FileBarChart2',   permission: 'VIEW_BILLING',           roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-
-  // ── NEW: Medicine Expiry Report ──────────────────────────────────────────
   { id: 'expiry-report',    to: '/pharmacy/expiry-report',  label: 'Medicine Expiry Report', icon: 'AlertTriangle', permission: 'VIEW_PHARMACY',       roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-
-  { id: 'lab-orders',       to: '/lab',                     label: 'Lab Orders',         icon: 'FlaskConical',    permission: 'VIEW_LAB',               roles: ['Super Admin', 'Admin', 'Doctor', 'Lab Technician'] },
+  { id: 'lab-orders',       to: '/lab',                     label: 'Lab Orders',         icon: 'FlaskConical',    permission: 'VIEW_LAB',               roles: ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist'] },
   { id: 'lab-reports',      to: '/lab?tab=reports',         label: 'Lab Reports',        icon: 'FileBarChart',    permission: 'VIEW_LAB',               roles: ['Super Admin', 'Admin', 'Lab Technician'] },
-  { id: 'beds',             to: '/beds',                    label: 'Bed Management',     icon: 'Bed',             permission: 'MANAGE_BEDS',            roles: ['Super Admin'] },
-  { id: 'departments',      to: '/departments',             label: 'Departments',        icon: 'Building2',       permission: 'MANAGE_DEPARTMENTS',     roles: ['Super Admin', 'Admin'] },
-  { id: 'assets',           to: '/assets',                  label: 'Assets',             icon: 'Package',         permission: 'VIEW_ASSETS',            roles: ['Super Admin', 'Admin'] },
-  { id: 'asset-complaints', to: '/asset-complaints',        label: 'Complaints',         icon: 'Activity',        permission: 'VIEW_ASSET_COMPLAINTS',  roles: ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'] },
-  { id: 'staff',            to: '/staff',                   label: 'User Management',    icon: 'UserCog',         permission: 'MANAGE_STAFF',           roles: ['Super Admin'] },
-  { id: 'reports',          to: '/reports',                 label: 'Reports',            icon: 'BarChart3',       permission: 'VIEW_REPORTS',           roles: ['Super Admin', 'Admin'] },
+  { id: 'biomedical',       to: '/biomedical',              label: 'Biomedical',         icon: 'Wrench',          permission: 'VIEW_BEMS',              roles: ['Super Admin', 'Admin', 'Biomedical Engineer'] },
+  { id: 'masters',          to: '/masters',                 label: 'Masters',            icon: 'Database',        permission: 'MANAGE_MASTERS',         roles: ['Super Admin', 'Admin'] },
+  { id: 'asset-complaints', to: '/asset-complaints',        label: 'Complaints',         icon: 'Activity',        permission: 'VIEW_ASSET_COMPLAINTS',  roles: ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist', 'Biomedical Engineer'] },
+  { id: 'change-requests',  to: '/change-requests',         label: 'Change Requests',    icon: 'ClipboardCheck',  permission: 'VIEW_CHANGE_REQUESTS',   roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Accountant', 'Biomedical Engineer'] },
+  { id: 'reports',          to: '/reports',                 label: 'Audit Reports',      icon: 'BarChart3',       permission: 'VIEW_REPORTS',           roles: ['Super Admin', 'Admin'] },
   { id: 'queue-display',    to: '/queue-display',           label: 'TV Queue Display',   icon: 'MonitorPlay',     permission: 'VIEW_OP_QUEUE',          roles: ['Super Admin', 'Admin', 'Receptionist'] },
-  { id: 'settings',         to: '/settings',               label: 'Settings',           icon: 'Settings',        permission: 'MANAGE_SETTINGS',        roles: ['Super Admin'] },
 ];
 
 /** Route-level access for App.jsx ProtectedRoute (role-based fallback) */
 export const ROUTE_ACCESS = {
-  dashboard:         ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician'],
+  dashboard:         ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Biomedical Engineer'],
   patients:          ['Super Admin', 'Admin', 'Receptionist'],
   'op-queue':        ['Super Admin', 'Admin', 'Doctor', 'Receptionist'],
   consultation:      ['Super Admin', 'Doctor', 'Receptionist'],
-  'ip-admissions':   ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Pharmacist'],
+  'ip-admissions':   ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Pharmacist', 'Nurse'],
+  'nurse-station':   ['Super Admin', 'Admin', 'Doctor', 'Nurse'],
   billing:           ['Super Admin', 'Admin', 'Pharmacist'],
-  'pharmacy-billing':['Super Admin', 'Admin', 'Pharmacist'],   // ← NEW
+  'pharmacy-billing':['Super Admin', 'Admin', 'Pharmacist'],
   pharmacy:          ['Super Admin', 'Admin', 'Doctor', 'Pharmacist', 'Receptionist'],
-  lab:               ['Super Admin', 'Admin', 'Doctor', 'Lab Technician'],
-  beds:              ['Super Admin'],
+  lab:               ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist'],
+  biomedical:        ['Super Admin', 'Admin', 'Biomedical Engineer'],
+  masters:           ['Super Admin', 'Admin'],
+  beds:              ['Super Admin', 'Admin'],
   departments:       ['Super Admin', 'Admin'],
-  assets:            ['Super Admin', 'Admin'],
-  'asset-complaints':['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'],
+  assets:            ['Super Admin', 'Admin', 'Biomedical Engineer'],
+  'asset-complaints':['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist', 'Biomedical Engineer'],
+  'change-requests': ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Accountant', 'Biomedical Engineer'],
   appointments:      ['Super Admin', 'Admin', 'Receptionist'],
-  staff:             ['Super Admin'],
+  staff:             ['Super Admin', 'Admin'],
   reports:           ['Super Admin', 'Admin'],
-  settings:          ['Super Admin'],
+  settings:          ['Super Admin', 'Admin'],
   'queue-display':   ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse'],
 };
 
@@ -64,14 +63,18 @@ export const ROUTE_PERMISSIONS = {
   'op-queue': 'VIEW_OP_QUEUE',
   consultation: 'CREATE_CONSULTATION',
   'ip-admissions': 'VIEW_IP_ADMISSION',
+  'nurse-station': 'VIEW_NURSE_STATION',
   billing: 'VIEW_BILLING',
   'pharmacy-billing': 'VIEW_BILLING',
   pharmacy: 'VIEW_PHARMACY',
   lab: 'VIEW_LAB',
+  biomedical: 'VIEW_BEMS',
+  masters: 'MANAGE_MASTERS',
   beds: 'MANAGE_BEDS',
   departments: 'MANAGE_DEPARTMENTS',
   assets: 'VIEW_ASSETS',
   'asset-complaints': 'VIEW_ASSET_COMPLAINTS',
+  'change-requests': 'VIEW_CHANGE_REQUESTS',
   appointments: 'VIEW_APPOINTMENT',
   staff: 'MANAGE_STAFF',
   reports: 'VIEW_REPORTS',
@@ -79,16 +82,60 @@ export const ROUTE_PERMISSIONS = {
   'queue-display': 'VIEW_OP_QUEUE',
 };
 
+const MASTER_ACCESS_PERMISSIONS = [
+  'MANAGE_MASTERS',
+  'MANAGE_DEPARTMENTS',
+  'MANAGE_BEDS',
+  'VIEW_ASSETS',
+  'MANAGE_ASSETS',
+  'VIEW_BEMS',
+  'MANAGE_BEMS',
+  'MANAGE_STAFF',
+  'MANAGE_SETTINGS',
+  'VIEW_PHARMACY',
+  'MANAGE_PHARMACY',
+  'CREATE_MEDICINE',
+  'EDIT_MEDICINE',
+  'ADD_PHARMACY_STOCK',
+  'ADJUST_PHARMACY_STOCK',
+  'DELETE_MEDICINE',
+  'MANAGE_SUPPLIERS',
+  'VIEW_LAB',
+];
+
+const hasMastersAccess = (user) => {
+  if (!user) return false;
+  if (normalizeRole(user.role) === 'Super Admin') return true;
+  return MASTER_ACCESS_PERMISSIONS.some((code) => hasPermission(user, code));
+};
+
 /**
  * Checks whether a user can access a given route path.
  * Accepts either a full `user` object ({ role, permissions }) or, for
  * backward compatibility, a plain role string.
  */
+const PHARMACY_ROUTE_PERMS = [
+  'VIEW_PHARMACY',
+  'MANAGE_PHARMACY',
+  'CREATE_MEDICINE',
+  'EDIT_MEDICINE',
+  'ADD_PHARMACY_STOCK',
+  'ADJUST_PHARMACY_STOCK',
+  'DELETE_MEDICINE',
+  'DISPENSE_PRESCRIPTION',
+];
+
 export const canAccessRoute = (userOrRole, path) => {
   const user = typeof userOrRole === 'string' ? { role: userOrRole } : (userOrRole || {});
   const segment = path.split('/').filter(Boolean)[0] || 'dashboard';
 
   if (normalizeRole(user.role) === 'Super Admin') return true;
+
+  if (segment === 'masters') return hasMastersAccess(user);
+
+  if (segment === 'pharmacy') {
+    return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code));
+  }
 
   const permCode = ROUTE_PERMISSIONS[segment];
   const customPermissions = Array.isArray(user.permissions) && user.permissions.length > 0 ? user.permissions : null;
@@ -113,6 +160,10 @@ export const filterNavForUser = (user) => {
   const customPermissions = Array.isArray(user.permissions) && user.permissions.length > 0 ? user.permissions : null;
 
   return NAV_ITEMS.filter((item) => {
+    if (item.id === 'masters') return hasMastersAccess(user);
+    if (item.id === 'pharmacy' || item.id === 'expiry-report') {
+      return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code));
+    }
     if (customPermissions) {
       return customPermissions.includes('*') || customPermissions.includes(item.permission);
     }

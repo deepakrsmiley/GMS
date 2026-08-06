@@ -5,8 +5,16 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
   @apply bg-blue-50/40 text-slate-800;
+}
+
+h1, h2, h3, .font-display {
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  letter-spacing: -0.02em;
 }
 
 .dark body {
@@ -50,11 +58,20 @@ body {
 }
 
 .corp-tabs {
-  @apply flex gap-1 p-1 bg-blue-50 dark:bg-gray-800 rounded-lg w-fit border border-blue-100 dark:border-gray-700;
+  @apply flex gap-1 p-1 bg-blue-50 dark:bg-gray-800 rounded-lg border border-blue-100 dark:border-gray-700;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+}
+
+.corp-tabs.overflow-x-auto {
+  scrollbar-width: thin;
 }
 
 .corp-tab {
-  @apply px-4 py-2 text-sm font-medium rounded-md transition-colors text-slate-500 hover:text-blue-700;
+  @apply px-3 py-2 text-sm font-medium rounded-md transition-colors text-slate-500 hover:text-blue-700 flex-shrink-0 whitespace-nowrap;
 }
 
 .corp-tab-active {

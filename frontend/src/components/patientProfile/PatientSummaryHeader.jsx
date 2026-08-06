@@ -1,69 +1,107 @@
 import React from 'react';
-import { Phone, Mail, MapPin, ShieldCheck, Stethoscope, Calendar, Activity, Wallet, Receipt, Syringe } from 'lucide-react';
-import StatCard from './StatCard';
+import { Phone, Mail, MapPin, ShieldAlert } from 'lucide-react';
 
-const infoItem = (label, value) => (
-  <div>
-    <p className="text-[11px] text-gray-400">{label}</p>
-    <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{value || '—'}</p>
-  </div>
-);
+const fmtMoney = (v) => `₹${(v || 0).toLocaleString('en-IN')}`;
+const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 export default function PatientSummaryHeader({ data }) {
   if (!data) return null;
-  const { patient, stats, currentStatus, lastVisit } = data;
+  const { patient, stats = {}, currentStatus, lastVisit } = data;
+  const admitted = currentStatus === 'Admitted';
+
+  const kpis = [
+    { label: 'Total Visits', value: stats.totalVisits ?? 0 },
+    { label: 'OP Visits', value: stats.totalOPVisits ?? 0 },
+    { label: 'Admissions', value: stats.totalAdmissions ?? 0 },
+    { label: 'Procedures', value: stats.totalProcedures ?? 0 },
+    { label: 'Total Bills', value: stats.totalBills ?? 0 },
+    { label: 'Total Paid', value: fmtMoney(stats.totalPaid) },
+    {
+      label: 'Outstanding',
+      value: fmtMoney(stats.outstandingAmount),
+      warn: (stats.outstandingAmount || 0) > 0,
+    },
+  ];
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
-      <div className="flex flex-wrap items-start gap-5">
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-3xl font-bold shrink-0 overflow-hidden">
-          {patient.photo ? <img src={patient.photo} alt={patient.name} className="w-full h-full object-cover" /> : patient.name?.charAt(0)}
+    <section className="p360-hero">
+      <div className="p360-hero__row">
+        <div className="p360-avatar">
+          {patient.photo
+            ? <img src={patient.photo} alt={patient.name} />
+            : (patient.name?.charAt(0) || '?')}
         </div>
 
-        <div className="flex-1 min-w-[240px]">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{patient.name}</h2>
-            <span className="font-mono text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded-full" title="UHID from registration">UHID {patient.patientId}</span>
-            <span className={`badge-${currentStatus === 'Admitted' ? 'red' : 'green'}`}>{currentStatus}</span>
-            {patient.isVIP && <span className="badge-yellow">VIP</span>}
+        <div className="p360-hero__identity">
+          <div className="p360-hero__name-row">
+            <h2 className="p360-hero__name">{patient.name}</h2>
+            <span className="p360-uhid" title="Unique hospital ID">UHID {patient.patientId}</span>
+            <span className={`p360-badge ${admitted ? 'p360-badge--alert' : 'p360-badge--ok'}`}>
+              {currentStatus || '—'}
+            </span>
+            {patient.isVIP && <span className="p360-badge p360-badge--vip">VIP</span>}
           </div>
-          <p className="text-sm text-gray-500 mt-1">
-            {patient.age} yrs • {patient.gender} • {patient.bloodGroup || 'Blood group unknown'}
+          <p className="p360-hero__meta">
+            {[
+              patient.age != null ? `${patient.age} yrs` : null,
+              patient.gender,
+              patient.bloodGroup ? `Blood ${patient.bloodGroup}` : 'Blood group unknown',
+            ].filter(Boolean).join(' · ')}
           </p>
-          <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-600 dark:text-gray-300">
-            <span className="flex items-center gap-1"><Phone size={13} /> {patient.phone}</span>
-            {patient.email && <span className="flex items-center gap-1"><Mail size={13} /> {patient.email}</span>}
-            {patient.address?.city && <span className="flex items-center gap-1"><MapPin size={13} /> {patient.address.city}</span>}
+          <div className="p360-hero__contacts">
+            {patient.phone && (
+              <span><Phone size={12} /> {patient.phone}</span>
+            )}
+            {patient.email && (
+              <span><Mail size={12} /> {patient.email}</span>
+            )}
+            {patient.address?.city && (
+              <span><MapPin size={12} /> {patient.address.city}</span>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 min-w-[220px]">
-          {infoItem('Occupation', patient.occupation)}
-          {infoItem('Nationality', patient.nationality)}
-          {infoItem('Insurance', patient.insuranceInfo?.provider)}
-          {infoItem('Registered', patient.createdAt ? new Date(patient.createdAt).toLocaleDateString('en-IN') : '—')}
+        <div className="p360-hero__facts">
+          <div>
+            <p className="p360-fact__label">Occupation</p>
+            <p className="p360-fact__value">{patient.occupation || '—'}</p>
+          </div>
+          <div>
+            <p className="p360-fact__label">Insurance</p>
+            <p className="p360-fact__value">{patient.insuranceInfo?.provider || '—'}</p>
+          </div>
+          <div>
+            <p className="p360-fact__label">Nationality</p>
+            <p className="p360-fact__value">{patient.nationality || '—'}</p>
+          </div>
+          <div>
+            <p className="p360-fact__label">Registered</p>
+            <p className="p360-fact__value">{fmtDate(patient.createdAt)}</p>
+          </div>
         </div>
       </div>
 
       {patient.allergies?.length > 0 && (
-        <div className="mt-3 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
-          <ShieldCheck size={14} /> Allergies: {patient.allergies.join(', ')}
+        <div className="p360-allergy">
+          <ShieldAlert size={14} />
+          Allergies: {patient.allergies.join(', ')}
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mt-5">
-        <StatCard icon={Activity} label="Total Visits" value={stats.totalVisits} tone="blue" />
-        <StatCard icon={Stethoscope} label="OP Visits" value={stats.totalOPVisits} tone="purple" />
-        <StatCard icon={Calendar} label="Admissions" value={stats.totalAdmissions} tone="amber" />
-        <StatCard icon={Syringe} label="Procedures" value={stats.totalProcedures} tone="blue" />
-        <StatCard icon={Receipt} label="Total Bills" value={stats.totalBills} tone="purple" />
-        <StatCard icon={Wallet} label="Total Paid" value={`₹${(stats.totalPaid || 0).toLocaleString('en-IN')}`} tone="green" />
-        <StatCard icon={Wallet} label="Outstanding" value={`₹${(stats.outstandingAmount || 0).toLocaleString('en-IN')}`} tone={stats.outstandingAmount > 0 ? 'red' : 'green'} />
+      <div className="p360-kpis">
+        {kpis.map((k) => (
+          <div key={k.label} className={`p360-kpi${k.warn ? ' p360-kpi--warn' : ''}`}>
+            <p className="p360-kpi__label">{k.label}</p>
+            <p className="p360-kpi__value">{k.value}</p>
+          </div>
+        ))}
       </div>
 
       {lastVisit && (
-        <p className="text-xs text-gray-400 mt-3">Last visit: {new Date(lastVisit).toLocaleString('en-IN')}</p>
+        <p className="p360-last-visit">
+          Last visit: {new Date(lastVisit).toLocaleString('en-IN')}
+        </p>
       )}
-    </div>
+    </section>
   );
 }

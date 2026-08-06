@@ -7,7 +7,7 @@ const {
   updateMedicine,
   deleteMedicine,
   addStock,
-  adjustStock,  // NEW
+  adjustStock,
   searchMedicines,
   getLowStockMedicines,
   getOutOfStockMedicines,
@@ -18,6 +18,7 @@ const {
   printPrescription,
   getPharmacyDashboard,
   disposeExpiredBatch,
+  updateBatch,
   sendInventoryNotification,
   exportReport,
   createDirectSale,
@@ -29,59 +30,84 @@ const {
   getExpiryReportMeta,
   exportExpiryReport,
 } = require('../controllers/medicineExpiryController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const {
+  authenticateUser,
+  authorizeRoles,
+  authorizeAnyPermission,
+} = require('../middleware/auth');
 const advancedResults = require('../middleware/advancedResults');
 const Medicine = require('../models/Medicine');
 
 router.use(authenticateUser);
 
-const PHARMA_ROLES = ['Super Admin', 'Admin', 'Pharmacist'];
-const PHARMA_SEARCH = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist'];
-// Note: the current HMS role set has no separate "Inventory Manager" role.
-// Pharmacist/Admin/Super Admin already cover pharmacy & inventory management,
-// so the Medicine Expiry Report's "view" and "download" permissions reuse
-// PHARMA_ROLES exactly like every other pharmacy report in this module.
+const VIEW = authorizeAnyPermission(
+  'VIEW_PHARMACY',
+  'MANAGE_PHARMACY',
+  'CREATE_MEDICINE',
+  'EDIT_MEDICINE',
+  'ADD_PHARMACY_STOCK',
+  'ADJUST_PHARMACY_STOCK',
+  'EDIT_PHARMACY_BATCH',
+  'DELETE_MEDICINE',
+  'DISPENSE_PRESCRIPTION',
+);
+const DISPENSE = authorizeAnyPermission('DISPENSE_PRESCRIPTION');
+const CREATE_MED = authorizeAnyPermission('CREATE_MEDICINE');
+const EDIT_MED = authorizeAnyPermission('EDIT_MEDICINE');
+const EDIT_BATCH = authorizeAnyPermission('EDIT_PHARMACY_BATCH', 'EDIT_MEDICINE');
+const ADD_STOCK = authorizeAnyPermission('ADD_PHARMACY_STOCK');
+const ADJUST_STOCK = authorizeAnyPermission('ADJUST_PHARMACY_STOCK');
+const DELETE_MED = authorizeAnyPermission('DELETE_MEDICINE');
 
-router.get('/search', authorizeRoles(...PHARMA_SEARCH), searchMedicines);
-router.get('/dashboard', authorizeRoles(...PHARMA_ROLES), getPharmacyDashboard);
-router.get('/low-stock', authorizeRoles(...PHARMA_ROLES), getLowStockMedicines);
-router.get('/out-of-stock', authorizeRoles(...PHARMA_ROLES), getOutOfStockMedicines);
-router.get('/expiring', authorizeRoles(...PHARMA_ROLES), getExpiringMedicines);
-router.get('/expired', authorizeRoles(...PHARMA_ROLES), getExpiredMedicines);
-router.get('/activity', authorizeRoles(...PHARMA_ROLES), getInventoryActivity);
-router.get('/reports/:type', authorizeRoles(...PHARMA_ROLES), exportReport);
-router.post('/notify', authorizeRoles(...PHARMA_ROLES), sendInventoryNotification);
+// Search used by billing / OP / doctors — keep role gate + pharmacy viewers
+router.get(
+  '/search',
+  authorizeRoles('Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist'),
+  searchMedicines,
+);
 
-// ── NEW: Medicine Expiry Report (Inventory → Pharmacy → Medicine Expiry Report) ──
-// Placed above `/:id` so `expiry-report` is never captured as a Medicine id param.
-router.get('/expiry-report/meta', authorizeRoles(...PHARMA_ROLES), getExpiryReportMeta);
-router.get('/expiry-report/export', authorizeRoles(...PHARMA_ROLES), exportExpiryReport);
-router.get('/expiry-report', authorizeRoles(...PHARMA_ROLES), getExpiryReport);
-// ──────────────────────────────────────────────────────────────────────────────
+router.get('/dashboard', VIEW, getPharmacyDashboard);
+router.get('/low-stock', VIEW, getLowStockMedicines);
+router.get('/out-of-stock', VIEW, getOutOfStockMedicines);
+router.get('/expiring', VIEW, getExpiringMedicines);
+router.get('/expired', VIEW, getExpiredMedicines);
+router.get('/activity', VIEW, getInventoryActivity);
+router.get('/reports/:type', VIEW, exportReport);
+router.post('/notify', authorizeAnyPermission('ADJUST_PHARMACY_STOCK', 'EDIT_MEDICINE'), sendInventoryNotification);
+
+router.get('/expiry-report/meta', VIEW, getExpiryReportMeta);
+router.get('/expiry-report/export', VIEW, exportExpiryReport);
+router.get('/expiry-report', VIEW, getExpiryReport);
 
 router.route('/')
-  .get(authorizeRoles(...PHARMA_ROLES), advancedResults(Medicine, 'supplier'), getMedicines)
-  .post(authorizeRoles(...PHARMA_ROLES), createMedicine);
+  .get(VIEW, advancedResults(Medicine, 'supplier'), getMedicines)
+  .post(CREATE_MED, createMedicine);
 
-router.get('/prescriptions/:id/print', authorizeRoles('Super Admin', 'Admin', 'Doctor', 'Pharmacist', 'Patient'), printPrescription);
-router.post('/prescriptions/:id/dispense', authorizeRoles(...PHARMA_ROLES), dispensePrescription);
+router.get(
+  '/prescriptions/:id/print',
+  authorizeRoles('Super Admin', 'Admin', 'Doctor', 'Pharmacist', 'Patient'),
+  printPrescription,
+);
+router.post('/prescriptions/:id/dispense', DISPENSE, dispensePrescription);
 
 router.route('/:id')
-  .get(authorizeRoles(...PHARMA_ROLES), getMedicine)
-  .put(authorizeRoles(...PHARMA_ROLES), updateMedicine)
-  .delete(authorizeRoles('Super Admin', 'Admin'), deleteMedicine);
+  .get(VIEW, getMedicine)
+  .put(EDIT_MED, updateMedicine)
+  .delete(DELETE_MED, deleteMedicine);
 
-router.post('/:id/stock', authorizeRoles(...PHARMA_ROLES), addStock);
-// NEW: ENDPOINT FOR REDUCING/INCREASING STOCK
-router.post('/:id/adjust-stock', authorizeRoles(...PHARMA_ROLES), adjustStock);
-// END NEW
-router.post('/:id/batches/:batchId/dispose', authorizeRoles(...PHARMA_ROLES), disposeExpiredBatch);
+router.post('/:id/stock', ADD_STOCK, addStock);
+router.post('/:id/adjust-stock', ADJUST_STOCK, adjustStock);
+router.put('/:id/batches/:batchId', EDIT_BATCH, updateBatch);
+router.post(
+  '/:id/batches/:batchId/dispose',
+  authorizeAnyPermission('ADJUST_PHARMACY_STOCK'),
+  disposeExpiredBatch,
+);
 
-// Direct Sale routes
-router.route("/sales")
-  .get(authorizeRoles(...PHARMA_ROLES), getDirectSales)
-  .post(authorizeRoles(...PHARMA_ROLES), createDirectSale);
+router.route('/sales')
+  .get(DISPENSE, getDirectSales)
+  .post(DISPENSE, createDirectSale);
 
-router.get('/sales/:id', authorizeRoles(...PHARMA_ROLES), getDirectSaleById);
+router.get('/sales/:id', DISPENSE, getDirectSaleById);
 
 module.exports = router;

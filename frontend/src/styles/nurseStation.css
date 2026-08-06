@@ -1,0 +1,364 @@
+/* Nurse Station — ward board + bedside workbench */
+
+.ns-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 0.85rem;
+  align-items: start;
+  min-height: calc(100vh - 8rem);
+}
+
+@media (max-width: 1024px) {
+  .ns-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ns-board,
+.ns-workbench {
+  background: var(--am-surface);
+  border: 1px solid var(--am-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ns-board-head,
+.ns-wb-head {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--am-line);
+  background: linear-gradient(180deg, var(--am-canvas), var(--am-surface));
+}
+
+.ns-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.ns-filters input,
+.ns-filters select,
+.ns-form input,
+.ns-form select,
+.ns-form textarea {
+  border: 1px solid var(--am-line-strong);
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.8125rem;
+  background: var(--am-surface);
+  color: var(--am-ink);
+  width: 100%;
+}
+
+.ns-filters input,
+.ns-filters select {
+  width: auto;
+  flex: 1;
+  min-width: 120px;
+}
+
+.ns-ward-block {
+  padding: 0.65rem 0.75rem 0.25rem;
+}
+
+.ns-ward-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--am-muted);
+  margin: 0 0 0.45rem;
+  padding: 0 0.25rem;
+}
+
+.ns-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: calc(100vh - 14rem);
+  overflow-y: auto;
+  padding: 0 0.75rem 0.85rem;
+}
+
+.ns-card {
+  text-align: left;
+  width: 100%;
+  border: 1px solid var(--am-line);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  background: var(--am-surface);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ns-card:hover {
+  border-color: var(--am-accent);
+}
+
+.ns-card.is-active {
+  border-color: var(--am-accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  background: var(--am-canvas);
+}
+
+.ns-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.ns-card-name {
+  font-weight: 650;
+  font-size: 0.9rem;
+  color: var(--am-ink);
+  margin: 0;
+}
+
+.ns-card-meta {
+  font-size: 0.75rem;
+  color: var(--am-muted);
+  margin: 0.2rem 0 0;
+}
+
+.ns-bed-chip {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+
+.ns-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.ns-badge {
+  font-size: 0.65rem;
+  font-weight: 650;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--am-line);
+  color: var(--am-muted);
+}
+
+.ns-badge.warn {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+
+.ns-badge.ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.ns-badge.alert {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.ns-allergy {
+  margin: 0.75rem 1rem 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.ns-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--am-line);
+  background: var(--am-canvas);
+}
+
+.ns-tab {
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--am-muted);
+  cursor: pointer;
+}
+
+.ns-tab:hover {
+  background: var(--am-surface);
+  color: var(--am-ink);
+}
+
+.ns-tab.is-active {
+  background: var(--am-accent);
+  color: #fff;
+}
+
+.ns-body {
+  padding: 0.9rem 1rem 1.15rem;
+}
+
+.ns-empty {
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: var(--am-muted);
+  font-size: 0.9rem;
+}
+
+.ns-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--am-line);
+  border-radius: 10px;
+  background: var(--am-canvas);
+}
+
+.ns-form .full {
+  grid-column: 1 / -1;
+}
+
+.ns-form label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: var(--am-muted);
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ns-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.ns-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--am-line-strong);
+  background: var(--am-surface);
+  color: var(--am-ink);
+  border-radius: 8px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ns-btn:hover {
+  border-color: var(--am-accent);
+}
+
+.ns-btn.primary {
+  background: var(--am-accent);
+  border-color: var(--am-accent);
+  color: #fff;
+}
+
+.ns-btn.primary:hover {
+  background: var(--am-accent-hover);
+}
+
+.ns-btn.ghost {
+  background: transparent;
+}
+
+.ns-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ns-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--am-line);
+  border-radius: 10px;
+}
+
+.ns-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.ns-table th {
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  background: var(--am-canvas);
+  color: var(--am-muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--am-line);
+}
+
+.ns-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--am-line);
+  vertical-align: top;
+}
+
+.ns-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ns-prio-stat {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.ns-status {
+  font-size: 0.7rem;
+  font-weight: 650;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+
+.ns-status.pending { background: #fff7ed; color: #c2410c; }
+.ns-status.acknowledged { background: #eff6ff; color: #1d4ed8; }
+.ns-status.done { background: #ecfdf5; color: #047857; }
+
+.ns-print-only {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .ns-print-sheet,
+  .ns-print-sheet * {
+    visibility: visible !important;
+  }
+  .ns-print-sheet {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 1.25rem;
+    color: #111;
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

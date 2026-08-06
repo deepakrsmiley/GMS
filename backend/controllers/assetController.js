@@ -12,6 +12,7 @@ exports.getAssets = asyncHandler(async (req, res) => {
   if (req.query.department) filter.department = req.query.department;
 
   const assets = await Asset.find(filter)
+    .select('-documents.data')
     .populate('department', 'name')
     .populate('addedBy', 'name')
     .sort('-createdAt');
@@ -19,11 +20,12 @@ exports.getAssets = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, count: assets.length, data: assets });
 });
 
-// @desc    Get single asset
+// @desc    Get single asset (includes document base64)
 // @route   GET /api/assets/:id
 exports.getAsset = asyncHandler(async (req, res, next) => {
   const asset = await Asset.findById(req.params.id)
     .populate('department', 'name')
+    .populate('vendor', 'name')
     .populate('addedBy', 'name');
   if (!asset) return next(new ErrorResponse('Asset not found', 404));
   res.status(200).json({ success: true, data: asset });

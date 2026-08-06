@@ -6,7 +6,7 @@ const nursingNoteSchema = new mongoose.Schema({
   recordedAt: { type: Date, default: Date.now },
 });
 
-const SERVICE_CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Other'];
+const SERVICE_CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Laboratory', 'Other'];
 const CHARGE_TYPES = ['per_use', 'per_hour', 'per_day'];
 
 const serviceUsageSchema = new mongoose.Schema({
@@ -54,6 +54,41 @@ const doctorRoundSchema = new mongoose.Schema({
   },
 });
 
+// Timed vitals chart entries for Nurse Station (separate from admission/doctor-round vitals)
+const vitalRecordSchema = new mongoose.Schema({
+  bloodPressure: String,
+  pulse: Number,
+  temperature: Number,
+  oxygenSaturation: Number,
+  respiratoryRate: Number,
+  weight: Number,
+  notes: String,
+  recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  recordedAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+const shiftHandoverSchema = new mongoose.Schema({
+  shift: { type: String, enum: ['morning', 'afternoon', 'night'], default: 'morning' },
+  fromNurse: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  toNurseName: String, // free-text when incoming nurse isn't a system user
+  toNurse: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  summary: String,
+  pendingTasks: String,
+  handedOverAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+const doctorOrderSchema = new mongoose.Schema({
+  orderText: { type: String, required: true },
+  priority: { type: String, enum: ['routine', 'stat'], default: 'routine' },
+  orderedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  orderedAt: { type: Date, default: Date.now },
+  status: { type: String, enum: ['pending', 'acknowledged', 'done'], default: 'pending' },
+  acknowledgedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  acknowledgedAt: Date,
+  doneAt: Date,
+  notes: String,
+}, { timestamps: true });
+
 const ipAdmissionSchema = new mongoose.Schema({
   admissionNumber: { type: String, unique: true },
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
@@ -81,33 +116,56 @@ const ipAdmissionSchema = new mongoose.Schema({
   dischargeSummary: String,
   dischargeDetails: {
     diagnosis: String,
-    chiefComplaints: String, // free-text "Chief Complaints" section on the printed summary
+    chiefComplaints: String,
     pastHistory: String,
-    physicalExamination: String, // General condition / P/A / P/V / vitals-style exam note
+    physicalExamination: String,
     obstetricHistory: {
-      rmp: String, // e.g. "3/28 DAYS CYCL"
+      rmp: String,
       lmp: Date,
       edd: Date,
     },
-    deliveryDate: Date, // D.O.DELIVERY on the printed summary (maternity cases only)
+    deliveryDate: Date,
+    // Lab investigation table rows (printed 2-column Name/Report pairs)
+    labInvestigations: [{
+      name: String,
+      report: String,
+    }],
+    investigationsNote: String, // Echo / “remaining reports with patient…”
+    echoReport: String,
     treatmentGiven: String,
     procedures: String,
     clinicalFindings: String,
-    hospitalCourse: String,
-    medicationsOnDischarge: String,
+    hospitalCourse: String, // Course of treatment in hospital
+    babyDetails: String,
+    postnatalPeriod: String,
+    hospitalMedications: String, // Injections given during stay
+    conditionOnDischarge: String,
+    pvStatus: String, // Page 3 opener e.g. P/V - Lochia healthy…
+    medicationsOnDischarge: String, // Further advice on discharge drug list
     followUpAdvice: String,
     dischargeInstructions: String,
-    dama: { type: String, enum: ['Yes', 'No'], default: 'No' }, // Discharge Against Medical Advice
+    motherWarnings: String,
+    dietaryAdvice: String,
+    babyWarnings: String,
+    immunizationNote: String,
+    supplementsAdvice: String,
+    babyLabAdvice: String,
+    customInstructions: String, // Free text box (replaces Tamil block)
+    reviewAppointment: String,
+    emergencyContact: String,
+    allergyAlert: String, // Override / extra allergy line at top
+    addressNote: String, // Optional address override line
+    rchId: String,
+    dama: { type: String, enum: ['Yes', 'No'], default: 'No' },
     referred: { type: String, enum: ['Yes', 'No'], default: 'No' },
     referredTo: String,
     absconded: { type: String, enum: ['Yes', 'No'], default: 'No' },
     death: { type: String, enum: ['Yes', 'No'], default: 'No' },
     remarks: String,
-    // Page-2 maternity advice form (printed after consultant signature)
     maternityAdvice: {
-      motherCondition: String, // Live and Healthy / Maternal Death / Referral
-      babyCondition: String, // Live and Healthy / Still Birth / Newborn Death / Referral
-      adviceChecked: [Number], // indexes of ADVICE_ITEMS checked
+      motherCondition: String,
+      babyCondition: String,
+      adviceChecked: [Number],
       reviewDate: String,
       dischargeDrugs: {
         iron: String,
@@ -133,6 +191,9 @@ const ipAdmissionSchema = new mongoose.Schema({
   },
   nursingNotes: [nursingNoteSchema],
   doctorRounds: [doctorRoundSchema],
+  vitalRecords: [vitalRecordSchema],
+  shiftHandovers: [shiftHandoverSchema],
+  doctorOrders: [doctorOrderSchema],
   serviceUsages: [serviceUsageSchema], // nebulizer, ventilator, O2, injections, other bedside services/procedures
   medications: [ipMedicationSchema], // pharmacy medicines given to this IP patient during the stay (admit → discharge)
   labTests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'LabTest' }],

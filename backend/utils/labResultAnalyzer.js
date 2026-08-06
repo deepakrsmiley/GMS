@@ -49,7 +49,10 @@ function resolveReferenceRange(referenceRange, patient = {}) {
 
 // Extract { min, max, operator } from a numeric-style range string.
 function parseNumericRange(rangeStr) {
-  const str = String(rangeStr || '').trim();
+  const str = String(rangeStr || '')
+    .trim()
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\s+/g, ' ');
   if (!str) return null;
 
   const opMatch = str.match(/^(<=|>=|<|>)\s*(-?\d+(?:\.\d+)?)/);
@@ -61,7 +64,7 @@ function parseNumericRange(rangeStr) {
   }
 
   // "13 - 18", "13-18", "13 – 18", "13 to 18"
-  const rangeMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i);
+  const rangeMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:-|to)\s*(-?\d+(?:\.\d+)?)/i);
   if (rangeMatch) {
     return { min: parseFloat(rangeMatch[1]), max: parseFloat(rangeMatch[2]), minInclusive: true, maxInclusive: true };
   }
@@ -134,6 +137,17 @@ function analyzeResult({ value, referenceRange, criticalLow, criticalHigh, patie
 
     const belowMin = numValue < parsedRange.min;
     const aboveMax = numValue > parsedRange.max;
+
+    if (Number.isFinite(parsedRange.min) && Number.isFinite(parsedRange.max)) {
+      const span = Math.abs(parsedRange.max - parsedRange.min) || Math.abs(parsedRange.max) || 1;
+      const pad = span * 0.5;
+      if (numValue < parsedRange.min - pad) {
+        return { displayRange, flag: 'CRITICAL_LOW', status: 'Critical', arrow: '↓', isCritical: true, isAbnormal: true };
+      }
+      if (numValue > parsedRange.max + pad) {
+        return { displayRange, flag: 'CRITICAL_HIGH', status: 'Critical', arrow: '↑', isCritical: true, isAbnormal: true };
+      }
+    }
 
     if (belowMin) return { displayRange, flag: 'LOW', status: 'Abnormal', arrow: '↓', isCritical: false, isAbnormal: true };
     if (aboveMax) return { displayRange, flag: 'HIGH', status: 'Abnormal', arrow: '↑', isCritical: false, isAbnormal: true };

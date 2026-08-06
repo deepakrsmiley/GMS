@@ -5,18 +5,27 @@ const { generateDischargeSummaryPDF } = require('../utils/pdfGenerator');
 const { normalizeRole } = require('../utils/roles');
 
 const DISCHARGE_REQUIRED_FIELDS = [
-  'diagnosis', 'treatmentGiven', 'clinicalFindings',
-  'hospitalCourse', 'medicationsOnDischarge', 'followUpAdvice', 'dischargeInstructions',
+  'diagnosis',
+  'chiefComplaints',
+  'physicalExamination',
+  'medicationsOnDischarge',
 ];
 
 const buildDischargeSummaryText = (details = {}) => {
   const sections = [
     ['Diagnosis', details.diagnosis],
+    ['Chief Complaints', details.chiefComplaints],
+    ['Past History', details.pastHistory],
+    ['Physical Examination', details.physicalExamination],
+    ['Course of Treatment', details.hospitalCourse],
+    ['Baby Details', details.babyDetails],
+    ['Postnatal Period', details.postnatalPeriod],
+    ['Condition on Discharge', details.conditionOnDischarge],
+    ['Further Advice on Discharge', details.medicationsOnDischarge],
+    ['Additional Instructions', details.customInstructions],
+    ['Review Appointment', details.reviewAppointment],
     ['Treatment Given', details.treatmentGiven],
-    ['Procedures', details.procedures],
     ['Clinical Findings', details.clinicalFindings],
-    ['Hospital Course', details.hospitalCourse],
-    ['Medications On Discharge', details.medicationsOnDischarge],
     ['Follow-up Advice', details.followUpAdvice],
     ['Discharge Instructions', details.dischargeInstructions],
   ];
@@ -56,11 +65,197 @@ exports.getAdmission = asyncHandler(async (req, res, next) => {
     .populate('ward', 'name type')
     .populate('nursingNotes.nurse', 'name')
     .populate('doctorRounds.doctor', 'name')
+    .populate('vitalRecords.recordedBy', 'name')
+    .populate('shiftHandovers.fromNurse', 'name')
+    .populate('shiftHandovers.toNurse', 'name')
+    .populate('doctorOrders.orderedBy', 'name')
+    .populate('doctorOrders.acknowledgedBy', 'name')
     .populate('serviceUsages.administeredBy', 'name')
     .populate('medications.medicine', 'name genericName category unitOfMeasure')
-    .populate('medications.administeredBy', 'name');
+    .populate('medications.administeredBy', 'name')
+    .populate('labTests');
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
   res.status(200).json({ success: true, data: admission });
+});
+
+/** Ward/bed board for Nurse Station — admitted patients with summary badges */
+exports.getNurseStationBoard = asyncHandler(async (req, res) => {
+  const filter = { status: 'admitted' };
+  if (req.query.ward) filter.ward = req.query.ward;
+
+  const admissions = await IPAdmission.find(filter)
+    .populate('patient', 'patientId name age gender bloodGroup knownAllergies allergies')
+    .populate('doctor', 'name')
+    .populate('department', 'name')
+    .populate('bed', 'bedNumber type')
+    .populate('room', 'roomNumber type floor')
+    .populate('ward', 'name type')
+    .sort({ admissionDate: -1 })
+    .lean();
+
+  const data = admissions.map((a) => {
+    const vitals = a.vitalRecords || [];
+    const lastVital = vitals.length
+      ? vitals.reduce((latest, v) => (!latest || new Date(v.recordedAt) > new Date(latest.recordedAt) ? v : latest), null)
+      : null;
+    const pendingOrders = (a.doctorOrders || []).filter((o) => o.status === 'pending' || o.status === 'acknowledged').length;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const medsToday = (a.medications || []).filter((m) => new Date(m.administeredAt) >= todayStart).length;
+    return {
+      _id: a._id,
+      admissionNumber: a.admissionNumber,
+      admissionDate: a.admissionDate,
+      admissionDiagnosis: a.admissionDiagnosis,
+      knownAllergies: a.knownAllergies || a.patient?.knownAllergies || a.patient?.allergies || '',
+      patient: a.patient,
+      doctor: a.doctor,
+      department: a.department,
+      bed: a.bed,
+      room: a.room,
+      ward: a.ward,
+      lastVitalsAt: lastVital?.recordedAt || null,
+      lastVitals: lastVital
+        ? {
+            bloodPressure: lastVital.bloodPressure,
+            pulse: lastVital.pulse,
+            temperature: lastVital.temperature,
+            oxygenSaturation: lastVital.oxygenSaturation,
+          }
+        : a.admissionVitals || null,
+      pendingOrders,
+      medsToday,
+      notesCount: (a.nursingNotes || []).length,
+    };
+  });
+
+  data.sort((a, b) => {
+    const wa = (a.ward?.name || 'ZZZ').localeCompare(b.ward?.name || 'ZZZ');
+    if (wa !== 0) return wa;
+    return String(a.bed?.bedNumber || '').localeCompare(String(b.bed?.bedNumber || ''), undefined, { numeric: true });
+  });
+
+  res.status(200).json({ success: true, count: data.length, data });
+});
+
+exports.addVitalRecord = asyncHandler(async (req, res, next) => {
+  const admission = await IPAdmission.findById(req.params.id);
+  if (!admission) return next(new ErrorResponse('Admission not found', 404));
+  if (admission.status === 'discharged') {
+    return next(new ErrorResponse('Cannot record vitals after discharge', 400));
+  }
+
+  const {
+    bloodPressure, pulse, temperature, oxygenSaturation, respiratoryRate, weight, notes, recordedAt,
+  } = req.body;
+
+  if (!bloodPressure && pulse == null && temperature == null && oxygenSaturation == null
+      && respiratoryRate == null && weight == null) {
+    return next(new ErrorResponse('Enter at least one vital value', 400));
+  }
+
+  admission.vitalRecords.push({
+    bloodPressure,
+    pulse: pulse != null && pulse !== '' ? Number(pulse) : undefined,
+    temperature: temperature != null && temperature !== '' ? Number(temperature) : undefined,
+    oxygenSaturation: oxygenSaturation != null && oxygenSaturation !== '' ? Number(oxygenSaturation) : undefined,
+    respiratoryRate: respiratoryRate != null && respiratoryRate !== '' ? Number(respiratoryRate) : undefined,
+    weight: weight != null && weight !== '' ? Number(weight) : undefined,
+    notes,
+    recordedAt: recordedAt || Date.now(),
+    recordedBy: req.user._id,
+  });
+  await admission.save();
+
+  const populated = await IPAdmission.findById(admission._id).populate('vitalRecords.recordedBy', 'name');
+  res.status(201).json({ success: true, data: populated.vitalRecords });
+});
+
+exports.addShiftHandover = asyncHandler(async (req, res, next) => {
+  const admission = await IPAdmission.findById(req.params.id);
+  if (!admission) return next(new ErrorResponse('Admission not found', 404));
+
+  const { shift, toNurse, toNurseName, summary, pendingTasks, handedOverAt } = req.body;
+  if (!summary || !String(summary).trim()) {
+    return next(new ErrorResponse('Handover summary is required', 400));
+  }
+
+  admission.shiftHandovers.push({
+    shift: shift || 'morning',
+    fromNurse: req.user._id,
+    toNurse: toNurse || undefined,
+    toNurseName,
+    summary: String(summary).trim(),
+    pendingTasks,
+    handedOverAt: handedOverAt || Date.now(),
+  });
+  await admission.save();
+
+  const populated = await IPAdmission.findById(admission._id)
+    .populate('shiftHandovers.fromNurse', 'name')
+    .populate('shiftHandovers.toNurse', 'name');
+  res.status(201).json({ success: true, data: populated.shiftHandovers });
+});
+
+exports.addDoctorOrder = asyncHandler(async (req, res, next) => {
+  const admission = await IPAdmission.findById(req.params.id);
+  if (!admission) return next(new ErrorResponse('Admission not found', 404));
+  if (admission.status === 'discharged') {
+    return next(new ErrorResponse('Cannot add orders after discharge', 400));
+  }
+
+  const { orderText, priority, notes } = req.body;
+  if (!orderText || !String(orderText).trim()) {
+    return next(new ErrorResponse('Order text is required', 400));
+  }
+
+  admission.doctorOrders.push({
+    orderText: String(orderText).trim(),
+    priority: priority === 'stat' ? 'stat' : 'routine',
+    notes,
+    orderedBy: req.user._id,
+    orderedAt: Date.now(),
+    status: 'pending',
+  });
+  await admission.save();
+
+  const populated = await IPAdmission.findById(admission._id)
+    .populate('doctorOrders.orderedBy', 'name')
+    .populate('doctorOrders.acknowledgedBy', 'name');
+  res.status(201).json({ success: true, data: populated.doctorOrders });
+});
+
+exports.updateDoctorOrder = asyncHandler(async (req, res, next) => {
+  const admission = await IPAdmission.findById(req.params.id);
+  if (!admission) return next(new ErrorResponse('Admission not found', 404));
+
+  const order = admission.doctorOrders.id(req.params.orderId);
+  if (!order) return next(new ErrorResponse('Order not found', 404));
+
+  const { status, notes } = req.body;
+  if (notes !== undefined) order.notes = notes;
+
+  if (status === 'acknowledged' && order.status === 'pending') {
+    order.status = 'acknowledged';
+    order.acknowledgedBy = req.user._id;
+    order.acknowledgedAt = new Date();
+  } else if (status === 'done') {
+    if (order.status === 'pending') {
+      order.acknowledgedBy = req.user._id;
+      order.acknowledgedAt = new Date();
+    }
+    order.status = 'done';
+    order.doneAt = new Date();
+  } else if (status && !['acknowledged', 'done'].includes(status)) {
+    return next(new ErrorResponse('Invalid status. Use acknowledged or done', 400));
+  }
+
+  await admission.save();
+
+  const populated = await IPAdmission.findById(admission._id)
+    .populate('doctorOrders.orderedBy', 'name')
+    .populate('doctorOrders.acknowledgedBy', 'name');
+  res.status(200).json({ success: true, data: populated.doctorOrders });
 });
 
 exports.createAdmission = asyncHandler(async (req, res, next) => {
@@ -121,6 +316,31 @@ exports.createAdmission = asyncHandler(async (req, res, next) => {
     .populate('room', 'roomNumber type dailyCharge floor')
     .populate('department', 'name')
     .populate('ward', 'name');
+
+  try {
+    const { notifyRoles, notifyUser } = require('../utils/notify');
+    await notifyRoles(req, {
+      roles: ['Receptionist', 'Admin', 'Super Admin', 'Pharmacist', 'Accountant'],
+      title: 'New IP admission',
+      message: `${populated.patient?.name || 'Patient'} admitted (${populated.admissionNumber || ''})`.trim(),
+      type: 'ip',
+      link: '/ip-admissions',
+      relatedId: populated._id,
+      relatedModel: 'IPAdmission',
+      excludeUserId: req.user._id,
+    });
+    if (populated.doctor?._id) {
+      await notifyUser(req, {
+        userId: populated.doctor._id,
+        title: 'Your IP patient admitted',
+        message: `${populated.patient?.name || 'Patient'} — ${populated.admissionNumber || ''}`.trim(),
+        type: 'ip',
+        link: '/ip-admissions',
+        relatedId: populated._id,
+        relatedModel: 'IPAdmission',
+      });
+    }
+  } catch (_) { /* ignore */ }
 
   res.status(201).json({ success: true, data: populated });
 });
@@ -387,6 +607,21 @@ exports.dischargePatient = asyncHandler(async (req, res, next) => {
   }
 
   if (req.app.get('io')) req.app.get('io').emit('bed:update', { type: 'discharge' });
+
+  try {
+    const { notifyRoles } = require('../utils/notify');
+    const patientName = (await require('../models/Patient').findById(admission.patient).select('name').lean())?.name;
+    await notifyRoles(req, {
+      roles: ['Receptionist', 'Admin', 'Super Admin', 'Pharmacist', 'Accountant'],
+      title: 'Discharge ready for billing',
+      message: `${patientName || 'Patient'} discharged — prepare final bill (${admission.admissionNumber || ''})`.trim(),
+      type: 'ip',
+      link: '/billing',
+      relatedId: admission._id,
+      relatedModel: 'IPAdmission',
+      excludeUserId: req.user._id,
+    });
+  } catch (_) { /* ignore */ }
 
   res.status(200).json({ success: true, data: admission, message: 'Patient discharged. Room and bed are now available.' });
 });

@@ -104,7 +104,8 @@ const drawSection = (doc, title, content, rgb = BLUE) => {
   doc.moveDown(0.5);
 };
 
-const generateInvoicePDF = async (bill, res, branding) => generatePremiumInvoicePDF(bill, res, branding);
+const generateInvoicePDF = async (bill, res, branding, options) =>
+  generatePremiumInvoicePDF(bill, res, branding, options);
 const generateThermalPrint = async (bill, res, branding) => generatePremiumThermalPrint(bill, res, branding);
 
 const generateLabReportPDF = async (labTest, res, branding) => {
@@ -439,130 +440,251 @@ const fmtDotDate = (value) => {
   return `${dd}.${mm}.${yyyy}`;
 };
 
-// Bordered patient grid matching the printed discharge form (4 rows × 2 cols)
-const drawInfoGrid = (doc, rows) => {
-  const width = PAGE.width - MARGIN * 2;
-  const rowH = 20;
-  const top = doc.y;
-  const colLabelW = 88;
-  const col1X = MARGIN;
-  const col2X = MARGIN + width / 2;
+/** Strip chars PDFKit Times (WinAnsi) can't encode cleanly */
+const pdfSafe = (value) => String(value == null ? '' : value)
+  .replace(/[\u2010-\u2015\u2212]/g, '-')
+  .replace(/[\u2018\u2019]/g, "'")
+  .replace(/[\u201C\u201D]/g, '"')
+  .replace(/\u2026/g, '...')
+  .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
 
-  doc.rect(MARGIN, top, width, rowH * rows.length).lineWidth(1).strokeColor('#111111').stroke();
-  doc.moveTo(col2X, top).lineTo(col2X, top + rowH * rows.length).lineWidth(0.7).strokeColor('#111111').stroke();
+const DS_MARGIN = 32;
+const DS_INNER = 8;
+const DS_FOOTER_H = 14;
+const DS_CONTENT_TOP = DS_MARGIN + DS_INNER + 4;
+const DS_CONTENT_BOTTOM = PAGE.height - DS_MARGIN - DS_INNER - DS_FOOTER_H;
+
+const fitPdfText = (doc, s, maxW) => {
+  let t = pdfSafe(s || '');
+  while (t.length > 1 && doc.widthOfString(t) > maxW) t = t.slice(0, -1);
+  return t;
+};
+
+const drawDischargePageFrame = (doc) => {
+  const x = DS_MARGIN;
+  const y = DS_MARGIN;
+  const w = PAGE.width - DS_MARGIN * 2;
+  const h = PAGE.height - DS_MARGIN * 2;
+  doc.save();
+  doc.lineWidth(1.5).strokeColor('#1e3a8a').rect(x, y, w, h).stroke();
+  doc.lineWidth(0.6).strokeColor('#93c5fd').rect(x + 3.5, y + 3.5, w - 7, h - 7).stroke();
+  doc.restore();
+  doc.x = DS_MARGIN + DS_INNER;
+  doc.y = DS_CONTENT_TOP;
+};
+
+const drawDischargePageNumbers = (doc) => {
+  const range = doc.bufferedPageRange();
+  const w = PAGE.width - DS_MARGIN * 2;
+  const footerY = PAGE.height - DS_MARGIN - DS_FOOTER_H + 2;
+  for (let i = 0; i < range.count; i += 1) {
+    doc.switchToPage(range.start + i);
+    doc.save();
+    doc.font('Helvetica').fontSize(7).fillColor('#64748b')
+      .text(`Page ${i + 1} of ${range.count}`, DS_MARGIN, footerY, {
+        width: w,
+        align: 'center',
+        lineBreak: false,
+      });
+    doc.restore();
+  }
+};
+
+/** New page only when content cannot fit — no forced blank pages. */
+const ensureDischargeSpace = (doc, need, state) => {
+  if (doc.y + need <= DS_CONTENT_BOTTOM) return;
+  doc.addPage({ size: 'A4', margin: 0 });
+  state.pageNo += 1;
+  drawDischargePageFrame(doc);
+};
+
+/**
+ * Pack tightly: fill remaining page, then continue from top of next page.
+ */
+const drawDischargeSection = (doc, title, content, state) => {
+  const text = pdfSafe(content).trim();
+  if (!text || text === '-') return;
+  const left = DS_MARGIN + DS_INNER;
+  const width = PAGE.width - (DS_MARGIN + DS_INNER) * 2;
+  const label = `${String(title).toUpperCase()}:`;
+
+  ensureDischargeSpace(doc, 26, state);
+  const headerY = doc.y;
+  doc.font('Times-Bold').fontSize(9).fillColor('#111').text(label, left, headerY, { width, lineBreak: false });
+  const underlineW = Math.min(doc.widthOfString(label), width);
+  doc.moveTo(left, headerY + 10).lineTo(left + underlineW, headerY + 10)
+    .lineWidth(0.65).strokeColor('#111').stroke();
+  doc.y = headerY + 12;
+
+  let remaining = text;
+  doc.font('Times-Roman').fontSize(8.5).fillColor('#111');
+  while (remaining) {
+    let avail = DS_CONTENT_BOTTOM - doc.y;
+    if (avail < 12) {
+      ensureDischargeSpace(doc, 40, state);
+      avail = DS_CONTENT_BOTTOM - doc.y;
+    }
+
+    let lo = 0;
+    let hi = remaining.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      const h = doc.heightOfString(remaining.slice(0, mid), { width, lineGap: 1.1 });
+      if (h <= avail) lo = mid;
+      else hi = mid - 1;
+    }
+    let fitLen = lo;
+    if (fitLen <= 0) {
+      ensureDischargeSpace(doc, avail + 20, state);
+      continue;
+    }
+    if (fitLen < remaining.length) {
+      const slice = remaining.slice(0, fitLen);
+      const breakAt = Math.max(slice.lastIndexOf('\n'), slice.lastIndexOf(' '));
+      if (breakAt > fitLen * 0.4) fitLen = breakAt + 1;
+    }
+
+    const chunk = remaining.slice(0, fitLen).replace(/\s+$/, '');
+    remaining = remaining.slice(fitLen).replace(/^\s+/, '');
+    if (chunk) {
+      doc.text(chunk, left, doc.y, { width, align: 'left', lineGap: 1.1 });
+    }
+  }
+  doc.moveDown(0.22);
+};
+
+const drawDischargeInfoGrid = (doc, rows, state) => {
+  const left = DS_MARGIN + DS_INNER;
+  const width = PAGE.width - (DS_MARGIN + DS_INNER) * 2;
+  const rowH = 16;
+  const totalH = rowH * rows.length;
+  ensureDischargeSpace(doc, totalH + 6, state);
+  const top = doc.y;
+  const col2X = left + width / 2;
+  const labelW = 76;
+
+  doc.rect(left, top, width, totalH).lineWidth(0.9).strokeColor('#111').stroke();
+  doc.moveTo(col2X, top).lineTo(col2X, top + totalH).lineWidth(0.6).strokeColor('#333').stroke();
   for (let i = 1; i < rows.length; i += 1) {
     const y = top + rowH * i;
-    doc.moveTo(MARGIN, y).lineTo(MARGIN + width, y).lineWidth(0.6).strokeColor('#333333').stroke();
+    doc.moveTo(left, y).lineTo(left + width, y).lineWidth(0.5).strokeColor('#555').stroke();
   }
 
   rows.forEach((row, i) => {
-    const y = top + i * rowH + 6;
-    doc.font('Times-Bold').fontSize(9).fillColor('#111').text(`${row[0]}:`, col1X + 6, y, { width: colLabelW, lineBreak: false });
-    doc.font('Times-Roman').fontSize(9).fillColor('#111').text(row[1] || '', col1X + 6 + colLabelW, y, {
-      width: width / 2 - colLabelW - 14,
-      lineBreak: false,
-    });
+    const y = top + i * rowH + 4;
+    const half = width / 2 - 10;
+    const valW = half - labelW;
+    doc.font('Times-Bold').fontSize(7.5).fillColor('#111')
+      .text(pdfSafe(`${row[0]}:`), left + 4, y, { width: labelW, lineBreak: false });
+    doc.font('Times-Roman').fontSize(7.5).fillColor('#111')
+      .text(fitPdfText(doc, row[1], valW), left + 4 + labelW, y, { width: valW, lineBreak: false });
     if (row[2]) {
-      doc.font('Times-Bold').fontSize(9).fillColor('#111').text(`${row[2]}:`, col2X + 6, y, { width: colLabelW, lineBreak: false });
-      doc.font('Times-Roman').fontSize(9).fillColor('#111').text(row[3] || '', col2X + 6 + colLabelW, y, {
-        width: width / 2 - colLabelW - 14,
-        lineBreak: false,
-      });
+      doc.font('Times-Bold').fontSize(7.5).fillColor('#111')
+        .text(pdfSafe(`${row[2]}:`), col2X + 4, y, { width: labelW, lineBreak: false });
+      doc.font('Times-Roman').fontSize(7.5).fillColor('#111')
+        .text(fitPdfText(doc, row[3], valW), col2X + 4 + labelW, y, { width: valW, lineBreak: false });
     }
   });
 
-  doc.y = top + rowH * rows.length + 12;
-};
-
-// Underlined bold section header + body text (exact paper style)
-const drawUnderlinedSection = (doc, title, content) => {
-  if (content === undefined || content === null || content === '') return;
-  const width = PAGE.width - MARGIN * 2;
-  const headerY = doc.y;
-  const label = `${String(title).toUpperCase()}:`;
-  doc.font('Times-Bold').fontSize(10).fillColor('#111').text(label, MARGIN, headerY, { continued: false });
-  const headerWidth = doc.widthOfString(label);
-  doc.moveTo(MARGIN, headerY + 12).lineTo(MARGIN + headerWidth, headerY + 12).lineWidth(0.8).strokeColor('#111').stroke();
-  doc.moveDown(0.25);
-  doc.font('Times-Roman').fontSize(9.5).fillColor('#111').text(String(content), MARGIN, doc.y, { width, align: 'left' });
-  doc.moveDown(0.55);
+  doc.y = top + totalH + 6;
 };
 
 const generateDischargeSummaryPDF = async (admission, res, branding) => {
   const b = branding || await brandingService.getBranding();
-  const doc = new PDFDocument({ margin: MARGIN, size: 'A4' });
+  const d = admission.dischargeDetails || {};
+  const patient = admission.patient || {};
+  const ma = d.maternityAdvice || {};
+  const includeMaternity = !!(ma.motherCondition || ma.babyCondition || (ma.adviceChecked || []).length);
+  const state = { pageNo: 1 };
+
+  const doc = new PDFDocument({
+    margin: 0,
+    size: 'A4',
+    autoFirstPage: true,
+    bufferPages: true,
+  });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=discharge-${admission.admissionNumber || admission._id}.pdf`);
   doc.pipe(res);
 
-  const d = admission.dischargeDetails || {};
-  const patient = admission.patient || {};
-  const width = PAGE.width - MARGIN * 2;
+  drawDischargePageFrame(doc);
+  const width = PAGE.width - (DS_MARGIN + DS_INNER) * 2;
+  const left = DS_MARGIN + DS_INNER;
 
-  // ── Allergy alert (top of paper) ──────────────────────────────────
-  const allergyText = (patient.allergies || []).filter(Boolean).join(', ').toUpperCase();
+  const allergyText = pdfSafe(d.allergyAlert || (patient.allergies || []).filter(Boolean).join(', ')).toUpperCase();
   if (allergyText) {
-    doc.font('Times-Bold').fontSize(10).fillColor('#111')
-      .text(allergyText.includes('ALLERGY') ? allergyText : `${allergyText} ALLERGY`, MARGIN, doc.y, { width, align: 'center' });
-    doc.moveDown(0.35);
+    doc.font('Times-Bold').fontSize(8.5).fillColor('#b91c1c')
+      .text(allergyText.includes('ALLERGY') ? allergyText : `${allergyText} ALLERGY`, left, doc.y, { width, align: 'center' });
+    doc.moveDown(0.12);
   }
 
-  // ── Hospital letterhead (name + address only — matches paper) ─────
-  doc.font('Times-Bold').fontSize(18).fillColor('#111')
-    .text((b.hospitalName || 'Hospital').toUpperCase(), MARGIN, doc.y, { width, align: 'center' });
+  doc.font('Times-Bold').fontSize(14).fillColor('#111')
+    .text(pdfSafe((b.hospitalName || 'Hospital').toUpperCase()), left, doc.y, { width, align: 'center' });
   if (b.address) {
-    doc.moveDown(0.15);
-    doc.font('Times-Roman').fontSize(10).fillColor('#111')
-      .text(b.address, MARGIN, doc.y, { width, align: 'center' });
+    doc.moveDown(0.05);
+    doc.font('Times-Roman').fontSize(8).fillColor('#333')
+      .text(pdfSafe(b.address), left, doc.y, { width, align: 'center' });
   }
-  doc.moveDown(0.45);
-  doc.font('Times-Bold').fontSize(13).fillColor('#111')
-    .text('DISCHARGE SUMMARY', MARGIN, doc.y, { width, align: 'center' });
-  doc.moveDown(0.55);
+  doc.moveDown(0.18);
+  doc.font('Times-Bold').fontSize(10.5).fillColor('#111')
+    .text('DISCHARGE SUMMARY', left, doc.y, { width, align: 'center' });
+  const titleY = doc.y;
+  const titleW = doc.widthOfString('DISCHARGE SUMMARY');
+  doc.moveTo((PAGE.width - titleW) / 2, titleY + 1).lineTo((PAGE.width + titleW) / 2, titleY + 1)
+    .lineWidth(0.75).strokeColor('#111').stroke();
+  doc.moveDown(0.28);
 
-  // ── Patient info grid (exact paper rows) ──────────────────────────
   const consultant = admission.doctor?.name
-    ? `DR.${admission.doctor.name.replace(/^dr\.?\s*/i, '').toUpperCase()}${admission.doctor.specialization ? ` ${admission.doctor.specialization}` : ''}`
+    ? `DR.${pdfSafe(admission.doctor.name).replace(/^dr\.?\s*/i, '').toUpperCase()}${admission.doctor.specialization ? ` ${pdfSafe(admission.doctor.specialization)}` : ''}`
     : '';
   const ageSex = [
     patient.age != null ? `${patient.age} YRS` : '',
     patient.gender ? String(patient.gender).toUpperCase() : '',
   ].filter(Boolean).join(' / ');
 
-  drawInfoGrid(doc, [
-    ['PATIENT NAME', (patient.name || '').toUpperCase(), 'D.O.A', fmtDischargeDT(admission.admissionDate)],
+  drawDischargeInfoGrid(doc, [
+    ['PATIENT NAME', pdfSafe(patient.name || '').toUpperCase(), 'D.O.A', fmtDischargeDT(admission.admissionDate)],
     ['AGE/SEX', ageSex, 'D.O.DELIVERY', fmtDischargeDT(d.deliveryDate)],
     ['IP.NO', admission.admissionNumber || '', 'D.O.D', fmtDischargeDate(admission.dischargeDate)],
-    ['CONSULTANT', consultant, 'DEPARTMENT', (admission.department?.name || '').toUpperCase()],
-  ]);
+    ['CONSULTANT', consultant, 'DEPARTMENT', pdfSafe(admission.department?.name || '').toUpperCase()],
+  ], state);
 
-  // ── Address (left) + UHID / RCH ID (right) ────────────────────────
   const addr = patient.address || {};
-  const street = addr.street || '';
-  const cityLine = [addr.city, addr.state, addr.pincode].filter(Boolean).join(', ');
+  const street = d.addressNote || addr.street || '';
+  const cityLine = d.addressNote ? '' : [addr.city, addr.state, addr.pincode].filter(Boolean).join(', ');
+  ensureDischargeSpace(doc, 40, state);
   const addrTop = doc.y;
-  doc.font('Times-Bold').fontSize(9.5).fillColor('#111').text('ADDRESS:', MARGIN, addrTop);
-  doc.font('Times-Roman').fontSize(9.5).fillColor('#111');
-  let ay = addrTop + 13;
-  if (street) { doc.text(street.toUpperCase(), MARGIN, ay, { width: 300 }); ay = doc.y + 1; }
-  if (cityLine) { doc.text(cityLine.toUpperCase(), MARGIN, ay, { width: 300 }); ay = doc.y + 1; }
-  if (patient.phone) { doc.text(`PH: ${patient.phone}`, MARGIN, ay, { width: 300 }); ay = doc.y + 1; }
-
+  doc.font('Times-Bold').fontSize(8).fillColor('#111').text('ADDRESS:', left, addrTop, { lineBreak: false });
+  doc.font('Times-Roman').fontSize(8).fillColor('#111');
+  let ay = addrTop + 10;
+  if (street) {
+    doc.text(pdfSafe(street).toUpperCase(), left, ay, { width: width * 0.62 });
+    ay = doc.y + 1;
+  }
+  if (cityLine) {
+    doc.text(pdfSafe(cityLine).toUpperCase(), left, ay, { width: width * 0.62 });
+    ay = doc.y + 1;
+  }
+  if (!d.addressNote && patient.phone) {
+    doc.text(`PH: ${pdfSafe(patient.phone)}`, left, ay, { width: width * 0.62 });
+    ay = doc.y + 1;
+  }
   let rightY = addrTop;
   if (patient.patientId) {
-    doc.font('Times-Bold').fontSize(9.5).fillColor('#111')
-      .text(`UHID - ${patient.patientId}`, MARGIN + 320, rightY, { width: 180, align: 'right' });
-    rightY += 14;
+    doc.font('Times-Bold').fontSize(8)
+      .text(`UHID - ${pdfSafe(patient.patientId)}`, left + width * 0.62, rightY, { width: width * 0.38, align: 'right', lineBreak: false });
+    rightY += 11;
   }
-  if (patient.rchId) {
-    doc.font('Times-Bold').fontSize(9.5).fillColor('#111')
-      .text(`RCH ID - ${patient.rchId}`, MARGIN + 320, rightY, { width: 180, align: 'right' });
+  const rchId = d.rchId || patient.rchId;
+  if (rchId) {
+    doc.font('Times-Bold').fontSize(8)
+      .text(`RCH ID - ${pdfSafe(rchId)}`, left + width * 0.62, rightY, { width: width * 0.38, align: 'right', lineBreak: false });
+    rightY += 11;
   }
-  doc.y = Math.max(ay, rightY + 14) + 8;
+  doc.y = Math.max(ay, rightY) + 4;
 
-  // ── Clinical sections (paper order) ───────────────────────────────
-  drawUnderlinedSection(doc, 'Diagnosis', d.diagnosis || admission.finalDiagnosis || admission.admissionDiagnosis);
-
+  // Continuous flow — page breaks only when content overflows
+  drawDischargeSection(doc, 'Diagnosis', d.diagnosis || admission.finalDiagnosis || admission.admissionDiagnosis, state);
   const oh = d.obstetricHistory || {};
   if (oh.rmp || oh.lmp || oh.edd) {
     const lines = [];
@@ -572,55 +694,134 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
       oh.edd ? `EDD - ${fmtDotDate(oh.edd)}` : null,
     ].filter(Boolean).join('    ');
     if (lmpEdd) lines.push(lmpEdd);
-    drawUnderlinedSection(doc, 'Menstrual History', lines.join('\n'));
+    drawDischargeSection(doc, 'Menstrual History', lines.join('\n'), state);
+  }
+  drawDischargeSection(doc, 'Chief Complaints', d.chiefComplaints, state);
+  drawDischargeSection(doc, 'Past History', d.pastHistory || 'Nil relevant', state);
+  drawDischargeSection(doc, 'Physical Examination', d.physicalExamination, state);
+
+  const labs = (d.labInvestigations || []).filter((r) => r && (String(r.name || '').trim() || String(r.report || '').trim()));
+  if (labs.length) {
+    ensureDischargeSpace(doc, 24, state);
+    const labLabel = 'LABORATORY INVESTIGATION REPORTS:';
+    const ly = doc.y;
+    doc.font('Times-Bold').fontSize(9).fillColor('#111').text(labLabel, left, ly, { lineBreak: false });
+    doc.moveTo(left, ly + 10).lineTo(left + doc.widthOfString(labLabel), ly + 10).lineWidth(0.65).strokeColor('#111').stroke();
+    doc.y = ly + 12;
+    const half = width / 2 - 4;
+    for (let i = 0; i < labs.length; i += 2) {
+      ensureDischargeSpace(doc, 12, state);
+      const a = labs[i];
+      const bRow = labs[i + 1];
+      const y = doc.y;
+      doc.font('Times-Roman').fontSize(7.5).fillColor('#111');
+      doc.text(fitPdfText(doc, `NAME: ${pdfSafe(a.name || '')}   REPORT: ${pdfSafe(a.report || '')}`, half), left, y, { width: half, lineBreak: false });
+      if (bRow) {
+        doc.text(fitPdfText(doc, `NAME: ${pdfSafe(bRow.name || '')}   REPORT: ${pdfSafe(bRow.report || '')}`, half), left + half + 8, y, { width: half, lineBreak: false });
+      }
+      doc.y = y + 11;
+    }
+    doc.moveDown(0.15);
   }
 
-  drawUnderlinedSection(doc, 'Chief Complaints', d.chiefComplaints);
-  drawUnderlinedSection(doc, 'Past History', d.pastHistory || 'Nil relevant');
-  drawUnderlinedSection(doc, 'Physical Examination', d.physicalExamination);
-  drawUnderlinedSection(doc, 'Medications On Discharge', d.medicationsOnDischarge || '—');
+  drawDischargeSection(doc, 'Echo / Imaging', d.echoReport, state);
+  if (d.investigationsNote) {
+    ensureDischargeSpace(doc, 16, state);
+    doc.font('Times-Italic').fontSize(8).fillColor('#333')
+      .text(pdfSafe(d.investigationsNote), left, doc.y, { width });
+    doc.moveDown(0.18);
+  }
+  drawDischargeSection(doc, 'Course of Treatment in Hospital', d.hospitalCourse, state);
+  drawDischargeSection(doc, 'Baby Details', d.babyDetails, state);
+  if (d.postnatalPeriod || d.hospitalMedications) {
+    drawDischargeSection(doc, 'Postnatal Period', [d.postnatalPeriod, d.hospitalMedications].filter(Boolean).join('\n'), state);
+  }
+  drawDischargeSection(doc, 'Condition on Discharge', d.conditionOnDischarge, state);
 
-  // Optional extra clinical blocks (only if filled)
+  if (d.pvStatus) {
+    ensureDischargeSpace(doc, 14, state);
+    doc.font('Times-Roman').fontSize(8.5).fillColor('#111').text(pdfSafe(d.pvStatus), left, doc.y, { width });
+    doc.moveDown(0.18);
+  }
+  drawDischargeSection(doc, 'Further Advice on Discharge', d.medicationsOnDischarge, state);
+  [d.motherWarnings, d.dietaryAdvice, d.babyWarnings].filter(Boolean).forEach((txt) => {
+    ensureDischargeSpace(doc, 14, state);
+    doc.font('Times-Roman').fontSize(8).fillColor('#111').text(pdfSafe(txt), left, doc.y, { width });
+    doc.moveDown(0.15);
+  });
+  if (d.immunizationNote) {
+    ensureDischargeSpace(doc, 12, state);
+    doc.font('Times-Bold').fontSize(8).text(pdfSafe(d.immunizationNote), left, doc.y, { width });
+    doc.moveDown(0.12);
+  }
+  if (d.supplementsAdvice) {
+    ensureDischargeSpace(doc, 12, state);
+    doc.font('Times-Bold').fontSize(8).text(pdfSafe(String(d.supplementsAdvice).toUpperCase()), left, doc.y, { width });
+    doc.moveDown(0.12);
+  }
+  if (d.babyLabAdvice) {
+    ensureDischargeSpace(doc, 14, state);
+    doc.font('Times-Roman').fontSize(8).text(pdfSafe(d.babyLabAdvice), left, doc.y, { width });
+    doc.moveDown(0.15);
+  }
+  drawDischargeSection(doc, 'Additional Instructions', d.customInstructions, state);
+  if (d.reviewAppointment) {
+    ensureDischargeSpace(doc, 12, state);
+    doc.font('Times-Roman').fontSize(8).text(`• ${pdfSafe(d.reviewAppointment)}`, left, doc.y, { width });
+    doc.moveDown(0.12);
+  }
+  if (d.emergencyContact) {
+    ensureDischargeSpace(doc, 12, state);
+    doc.font('Times-Roman').fontSize(8).text(`• ${pdfSafe(d.emergencyContact)}`, left, doc.y, { width });
+    doc.moveDown(0.18);
+  }
+
   [
     ['Treatment Given', d.treatmentGiven],
     ['Clinical Findings', d.clinicalFindings],
     ['Procedure', d.procedures],
-    ['Course Given', d.hospitalCourse],
     ['Follow-up Advice', d.followUpAdvice],
     ['Discharge Instructions', d.dischargeInstructions],
-  ].forEach(([title, content]) => {
-    if (content) drawUnderlinedSection(doc, title, content);
-  });
+  ].forEach(([title, content]) => drawDischargeSection(doc, title, content, state));
 
-  if (d.dama === 'Yes' || d.referred === 'Yes' || d.absconded === 'Yes' || d.death === 'Yes') {
+  if (d.dama === 'Yes' || d.referred === 'Yes' || d.absconded === 'Yes' || d.death === 'Yes' || d.remarks) {
     const flags = [
       d.dama === 'Yes' ? 'DAMA: Yes' : null,
-      d.referred === 'Yes' ? `Referred to ${d.referredTo || '—'}` : null,
+      d.referred === 'Yes' ? `Referred to ${d.referredTo || '-'}` : null,
       d.absconded === 'Yes' ? 'Absconded: Yes' : null,
       d.death === 'Yes' ? 'Death: Yes' : null,
+      d.remarks || null,
     ].filter(Boolean).join('\n');
-    if (flags) drawUnderlinedSection(doc, 'Remarks', [flags, d.remarks].filter(Boolean).join('\n'));
-  } else if (d.remarks) {
-    drawUnderlinedSection(doc, 'Remarks', d.remarks);
+    drawDischargeSection(doc, 'Remarks', flags, state);
   }
 
-  // ── Signature ─────────────────────────────────────────────────────
-  const sigY = Math.max(doc.y + 28, 720);
-  doc.font('Times-Roman').fontSize(9).fillColor('#111')
-    .text(`Date: ${fmtDischargeDate(admission.dischargeDate || new Date())}`, MARGIN, sigY);
-  doc.moveTo(PAGE.width - MARGIN - 170, sigY + 28).lineTo(PAGE.width - MARGIN, sigY + 28).strokeColor('#333').stroke();
-  doc.font('Times-Bold').fontSize(8).text('Consultant Signature', PAGE.width - MARGIN - 170, sigY + 32, { width: 170, align: 'center' });
+  ensureDischargeSpace(doc, 58, state);
+  const sigY = doc.y + 10;
+  doc.font('Times-Roman').fontSize(8).fillColor('#111')
+    .text(`Date: ${fmtDischargeDate(admission.dischargeDate || new Date())}`, left, sigY, { lineBreak: false });
+  doc.moveTo(PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 20)
+    .lineTo(PAGE.width - DS_MARGIN - DS_INNER, sigY + 20)
+    .strokeColor('#333').lineWidth(0.65).stroke();
+  doc.font('Times-Bold').fontSize(7.5)
+    .text('Consultant Signature', PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 24, { width: 140, align: 'center', lineBreak: false });
   if (admission.doctor?.name) {
-    doc.font('Times-Roman').fontSize(8)
-      .text(`Dr. ${admission.doctor.name}`, PAGE.width - MARGIN - 170, sigY + 44, { width: 170, align: 'center' });
+    doc.font('Times-Roman').fontSize(7.5)
+      .text(`Dr. ${pdfSafe(admission.doctor.name)}`, PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 35, { width: 140, align: 'center', lineBreak: false });
+    if (admission.doctor.specialization) {
+      doc.font('Times-Roman').fontSize(7)
+        .text(pdfSafe(admission.doctor.specialization), PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 45, { width: 140, align: 'center', lineBreak: false });
+    }
   }
 
-  // ── Final A4 page: maternity discharge advice form ────────────────
-  const { drawMaternityDischargeAdvicePage } = require('./maternityDischargePage');
-  drawMaternityDischargeAdvicePage(doc, PAGE, MARGIN, d.maternityAdvice || {});
+  if (includeMaternity) {
+    const { drawMaternityDischargeAdvicePage } = require('./maternityDischargePage');
+    drawMaternityDischargeAdvicePage(doc, PAGE, DS_MARGIN, ma);
+  }
 
+  drawDischargePageNumbers(doc);
   doc.end();
 };
+
 
 module.exports = {
   generateInvoicePDF,

@@ -11,37 +11,22 @@ const {
   deleteSupplier,
 } = require('../controllers/supplierController');
 
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 const advancedResults = require('../middleware/advancedResults');
 const Supplier = require('../models/Supplier');
 
 router.use(authenticateUser);
 
-const PHARMA_ROLES = ['Super Admin', 'Admin', 'Pharmacist'];
+const VIEW_SUPPLIERS = authorizeAnyPermission('MANAGE_SUPPLIERS', 'MANAGE_PHARMACY', 'VIEW_PHARMACY');
+const MANAGE_SUPPLIERS = authorizeAnyPermission('MANAGE_SUPPLIERS', 'MANAGE_PHARMACY');
 
 router.route('/')
-  .get(
-    authorizeRoles(...PHARMA_ROLES),
-    advancedResults(Supplier),
-    getSuppliers
-  )
-  .post(
-    authorizeRoles(...PHARMA_ROLES),
-    createSupplier
-  );
+  .get(VIEW_SUPPLIERS, advancedResults(Supplier), getSuppliers)
+  .post(MANAGE_SUPPLIERS, createSupplier);
 
 router.route('/:id')
-  .get(
-    authorizeRoles(...PHARMA_ROLES),
-    getSupplier
-  )
-  .put(
-    authorizeRoles(...PHARMA_ROLES),
-    updateSupplier
-  )
-  .delete(
-    authorizeRoles(...PHARMA_ROLES),
-    deleteSupplier
-  );
+  .get(VIEW_SUPPLIERS, getSupplier)
+  .put(MANAGE_SUPPLIERS, updateSupplier)
+  .delete(MANAGE_SUPPLIERS, deleteSupplier);
 
 module.exports = router;

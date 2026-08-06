@@ -9,6 +9,9 @@ const ROLE_ALIASES = {
   'lab technician': 'Lab Technician',
   accountant: 'Accountant',
   nurse: 'Nurse',
+  biomedical_engineer: 'Biomedical Engineer',
+  'biomedical engineer': 'Biomedical Engineer',
+  bme: 'Biomedical Engineer',
   patient: 'Patient',
 };
 
@@ -21,4 +24,4 @@ export const normalizeRole = (role) => {
 export const hasRole = (userRole, allowedRoles) =>
   allowedRoles.some((role) => normalizeRole(userRole) === normalizeRole(role));
 
-export const STAFF_ROLES = ['Admin', 'Receptionist', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician'];
+export const STAFF_ROLES = ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Biomedical Engineer'];

@@ -35,7 +35,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['IBM Plex Sans', 'Segoe UI', 'sans-serif'],
+        display: ['IBM Plex Sans', 'Segoe UI', 'sans-serif'],
       },
       animation: {
         'slide-in': 'slideIn 0.3s ease-out',

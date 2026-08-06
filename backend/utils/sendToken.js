@@ -1,3 +1,5 @@
+const { toAvatarDataUri } = require('./userAvatar');
+
 const sendTokenResponse = (user, statusCode, res) => {
   const token = user.getSignedJwtToken();
   const isLocalhost = (process.env.CLIENT_URL || '').includes('localhost');
@@ -18,11 +20,13 @@ const sendTokenResponse = (user, statusCode, res) => {
       token,
       data: {
         id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         role: user.role,
         department: user.department,
-        avatar: user.avatar,
+        avatar: toAvatarDataUri(user),
         permissions: user.permissions || [],
       },
     });

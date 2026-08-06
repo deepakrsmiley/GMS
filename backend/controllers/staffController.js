@@ -57,6 +57,8 @@ exports.updateStaff = asyncHandler(async (req, res, next) => {
 
   if (permissionsChanged) {
     req.body.permissions = sanitizePermissions(req.body.permissions) || [];
+    // Force re-login so UI picks up locked/unlocked pharmacy edit options immediately
+    req.body.tokenVersion = (existingStaff.tokenVersion || 0) + 1;
   }
 
   const staff = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate('department');
@@ -86,6 +88,32 @@ exports.toggleStaffStatus = asyncHandler(async (req, res, next) => {
   }
   
   res.status(200).json({ success: true, data: { isActive: staff.isActive } });
+});
+
+exports.deleteStaff = asyncHandler(async (req, res, next) => {
+  const staff = await User.findById(req.params.id);
+  if (!staff) return next(new ErrorResponse('Staff member not found', 404));
+
+  if (req.user && String(req.user._id) === String(staff._id)) {
+    return next(new ErrorResponse('You cannot delete your own account', 400));
+  }
+
+  if (staff.role === 'Super Admin') {
+    const superAdminCount = await User.countDocuments({ role: 'Super Admin' });
+    if (superAdminCount <= 1) {
+      return next(new ErrorResponse('Cannot delete the last Super Admin account', 400));
+    }
+  }
+
+  const name = staff.name;
+  const role = staff.role;
+  await staff.deleteOne();
+
+  if (req.user) {
+    await createAuditLog(req.user._id, 'User Deletion', `Deleted staff user ${name} (${role})`, req);
+  }
+
+  res.status(200).json({ success: true, message: 'Staff member deleted' });
 });
 
 exports.getDoctors = asyncHandler(async (req, res) => {

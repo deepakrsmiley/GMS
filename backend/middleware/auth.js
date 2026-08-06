@@ -76,7 +76,15 @@ const authorizeRoles =
     next();
   };
 
-// Authorize permissions middleware
+const resolveUserPermissions = (user) => {
+  const roleKey = normalizeRole(user.role);
+  if (Array.isArray(user.permissions) && user.permissions.length > 0) {
+    return user.permissions;
+  }
+  return permissions[roleKey] || [];
+};
+
+// Authorize permissions middleware (ALL listed codes required)
 const authorizePermissions =
   (...requiredPermissions) =>
   (req, res, next) => {
@@ -84,20 +92,40 @@ const authorizePermissions =
       return next();
     }
 
-    const roleKey = normalizeRole(req.user.role);
-    // A user's own custom permissions (set by Super Admin) always win over
-    // the role's default list. Only fall back to the role defaults when the
-    // user has no custom permissions assigned.
-    const userPermissions =
-      Array.isArray(req.user.permissions) && req.user.permissions.length > 0
-        ? req.user.permissions
-        : permissions[roleKey] || [];
+    const userPermissions = resolveUserPermissions(req.user);
 
     const hasPermission = requiredPermissions.every(
       (perm) => userPermissions.includes(perm) || userPermissions.includes("*"),
     );
 
     if (!hasPermission) {
+      return next(
+        new ErrorResponse(
+          "You do not have permission to access this resource",
+          403,
+        ),
+      );
+    }
+    next();
+  };
+
+/**
+ * Allow if user has ANY of the listed permissions (or '*').
+ * Specific codes are required — MANAGE_PHARMACY is not a silent bypass for
+ * EDIT_MEDICINE / batch / stock actions (those must be listed or granted).
+ */
+const authorizeAnyPermission =
+  (...requiredPermissions) =>
+  (req, res, next) => {
+    if (isSuperAdmin(req.user.role)) {
+      return next();
+    }
+
+    const userPermissions = resolveUserPermissions(req.user);
+    if (userPermissions.includes("*")) return next();
+
+    const ok = requiredPermissions.some((perm) => userPermissions.includes(perm));
+    if (!ok) {
       return next(
         new ErrorResponse(
           "You do not have permission to access this resource",
@@ -116,6 +144,7 @@ module.exports = {
   authenticateUser,
   authorizeRoles,
   authorizePermissions,
+  authorizeAnyPermission,
   protect,
   authorize,
 };

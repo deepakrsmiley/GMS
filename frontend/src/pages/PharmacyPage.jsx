@@ -18,26 +18,39 @@ import {
   Activity,
   ChevronDown,
   ChevronRight,
+  FileQuestion,
+  Lock,
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { hasPermission, hasPharmacyPermission } from "../constants/permissions";
 import { hasRole } from "../utils/roles";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import Modal from "../components/common/Modal";
+import MedicineEditRequestModal from "../components/pharmacy/MedicineEditRequestModal";
 import DataTable from "../components/common/DataTable";
 import PageHeader from "../components/common/PageHeader";
 import PharmacyInventoryDashboard from "../components/pharmacy/PharmacyInventoryDashboard";
 import DistributorDesk from "../components/pharmacy/DistributorDesk";
 import PharmacyCounterSale from "../components/pharmacy/PharmacyCounterSale";
 import PharmacyTaxInvoice from "../components/billing/PharmacyTaxInvoice";
+import OPServiceUsageModal from "../components/op/OPServiceUsageModal";
 import {
   flattenMedicineBatchOptions,
   formatBatchExpiry,
 } from "../utils/medicineBatches";
+
+const OP_SERVICE_BILL_CATEGORY = {
+  Equipment: "Procedure",
+  Procedure: "Procedure",
+  Nursing: "Nursing",
+  Injection: "Procedure",
+  Other: "Miscellaneous",
+};
 
 const categories = [
   "tablet",
@@ -63,6 +76,8 @@ function PendingPharmacyPanel({ canDispense }) {
   const [consultationFee, setConsultationFee] = useState("");
   const [consultationGst, setConsultationGst] = useState(0);
   const [showConsultFee, setShowConsultFee] = useState(false);
+  const [showServiceModal, setShowServiceModal] = useState(false);
+  const [includeVisitServices, setIncludeVisitServices] = useState(true);
 
   const { data: pending, isLoading } = useQuery({
     queryKey: ["opPharmacyPending"],
@@ -95,6 +110,20 @@ function PendingPharmacyPanel({ canDispense }) {
       medicinesAlready: visitDetail?.pharmacyMedicines || [],
     };
   }, [visitDetail, selectedOp]);
+
+  const billableVisitServices = useMemo(() => {
+    const usages = visitDetail?.serviceUsages || selectedOp?.serviceUsages || [];
+    return usages.filter((u) => u && (Number(u.unitPrice) || 0) > 0);
+  }, [visitDetail, selectedOp]);
+
+  const visitServicesTotal = useMemo(
+    () =>
+      billableVisitServices.reduce(
+        (sum, u) => sum + (Number(u.quantity) || 1) * (Number(u.unitPrice) || 0),
+        0,
+      ),
+    [billableVisitServices],
+  );
 
   const hasVisitUsage =
     visitUsages.labs.length > 0
@@ -167,13 +196,23 @@ function PendingPharmacyPanel({ canDispense }) {
     const fee = Number(consultationFee) || 0;
     const feeGst = fee * ((Number(consultationGst) || 0) / 100);
     const feeTotal = fee + feeGst;
+    const servicesTotal = includeVisitServices ? visitServicesTotal : 0;
 
     const discountAmount =
       (subtotal + medGst) * ((Number(discount) || 0) / 100);
-    const total = subtotal + medGst - discountAmount + feeTotal;
+    const total = subtotal + medGst - discountAmount + feeTotal + servicesTotal;
 
-    return { subtotal, medGst, discountAmount, total, fee, feeGst, feeTotal };
-  }, [items, discount, consultationFee, consultationGst]);
+    return {
+      subtotal,
+      medGst,
+      discountAmount,
+      total,
+      fee,
+      feeGst,
+      feeTotal,
+      servicesTotal,
+    };
+  }, [items, discount, consultationFee, consultationGst, includeVisitServices, visitServicesTotal]);
 
   const resetWorkbench = () => {
     setItems([]);
@@ -214,8 +253,29 @@ function PendingPharmacyPanel({ canDispense }) {
   const billMut = useMutation({
     mutationFn: async () => {
       if (!selectedOp) throw new Error("Select a patient");
-      if (!items.length && !totals.fee)
-        throw new Error("Add at least one medicine or a consultation fee");
+      const serviceLines =
+        includeVisitServices
+          ? billableVisitServices.map((u) => {
+              const qty = Number(u.quantity) || 1;
+              const unitPrice = Number(u.unitPrice) || 0;
+              return {
+                category: OP_SERVICE_BILL_CATEGORY[u.category] || "Procedure",
+                type: "procedure",
+                description: `${u.serviceName} × ${qty}${u.notes ? ` — ${u.notes}` : ""}`,
+                name: u.serviceName,
+                quantity: qty,
+                unitPrice,
+                gstPercent: 0,
+                gstAmount: 0,
+                referenceId: u._id,
+                referenceModel: "OPRegistration",
+              };
+            })
+          : [];
+
+      if (!items.length && !totals.fee && !serviceLines.length) {
+        throw new Error("Add medicine, consultation fee, or a procedure / machine");
+      }
 
       const billItems = [
         ...(totals.fee > 0
@@ -234,6 +294,7 @@ function PendingPharmacyPanel({ canDispense }) {
               },
             ]
           : []),
+        ...serviceLines,
         ...items.map((item) => ({
           category: "Pharmacy",
           type: "medicine",
@@ -432,22 +493,48 @@ function PendingPharmacyPanel({ canDispense }) {
 
           {/* Everything used this OP visit — lab / procedure / machine */}
           <div className="px-5 py-4 border-b border-blue-50 bg-white">
-            <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                 <Activity size={15} className="text-blue-600" />
                 Used this visit
               </h3>
-              <span className="text-[11px] text-slate-400">
-                Auto from OP services / lab · medicines added below
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {billableVisitServices.length > 0 && (
+                  <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeVisitServices}
+                      onChange={(e) => setIncludeVisitServices(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    Include in bill ({fmt(visitServicesTotal)})
+                  </label>
+                )}
+                <button
+                  type="button"
+                  disabled={!selectedOp}
+                  onClick={() => setShowServiceModal(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Plus size={14} /> Manual add (procedure / machine)
+                </button>
+              </div>
             </div>
 
             {!hasVisitUsage ? (
               <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center">
                 <p className="text-sm text-slate-500">No lab, procedure, or machine usage logged yet for this visit.</p>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Add them from OP Queue → Services / Lab. They will appear here automatically.
+                  Use <span className="font-medium text-slate-600">Manual add</span> for procedures, machines, nursing, injections — or add from OP Queue → Services / Lab.
                 </p>
+                <button
+                  type="button"
+                  disabled={!selectedOp}
+                  onClick={() => setShowServiceModal(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+                >
+                  <Plus size={14} /> Add procedure / machine now
+                </button>
               </div>
             ) : (
               <div className="grid sm:grid-cols-2 gap-3">
@@ -827,6 +914,9 @@ function PendingPharmacyPanel({ canDispense }) {
                   {totals.feeGst > 0 && ` + GST ${fmt(totals.feeGst)}`} = {fmt(totals.feeTotal)}
                 </p>
               )}
+              {totals.servicesTotal > 0 && (
+                <p>Procedures / machines: {fmt(totals.servicesTotal)}</p>
+              )}
               <p>
                 Medicines: Subtotal {fmt(totals.subtotal)} + GST {fmt(totals.medGst)} − Discount{" "}
                 {fmt(totals.discountAmount)}
@@ -847,7 +937,7 @@ function PendingPharmacyPanel({ canDispense }) {
                 disabled={
                   !canDispense ||
                   billMut.isPending ||
-                  (!items.length && !totals.fee)
+                  (!items.length && !totals.fee && !(includeVisitServices && billableVisitServices.length))
                 }
                 className="btn-primary justify-center disabled:opacity-50 order-1 sm:order-2 min-w-[200px]"
               >
@@ -859,6 +949,18 @@ function PendingPharmacyPanel({ canDispense }) {
         </div>
       </div>
 
+      <OPServiceUsageModal
+        registration={selectedOp}
+        isOpen={showServiceModal}
+        onClose={() => {
+          setShowServiceModal(false);
+          if (selectedOp?._id) {
+            qc.invalidateQueries(["op-registration", selectedOp._id]);
+            qc.invalidateQueries(["opPharmacyPending"]);
+          }
+        }}
+      />
+
       {printBill && (
         <PharmacyTaxInvoice
           bill={printBill}
@@ -869,36 +971,46 @@ function PendingPharmacyPanel({ canDispense }) {
   );
 }
 
-export default function PharmacyPage() {
+export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
   const [searchParams] = useSearchParams();
   const { user } = useSelector((s) => s.auth);
-  // Admin can also add/edit medicines (matches backend PHARMA_ROLES)
-  const canManageInventory = hasRole(user?.role, ["Super Admin", "Admin", "Pharmacist"]);
-  const canDispense = hasRole(user?.role, [
-    "Super Admin",
-    "Admin",
-    "Pharmacist",
-  ]);
-  const canViewDashboard = hasRole(user?.role, [
-    "Super Admin",
-    "Admin",
-    "Pharmacist",
-  ]);
+  // Super Admin grants these on Staff → Feature permissions
+  const canViewPharmacy = hasPermission(user, "VIEW_PHARMACY") || hasPermission(user, "MANAGE_PHARMACY");
+  const canCreateMedicine = hasPharmacyPermission(user, "CREATE_MEDICINE");
+  const canEditMedicine = hasPharmacyPermission(user, "EDIT_MEDICINE");
+  const canAddStock = hasPharmacyPermission(user, "ADD_PHARMACY_STOCK");
+  const canAdjustStock = hasPharmacyPermission(user, "ADJUST_PHARMACY_STOCK");
+  const canEditBatch =
+    hasPharmacyPermission(user, "EDIT_PHARMACY_BATCH") || canEditMedicine;
+  const canDeleteMedicine = hasPharmacyPermission(user, "DELETE_MEDICINE");
+  const canManageSuppliers = hasPharmacyPermission(user, "MANAGE_SUPPLIERS");
+  const canManageInventory =
+    canCreateMedicine || canEditMedicine || canAddStock || canAdjustStock || canEditBatch || canDeleteMedicine;
+  const canDispense = hasPermission(user, "DISPENSE_PRESCRIPTION");
+  const canRequestMedicineEdit = hasPermission(user, "CREATE_CHANGE_REQUEST");
+  const canViewDashboard = canViewPharmacy || canManageInventory;
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editMed, setEditMed] = useState(null);
+  const [requestEditMed, setRequestEditMed] = useState(null);
+  const [requestEditBatchId, setRequestEditBatchId] = useState(null);
   const [showStock, setShowStock] = useState(null);
   // ── NEW: Stock Adjustment (Reduce / Increase) state ─────────────────────
   const [showAdjustStock, setShowAdjustStock] = useState(null);
   const [adjustType, setAdjustType] = useState("reduce"); // 'reduce' or 'increase'
+  const [adjustBatchNumber, setAdjustBatchNumber] = useState(""); // which batch to adjust
+  // Edit batch in place (expiry / price / qty / batch no)
+  const [editBatchCtx, setEditBatchCtx] = useState(null); // { medicine, batch }
   // Expanded medicine rows — show all batches under the SKU
   const [expandedMedIds, setExpandedMedIds] = useState(() => new Set());
   // ─────────────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState(() => {
+    if (forcedTab) return forcedTab;
     const urlTab = searchParams.get("tab");
-    return ["inventory", "prescriptions", "counter", "distributors"].includes(urlTab)
-      ? urlTab
-      : "prescriptions";
+    // Operational pharmacy: prescriptions / counter only (masters live under /masters)
+    if (urlTab === "inventory") return "prescriptions";
+    if (urlTab === "distributors") return "prescriptions";
+    return ["prescriptions", "counter"].includes(urlTab) ? urlTab : "prescriptions";
   });
   const [invSearch, setInvSearch] = useState("");
   const [invSearchInput, setInvSearchInput] = useState("");
@@ -906,10 +1018,17 @@ export default function PharmacyPage() {
   const qc = useQueryClient();
 
   useEffect(() => {
+    if (forcedTab) {
+      setTab(forcedTab);
+      return;
+    }
     const urlTab = searchParams.get("tab");
-    if (urlTab && ["inventory", "prescriptions", "counter", "distributors"].includes(urlTab))
-      setTab(urlTab);
-  }, [searchParams]);
+    if (urlTab === "inventory" || urlTab === "distributors") {
+      setTab("prescriptions");
+      return;
+    }
+    if (urlTab && ["prescriptions", "counter"].includes(urlTab)) setTab(urlTab);
+  }, [searchParams, forcedTab]);
 
   // Debounce the inventory search box so we don't hit the API on every keystroke
   useEffect(() => {
@@ -928,8 +1047,48 @@ export default function PharmacyPage() {
           `/pharmacy?page=${page}&limit=20&sort=name${invSearch ? `&search=${encodeURIComponent(invSearch)}` : ""}`,
         )
         .then((r) => r.data),
-    enabled: tab === "inventory",
+    enabled: tab === "inventory" || (masterMode && forcedTab === "inventory"),
   });
+
+  // Pending medicine change requests → lock direct Edit until Super Admin decides
+  const { data: medicineLocks = [] } = useQuery({
+    queryKey: ["medicine-edit-locks"],
+    queryFn: async () => (await api.get("/change-requests/medicine-locks")).data.data || [],
+    enabled: tab === "inventory" || (masterMode && forcedTab === "inventory"),
+    refetchInterval: 30000,
+  });
+
+  const editLockByMedId = useMemo(() => {
+    const map = {};
+    medicineLocks.forEach((lock) => {
+      if (!lock.medicineId) return;
+      // Medicine-level lock (no batch) wins for the whole SKU
+      if (!lock.batchId) {
+        map[lock.medicineId] = lock;
+      } else if (!map[lock.medicineId]) {
+        // Keep a soft marker so row can show "batch pending" if needed
+        map[lock.medicineId] = { ...lock, scope: 'batch-only' };
+      }
+    });
+    return map;
+  }, [medicineLocks]);
+
+  const editLockByBatchId = useMemo(() => {
+    const map = {};
+    medicineLocks.forEach((lock) => {
+      if (lock.batchId) map[lock.batchId] = lock;
+    });
+    return map;
+  }, [medicineLocks]);
+
+  const medicineLevelLock = (medicineId) => {
+    const lock = editLockByMedId[String(medicineId)];
+    if (!lock) return null;
+    if (lock.scope === 'batch-only') return null;
+    return lock;
+  };
+
+  const canBypassEditLock = hasRole(user?.role, ["Super Admin", "Admin"]);
 
   // Apply the in/low/out-of-stock quick filter on the current page of results
   const filteredMedicines = useMemo(() => {
@@ -959,6 +1118,33 @@ export default function PharmacyPage() {
     reset: adjustReset,
   } = useForm();
 
+  const {
+    register: batchEditReg,
+    handleSubmit: batchEditSubmit,
+    reset: batchEditReset,
+  } = useForm();
+
+  const toDateInput = (d) => {
+    if (!d) return "";
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toISOString().slice(0, 10);
+  };
+
+  const openAddStock = (r) => {
+    setShowStock(r);
+    stockReset({
+      sellingPrice: r.sellingPrice,
+      mrp: r.mrp,
+      purchasePrice: r.purchasePrice,
+    });
+    setExpandedMedIds((prev) => {
+      const next = new Set(prev);
+      next.add(r._id);
+      return next;
+    });
+  };
+
   const addMed = useMutation({
     mutationFn: (d) => api.post("/pharmacy", d),
     onSuccess: () => {
@@ -968,6 +1154,32 @@ export default function PharmacyPage() {
       setShowAdd(false);
       reset();
     },
+    onError: (err) => {
+      const code = err?.response?.data?.code;
+      const existing = err?.response?.data?.data;
+      const msg = err?.response?.data?.message || "Could not add medicine";
+      if ((code === "MEDICINE_EXISTS" || code === "BARCODE_EXISTS") && existing?._id) {
+        toast.error(msg, { duration: 5000 });
+        setShowAdd(false);
+        reset();
+        // Open that medicine and Add Batch — no need to create again
+        setInvSearchInput(existing.name || "");
+        setInvSearch(existing.name || "");
+        setExpandedMedIds((prev) => {
+          const next = new Set(prev);
+          next.add(existing._id);
+          return next;
+        });
+        openAddStock({
+          ...existing,
+          sellingPrice: existing.sellingPrice,
+          mrp: existing.mrp,
+          purchasePrice: existing.purchasePrice,
+        });
+        return;
+      }
+      toast.error(msg);
+    },
   });
 
   const updateMed = useMutation({
@@ -976,8 +1188,12 @@ export default function PharmacyPage() {
       toast.success("Medicine updated!");
       qc.invalidateQueries(["medicines"]);
       qc.invalidateQueries(["pharmaInventoryDash"]);
+      qc.invalidateQueries(["medicine-edit-locks"]);
       setEditMed(null);
       reset();
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.message || "Update failed — edit may be locked by a pending request");
     },
   });
 
@@ -996,8 +1212,13 @@ export default function PharmacyPage() {
   const addStock = useMutation({
     mutationFn: ({ id, data: stockData }) =>
       api.post(`/pharmacy/${id}/stock`, stockData),
-    onSuccess: (_res, vars) => {
-      toast.success("Batch added — see batches under this medicine");
+    onSuccess: (res, vars) => {
+      const merged = res?.data?.merged;
+      const msg = res?.data?.message
+        || (merged
+          ? "Same batch found — quantity increased (no duplicate)"
+          : "Batch added under this medicine");
+      toast.success(msg);
       qc.invalidateQueries(["medicines"]);
       qc.invalidateQueries(["pharmaInventoryDash"]);
       if (vars?.id) {
@@ -1010,22 +1231,41 @@ export default function PharmacyPage() {
       setShowStock(null);
       stockReset();
     },
+    onError: (err) => {
+      toast.error(err?.response?.data?.message || "Could not add batch");
+    },
   });
 
   // ── NEW: Adjust Stock (Reduce / Increase) mutation ─────────────────────────
   const adjustStockMut = useMutation({
     mutationFn: ({ id, data: stockData }) =>
       api.post(`/pharmacy/${id}/adjust-stock`, stockData),
-    onSuccess: () => {
-      toast.success("Stock adjusted successfully!");
+    onSuccess: (res) => {
+      toast.success(res?.data?.message || "Stock adjusted successfully!");
       qc.invalidateQueries(["medicines"]);
       qc.invalidateQueries(["pharmaInventoryDash"]);
       setShowAdjustStock(null);
       adjustReset();
       setAdjustType("reduce");
+      setAdjustBatchNumber("");
     },
     onError: (err) => {
       toast.error(err?.response?.data?.message || "Stock adjustment failed");
+    },
+  });
+
+  const updateBatchMut = useMutation({
+    mutationFn: ({ medicineId, batchId, data: payload }) =>
+      api.put(`/pharmacy/${medicineId}/batches/${batchId}`, payload),
+    onSuccess: (res) => {
+      toast.success(res?.data?.message || "Batch updated");
+      qc.invalidateQueries(["medicines"]);
+      qc.invalidateQueries(["pharmaInventoryDash"]);
+      setEditBatchCtx(null);
+      batchEditReset();
+    },
+    onError: (err) => {
+      toast.error(err?.response?.data?.message || "Could not update batch");
     },
   });
   // ─────────────────────────────────────────────────────────────────────────
@@ -1060,25 +1300,41 @@ export default function PharmacyPage() {
       .slice()
       .sort((a, b) => new Date(a.expiryDate || 0) - new Date(b.expiryDate || 0));
 
+  const openAdjustStock = (medicine, batch = null) => {
+    setShowAdjustStock(medicine);
+    setAdjustType("reduce");
+    adjustReset();
+    const batches = activeBatches(medicine).filter((b) => Number(b.quantity) > 0);
+    const pick = batch?.batchNumber || batches[0]?.batchNumber || "";
+    setAdjustBatchNumber(pick);
+  };
+
+  const openEditBatch = (medicine, batch) => {
+    setEditBatchCtx({ medicine, batch });
+    batchEditReset({
+      batchNumber: batch.batchNumber || "",
+      expiryDate: toDateInput(batch.expiryDate),
+      quantity: Number(batch.quantity) || 0,
+      sellingPrice: batch.sellingPrice != null ? batch.sellingPrice : medicine.sellingPrice,
+      mrp: batch.mrp != null ? batch.mrp : medicine.mrp,
+      purchasePrice: batch.purchasePrice != null ? batch.purchasePrice : medicine.purchasePrice,
+      manufacturer: batch.manufacturer || medicine.manufacturer || "",
+      supplierInvoice: batch.supplierInvoice || "",
+      receivedDate: toDateInput(batch.receivedDate),
+      remarks: "",
+    });
+    setExpandedMedIds((prev) => {
+      const next = new Set(prev);
+      next.add(medicine._id);
+      return next;
+    });
+  };
+
   const toggleExpandMed = (id) => {
     setExpandedMedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      return next;
-    });
-  };
-
-  const openAddStock = (r) => {
-    setShowStock(r);
-    stockReset({
-      sellingPrice: r.sellingPrice,
-      mrp: r.mrp,
-      purchasePrice: r.purchasePrice,
-    });
-    setExpandedMedIds((prev) => {
-      const next = new Set(prev);
-      next.add(r._id);
       return next;
     });
   };
@@ -1110,7 +1366,7 @@ export default function PharmacyPage() {
       return (
         <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-5 text-center">
           <p className="text-sm text-slate-500">No batches on this medicine yet.</p>
-          {canManageInventory && (
+          {canAddStock && (
             <button
               type="button"
               onClick={() => openAddStock(r)}
@@ -1127,9 +1383,9 @@ export default function PharmacyPage() {
       <div className="rounded-xl border border-blue-100 bg-white overflow-hidden">
         <div className="flex items-center justify-between gap-2 px-3 py-2 bg-blue-50/70 border-b border-blue-100">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-800">
-            Batches ({batches.length}) · total {r.currentStock} {r.unitOfMeasure || "Nos"}
+            Batches ({batches.length}) · FEFO (nearest expiry first) · total {r.currentStock} {r.unitOfMeasure || "Nos"}
           </p>
-          {canManageInventory && (
+          {canAddStock && (
             <button
               type="button"
               onClick={() => openAddStock(r)}
@@ -1150,18 +1406,30 @@ export default function PharmacyPage() {
                 <th className="px-3 py-2 text-right font-semibold">MRP</th>
                 <th className="px-3 py-2 text-right font-semibold">Purchase</th>
                 <th className="px-3 py-2 text-left font-semibold">Status</th>
+                {(canEditBatch || canAdjustStock || canRequestMedicineEdit) && (
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {batches.map((b) => {
+              {batches.map((b, i) => {
                 const st = batchStatus(b);
                 const sell = b.sellingPrice != null ? b.sellingPrice : r.sellingPrice;
                 const mrp = b.mrp != null ? b.mrp : r.mrp;
                 const purchase = b.purchasePrice != null ? b.purchasePrice : r.purchasePrice;
+                const isNearest = i === 0 && Number(b.quantity) > 0;
                 return (
-                  <tr key={b._id || `${b.batchNumber}-${b.expiryDate}`} className="hover:bg-slate-50/80">
+                  <tr
+                    key={b._id || `${b.batchNumber}-${b.expiryDate}`}
+                    className={`hover:bg-slate-50/80 ${isNearest ? "bg-emerald-50/40" : ""}`}
+                  >
                     <td className="px-3 py-2 font-mono font-semibold text-slate-800">
                       {b.batchNumber || "—"}
+                      {isNearest && (
+                        <span className="ml-1.5 text-[9px] font-sans font-bold uppercase tracking-wide text-emerald-700">
+                          Sell first
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 tabular-nums text-slate-700">
                       {fmtBatchDate(b.expiryDate)}
@@ -1180,6 +1448,80 @@ export default function PharmacyPage() {
                       {purchase != null ? fmt(purchase) : "—"}
                     </td>
                     <td className={`px-3 py-2 font-semibold ${st.cls}`}>{st.label}</td>
+                    {(canEditBatch || canAdjustStock || canRequestMedicineEdit) && (
+                      <td className="px-3 py-2 text-right">
+                        <div className="inline-flex items-center gap-2 justify-end">
+                          {canEditBatch && (() => {
+                            const medLock = medicineLevelLock(r._id);
+                            const batchLock = editLockByBatchId[String(b._id)];
+                            const lock = medLock || batchLock;
+                            const locked = !!lock && !canBypassEditLock;
+                            return (
+                              <button
+                                type="button"
+                                disabled={locked}
+                                onClick={() => {
+                                  if (locked) {
+                                    toast.error(`Batch locked — pending ${lock.requestNumber}`);
+                                    return;
+                                  }
+                                  openEditBatch(r, b);
+                                }}
+                                className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
+                                  locked ? "text-slate-400 cursor-not-allowed" : "text-blue-700 hover:underline"
+                                }`}
+                                title={
+                                  locked
+                                    ? `Locked by ${lock.requestNumber}`
+                                    : `Edit batch ${b.batchNumber}`
+                                }
+                              >
+                                {locked ? <Lock size={12} /> : <Pencil size={12} />} Edit
+                              </button>
+                            );
+                          })()}
+                          {canRequestMedicineEdit && (() => {
+                            const medLock = medicineLevelLock(r._id);
+                            const batchLock = editLockByBatchId[String(b._id)];
+                            const locked = !!(medLock || batchLock);
+                            return (
+                              <button
+                                type="button"
+                                disabled={locked}
+                                onClick={() => {
+                                  if (locked) {
+                                    toast(`Already pending: ${(medLock || batchLock).requestNumber}`, { icon: "🔒" });
+                                    return;
+                                  }
+                                  setRequestEditBatchId(String(b._id));
+                                  setRequestEditMed(r);
+                                }}
+                                className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
+                                  locked ? "text-amber-500 cursor-not-allowed" : "text-indigo-700 hover:underline"
+                                }`}
+                                title={
+                                  locked
+                                    ? `Pending ${(medLock || batchLock).requestNumber}`
+                                    : `Request change for batch ${b.batchNumber}`
+                                }
+                              >
+                                {locked ? <Lock size={12} /> : <FileQuestion size={12} />} Request
+                              </button>
+                            );
+                          })()}
+                          {canAdjustStock && (
+                            <button
+                              type="button"
+                              onClick={() => openAdjustStock(r, b)}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 hover:underline"
+                              title={`Adjust batch ${b.batchNumber}`}
+                            >
+                              <SlidersHorizontal size={12} /> Adjust
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -1315,110 +1657,186 @@ export default function PharmacyPage() {
       key: "actions",
       header: "Actions",
       render: (r) =>
-        canManageInventory && (
+        (canAddStock || canAdjustStock || canEditMedicine || canDeleteMedicine || canViewPharmacy) && (
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                openAddStock(r);
-              }}
-              title="Add new batch (Layers)"
-              className="p-1.5 rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-100"
-            >
-              <Layers size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowAdjustStock(r);
-                setAdjustType("reduce");
-              }}
-              title="Adjust Stock"
-              className="p-1.5 rounded-md text-slate-500 hover:text-amber-700 hover:bg-amber-50 border border-transparent hover:border-amber-100"
-            >
-              <SlidersHorizontal size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditMed(r);
-                reset(r);
-              }}
-              title="Edit"
-              className="p-1.5 rounded-md text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 border border-transparent hover:border-emerald-100"
-            >
-              <Pencil size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm(`Delete "${r.name}"? This cannot be undone.`)) {
-                  deleteMed.mutate(r._id);
-                }
-              }}
-              title="Delete"
-              className="p-1.5 rounded-md text-slate-500 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100"
-            >
-              <Trash2 size={14} />
-            </button>
+            {canAddStock && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAddStock(r);
+                }}
+                title="Add new batch (Layers)"
+                className="p-1.5 rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-100"
+              >
+                <Layers size={14} />
+              </button>
+            )}
+            {canAdjustStock && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAdjustStock(r);
+                }}
+                title="Adjust stock by batch"
+                className="p-1.5 rounded-md text-slate-500 hover:text-amber-700 hover:bg-amber-50 border border-transparent hover:border-amber-100"
+              >
+                <SlidersHorizontal size={14} />
+              </button>
+            )}
+            {canEditMedicine && (() => {
+              const lock = medicineLevelLock(r._id);
+              const locked = !!lock && !canBypassEditLock;
+              return (
+                <button
+                  type="button"
+                  disabled={locked}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (locked) {
+                      toast.error(`Edit locked — pending ${lock.requestNumber}. Wait for Super Admin.`);
+                      return;
+                    }
+                    setEditMed(r);
+                    reset(r);
+                  }}
+                  title={
+                    locked
+                      ? `Locked by pending request ${lock.requestNumber}`
+                      : lock && canBypassEditLock
+                        ? `Pending ${lock.requestNumber} — Super Admin can still edit`
+                        : "Edit medicine master"
+                  }
+                  className={`p-1.5 rounded-md border border-transparent ${
+                    locked
+                      ? "text-slate-300 cursor-not-allowed bg-slate-50"
+                      : "text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-100"
+                  }`}
+                >
+                  {locked ? <Lock size={14} /> : <Pencil size={14} />}
+                </button>
+              );
+            })()}
+            {canRequestMedicineEdit && (() => {
+              const medLock = medicineLevelLock(r._id);
+              return (
+                <button
+                  type="button"
+                  disabled={!!medLock}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (medLock) {
+                      toast(`Already pending: ${medLock.requestNumber}`, { icon: "🔒" });
+                      return;
+                    }
+                    setRequestEditBatchId(null);
+                    setRequestEditMed(r);
+                  }}
+                  title={
+                    medLock
+                      ? `Request already pending (${medLock.requestNumber}) — edit locked`
+                      : "Request medicine or batch edit (Super Admin approval)"
+                  }
+                  className={`p-1.5 rounded-md border border-transparent ${
+                    medLock
+                      ? "text-amber-500 bg-amber-50 cursor-not-allowed"
+                      : "text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 hover:border-indigo-100"
+                  }`}
+                >
+                  {medLock ? <Lock size={14} /> : <FileQuestion size={14} />}
+                </button>
+              );
+            })()}
+            {canDeleteMedicine && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm(`Delete "${r.name}"? This cannot be undone.`)) {
+                    deleteMed.mutate(r._id);
+                  }
+                }}
+                title="Delete"
+                className="p-1.5 rounded-md text-slate-500 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         ),
     },
   ];
 
-  const TABS = [
-    { id: "prescriptions", label: "OP Prescriptions", icon: Pill },
-    canDispense && {
-      id: "counter",
-      label: "Counter Sale",
-      icon: ShoppingCart,
-    },
-    canViewDashboard && {
-      id: "inventory",
-      label: "Inventory Dashboard",
-      icon: Package,
-    },
-    canManageInventory && {
-      id: "distributors",
-      label: "Distributors",
-      icon: Truck,
-    },
-  ].filter(Boolean);
+  const TABS = masterMode
+    ? []
+    : [
+        { id: "prescriptions", label: "OP Prescriptions", icon: Pill },
+        canDispense && {
+          id: "counter",
+          label: "Counter Sale",
+          icon: ShoppingCart,
+        },
+      ].filter(Boolean);
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        icon={Pill}
-        title="Pharmacy"
-        subtitle={
-          canManageInventory
-            ? "OP prescriptions · counter sale · inventory · distributors"
-            : "OP prescriptions and counter medicine sale"
-        }
-        actions={(
-          <>
-            {canManageInventory && (
-              <button
-                type="button"
-                onClick={() => {
-                  setTab("inventory");
-                  setEditMed(null);
-                  reset();
-                  setShowAdd(true);
-                }}
-                className="btn-primary text-xs py-2"
+      {!masterMode && (
+        <PageHeader
+          icon={Pill}
+          title="Pharmacy"
+          subtitle="OP prescriptions and counter medicine sale"
+          actions={(
+            canViewDashboard ? (
+              <Link
+                to="/masters/medicines"
+                className="btn-secondary text-xs py-2"
               >
-                <Plus size={14} /> Add Medicine
-              </button>
-            )}
-          </>
-        )}
-      />
+                <Package size={14} /> Medicine Master
+              </Link>
+            ) : null
+          )}
+        />
+      )}
 
+      {masterMode && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white tracking-tight">
+              {forcedTab === "distributors" ? "Supplier Master" : "Medicine Master"}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {forcedTab === "distributors"
+                ? "Pharmacy distributors and vendor contacts"
+                : "SKU register · stock levels · batch expiry"}
+            </p>
+          </div>
+          {forcedTab === "inventory" && canCreateMedicine && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditMed(null);
+                reset();
+                setShowAdd(true);
+              }}
+              className="btn-primary text-xs py-2"
+            >
+              <Plus size={14} /> Add Medicine
+            </button>
+          )}
+        </div>
+      )}
+
+      {!masterMode && canViewDashboard && (
+        <div className="text-xs text-slate-500 border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-900/40 rounded-sm px-3 py-2">
+          Medicine catalog and suppliers are managed in{" "}
+          <Link to="/masters/medicines" className="text-blue-700 font-semibold hover:underline">Masters → Medicine Master</Link>
+          {" · "}
+          <Link to="/masters/suppliers" className="text-blue-700 font-semibold hover:underline">Suppliers</Link>
+        </div>
+      )}
+
+      {!masterMode && TABS.length > 0 && (
       <div className="corp-tabs">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
@@ -1433,16 +1851,17 @@ export default function PharmacyPage() {
           </button>
         ))}
       </div>
+      )}
 
-      {tab === "prescriptions" && (
+      {(!masterMode && tab === "prescriptions") && (
         <PendingPharmacyPanel canDispense={canDispense} />
       )}
 
-      {tab === "counter" && canDispense && (
+      {(!masterMode && tab === "counter" && canDispense) && (
         <PharmacyCounterSale canDispense={canDispense} />
       )}
 
-      {tab === "inventory" && canViewDashboard && (
+      {((masterMode && forcedTab === "inventory") || (!masterMode && tab === "inventory")) && canViewDashboard && (
         <PharmacyInventoryDashboard>
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-slate-200 dark:border-gray-700 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 dark:border-gray-700 space-y-3">
@@ -1526,7 +1945,7 @@ export default function PharmacyPage() {
                 <p className="text-sm font-medium text-slate-500">
                   No medicines found{invSearch ? ` for “${invSearch}”` : ""}
                 </p>
-                {canManageInventory && (
+                {canCreateMedicine && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1544,7 +1963,7 @@ export default function PharmacyPage() {
         </PharmacyInventoryDashboard>
       )}
 
-      {tab === "distributors" && canManageInventory && <DistributorDesk />}
+      {((masterMode && forcedTab === "distributors") || tab === "distributors") && canManageSuppliers && <DistributorDesk />}
 
       {/* ── Add / Edit Medicine Modal ─────────────────────────────────────── */}
       <Modal
@@ -1554,7 +1973,7 @@ export default function PharmacyPage() {
           setEditMed(null);
           reset();
         }}
-        title={editMed ? `Edit Medicine: ${editMed.name}` : "Add Medicine"}
+        title={editMed ? `Edit Medicine: ${editMed.name}` : "Add Medicine (once only)"}
         size="lg"
       >
         <form
@@ -1596,6 +2015,13 @@ export default function PharmacyPage() {
           })}
           className="p-6 space-y-4"
         >
+          {!editMed && (
+            <p className="text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+              Create the <span className="font-semibold">drug once</span>. For more stock later, use{" "}
+              <span className="font-semibold">Layers → Add Batch</span> under the same medicine (10+ batches OK).
+              If this name already exists, we&apos;ll open Add Batch instead of duplicating.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -1749,9 +2175,78 @@ export default function PharmacyPage() {
                 </div>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Fill this in to stock the medicine right away. You can also
-                skip it and add stock later from the medicine list.
+                Optional first batch only. Later stock: open this medicine → Layers (Add Batch).
+                Same batch number later will increase qty — it will not create a duplicate medicine.
               </p>
+            </div>
+          )}
+
+          {/* When editing: show batches so staff know stock is adjusted per batch */}
+          {editMed && (
+            <div className="border border-amber-100 bg-amber-50/60 rounded-lg p-3 space-y-2">
+              <p className="text-xs text-amber-900">
+                <span className="font-semibold">Edit medicine</span> changes drug name / default prices only.
+                To change a batch&apos;s expiry, price or quantity, use{" "}
+                <span className="font-semibold">Edit</span> on that batch below.
+              </p>
+              {activeBatches(editMed).length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const med = editMed;
+                    setEditMed(null);
+                    openAddStock(med);
+                  }}
+                  className="text-xs font-semibold text-blue-700 hover:underline"
+                >
+                  Add first batch
+                </button>
+              ) : (
+                <ul className="space-y-1.5">
+                  {activeBatches(editMed).map((b) => (
+                    <li
+                      key={b._id || b.batchNumber}
+                      className="flex items-center justify-between gap-2 text-xs bg-white border border-amber-100 rounded-md px-2.5 py-1.5"
+                    >
+                      <span>
+                        <span className="font-mono font-semibold">{b.batchNumber}</span>
+                        <span className="text-slate-500">
+                          {" "}· {Number(b.quantity) || 0} {editMed.unitOfMeasure || "Nos"}
+                          {" "}· Exp {fmtBatchDate(b.expiryDate)}
+                        </span>
+                      </span>
+                      <span className="shrink-0 inline-flex items-center gap-2">
+                        {canEditBatch && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const med = editMed;
+                              setEditMed(null);
+                              openEditBatch(med, b);
+                            }}
+                            className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline"
+                          >
+                            <Pencil size={12} /> Edit
+                          </button>
+                        )}
+                        {canAdjustStock && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const med = editMed;
+                              setEditMed(null);
+                              openAdjustStock(med, b);
+                            }}
+                            className="inline-flex items-center gap-1 font-semibold text-amber-800 hover:underline"
+                          >
+                            <SlidersHorizontal size={12} /> Adjust
+                          </button>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 
@@ -1798,7 +2293,8 @@ export default function PharmacyPage() {
           className="p-6 space-y-4"
         >
           <p className="text-xs text-slate-500 -mt-1">
-            Same medicine · enter a <span className="font-semibold">new batch number</span>, expiry, qty and <span className="font-semibold">this batch&apos;s prices</span>. It appears under this row.
+            Same medicine · enter batch no, expiry, qty and this batch&apos;s prices.
+            If the batch no already exists, qty is <span className="font-semibold">added</span> (no duplicate / already-exists error).
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1899,176 +2395,402 @@ export default function PharmacyPage() {
         </form>
       </Modal>
 
-      {/* ── NEW: Adjust Stock Modal (Reduce / Increase) ─────────────────────── */}
+      {/* ── Adjust Stock Modal — pick batch when 2+ batches ─────────────────── */}
       <Modal
         isOpen={!!showAdjustStock}
         onClose={() => {
           setShowAdjustStock(null);
           setAdjustType("reduce");
+          setAdjustBatchNumber("");
           adjustReset();
         }}
         title={`Adjust Stock: ${showAdjustStock?.name}`}
         size="md"
       >
-        <form
-          onSubmit={adjustSubmit((d) => {
-            adjustStockMut.mutate({
-              id: showAdjustStock._id,
-              data: { ...d, type: adjustType },
-            });
-          })}
-          className="p-6 space-y-4"
-        >
-          {/* Type Selection */}
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Operation Type
-            </label>
-            <div className="flex gap-4">
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="radio"
-                  name="type"
-                  value="reduce"
-                  checked={adjustType === "reduce"}
-                  onChange={(e) => setAdjustType(e.target.value)}
-                  className="mr-2"
-                />
-                <span className="text-sm">Reduce Stock</span>
-              </label>
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="radio"
-                  name="type"
-                  value="increase"
-                  checked={adjustType === "increase"}
-                  onChange={(e) => setAdjustType(e.target.value)}
-                  className="mr-2"
-                />
-                <span className="text-sm">Increase Stock</span>
-              </label>
-            </div>
-          </div>
+        {showAdjustStock && (() => {
+          const batches = activeBatches(showAdjustStock);
+          const stocked = batches.filter((b) => Number(b.quantity) > 0);
+          const selected = batches.find(
+            (b) => String(b.batchNumber) === String(adjustBatchNumber),
+          );
+          const selectedQty = Number(selected?.quantity) || 0;
+          const isNewBatch =
+            adjustType === "increase" && adjustBatchNumber === "__NEW__";
 
-          {/* Current Stock Info */}
-          <div className="bg-blue-50 dark:bg-blue-900 p-3 rounded-lg">
-            <p className="text-sm text-gray-700 dark:text-gray-300">
-              <span className="font-semibold">Current Stock:</span>{" "}
-              <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                {showAdjustStock?.currentStock}{" "}
-                {showAdjustStock?.unitOfMeasure || "Nos"}
-              </span>
-            </p>
-          </div>
+          return (
+            <form
+              onSubmit={adjustSubmit((d) => {
+                if (adjustType === "reduce" && stocked.length > 1 && !adjustBatchNumber) {
+                  toast.error("Select which batch to reduce");
+                  return;
+                }
+                if (adjustType === "increase" && !adjustBatchNumber) {
+                  toast.error("Select a batch or choose New batch");
+                  return;
+                }
+                if (isNewBatch && !d.batchNumber) {
+                  toast.error("Enter new batch number");
+                  return;
+                }
+                if (isNewBatch && !d.expiryDate) {
+                  toast.error("Expiry date is required for a new batch");
+                  return;
+                }
 
-          {/* Quantity Field */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Quantity to {adjustType === "reduce" ? "Reduce" : "Add"} *
-            </label>
-            <input
-              {...adjustReg("quantity", {
-                required: "Quantity is required",
-                valueAsNumber: true,
-                min: { value: 1, message: "Quantity must be at least 1" },
-                validate: (val) => {
-                  if (
-                    adjustType === "reduce" &&
-                    val > showAdjustStock?.currentStock
-                  ) {
-                    return `Cannot reduce more than available stock (${showAdjustStock?.currentStock})`;
-                  }
-                  return true;
-                },
+                const payload = {
+                  ...d,
+                  type: adjustType,
+                  batchNumber: isNewBatch
+                    ? d.batchNumber
+                    : adjustBatchNumber || d.batchNumber,
+                };
+                if (!isNewBatch && selected?.expiryDate && adjustType === "increase") {
+                  payload.expiryDate =
+                    d.expiryDate
+                    || new Date(selected.expiryDate).toISOString().slice(0, 10);
+                }
+
+                adjustStockMut.mutate({
+                  id: showAdjustStock._id,
+                  data: payload,
+                });
               })}
-              type="number"
-              min="1"
-              className="input-field"
-              placeholder="Enter quantity"
-            />
-          </div>
+              className="p-6 space-y-4"
+            >
+              <p className="text-xs text-slate-500 -mt-1">
+                This medicine has <span className="font-semibold">{batches.length}</span> batch
+                {batches.length === 1 ? "" : "es"}. Always choose the batch you want to change.
+              </p>
 
-          {/* Fields shown only for INCREASE */}
-          {adjustType === "increase" && (
-            <>
+              <div>
+                <label className="block text-sm font-medium mb-2">Operation</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="type"
+                      value="reduce"
+                      checked={adjustType === "reduce"}
+                      onChange={(e) => {
+                        setAdjustType(e.target.value);
+                        if (!adjustBatchNumber && stocked[0]) {
+                          setAdjustBatchNumber(stocked[0].batchNumber);
+                        }
+                        if (adjustBatchNumber === "__NEW__" && stocked[0]) {
+                          setAdjustBatchNumber(stocked[0].batchNumber);
+                        }
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="text-sm">Reduce</span>
+                  </label>
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      name="type"
+                      value="increase"
+                      checked={adjustType === "increase"}
+                      onChange={(e) => setAdjustType(e.target.value)}
+                      className="mr-2"
+                    />
+                    <span className="text-sm">Increase</span>
+                  </label>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Batch Number *
+                  Select batch *
+                </label>
+                <select
+                  className="input-field font-mono text-sm"
+                  value={adjustBatchNumber}
+                  onChange={(e) => setAdjustBatchNumber(e.target.value)}
+                >
+                  <option value="">— Choose batch —</option>
+                  {(adjustType === "reduce" ? stocked : batches).map((b) => (
+                    <option key={b._id || b.batchNumber} value={b.batchNumber}>
+                      {b.batchNumber} · Qty {Number(b.quantity) || 0} · Exp{" "}
+                      {fmtBatchDate(b.expiryDate)}
+                    </option>
+                  ))}
+                  {adjustType === "increase" && (
+                    <option value="__NEW__">+ New batch number…</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-900/40 p-3 rounded-lg space-y-1">
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-semibold">Medicine total:</span>{" "}
+                  {showAdjustStock.currentStock} {showAdjustStock.unitOfMeasure || "Nos"}
+                </p>
+                {selected && !isNewBatch && (
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    <span className="font-semibold">Selected batch qty:</span>{" "}
+                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                      {selectedQty}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Quantity to {adjustType === "reduce" ? "reduce" : "add"} *
                 </label>
                 <input
-                  {...adjustReg("batchNumber", {
-                    required: "Batch number is required for stock increase",
+                  {...adjustReg("quantity", {
+                    required: "Quantity is required",
+                    valueAsNumber: true,
+                    min: { value: 1, message: "Quantity must be at least 1" },
+                    validate: (val) => {
+                      if (adjustType === "reduce" && selected && val > selectedQty) {
+                        return `Batch ${selected.batchNumber} has only ${selectedQty}`;
+                      }
+                      return true;
+                    },
                   })}
+                  type="number"
+                  min="1"
                   className="input-field"
-                  placeholder="e.g., BATCH2024001"
+                  placeholder="Enter quantity"
+                />
+              </div>
+
+              {isNewBatch && (
+                <div className="grid grid-cols-2 gap-3 border border-slate-100 rounded-lg p-3">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">New batch number *</label>
+                    <input
+                      {...adjustReg("batchNumber")}
+                      className="input-field"
+                      placeholder="e.g. TB2601948"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Expiry *</label>
+                    <input
+                      {...adjustReg("expiryDate")}
+                      type="date"
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Purchase price</label>
+                    <input
+                      {...adjustReg("purchasePrice", { valueAsNumber: true })}
+                      type="number"
+                      step="0.01"
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Remarks</label>
+                <textarea
+                  {...adjustReg("remarks")}
+                  className="input-field"
+                  placeholder="Reason (breakage, audit, correction)"
+                  rows="2"
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdjustStock(null);
+                    setAdjustType("reduce");
+                    setAdjustBatchNumber("");
+                    adjustReset();
+                  }}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={adjustStockMut.isPending}
+                  className="btn-primary"
+                >
+                  <Package size={16} />
+                  {adjustStockMut.isPending
+                    ? "Saving..."
+                    : `${adjustType === "reduce" ? "Reduce" : "Increase"} this batch`}
+                </button>
+              </div>
+            </form>
+          );
+        })()}
+      </Modal>
+      {/* ── End Adjust Stock Modal ───────────────────────────────────────────── */}
+
+      {/* ── Edit Batch Modal — full batch field correction ───────────────────── */}
+      <Modal
+        isOpen={!!editBatchCtx}
+        onClose={() => {
+          setEditBatchCtx(null);
+          batchEditReset();
+        }}
+        title={`Edit Batch: ${editBatchCtx?.batch?.batchNumber || ""} — ${editBatchCtx?.medicine?.name || ""}`}
+        size="md"
+      >
+        {editBatchCtx && (
+          <form
+            onSubmit={batchEditSubmit((d) => {
+              if (!d.batchNumber?.trim()) {
+                toast.error("Batch number is required");
+                return;
+              }
+              if (!d.expiryDate) {
+                toast.error("Expiry date is required");
+                return;
+              }
+              if (d.quantity === "" || d.quantity == null || Number(d.quantity) < 0) {
+                toast.error("Quantity must be zero or greater");
+                return;
+              }
+              updateBatchMut.mutate({
+                medicineId: editBatchCtx.medicine._id,
+                batchId: editBatchCtx.batch._id,
+                data: {
+                  batchNumber: d.batchNumber.trim(),
+                  expiryDate: d.expiryDate,
+                  quantity: Number(d.quantity),
+                  sellingPrice: d.sellingPrice === "" || d.sellingPrice == null ? "" : Number(d.sellingPrice),
+                  mrp: d.mrp === "" || d.mrp == null ? "" : Number(d.mrp),
+                  purchasePrice: d.purchasePrice === "" || d.purchasePrice == null ? "" : Number(d.purchasePrice),
+                  manufacturer: d.manufacturer || "",
+                  supplierInvoice: d.supplierInvoice || "",
+                  receivedDate: d.receivedDate || undefined,
+                  remarks: d.remarks || undefined,
+                },
+              });
+            })}
+            className="space-y-4 p-1"
+          >
+            <p className="text-xs text-slate-500">
+              Update this batch only. Total stock for the medicine recalculates automatically.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Batch No *</label>
+                <input
+                  {...batchEditReg("batchNumber", { required: true })}
+                  className="input-field font-mono"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Expiry Date *
-                </label>
+                <label className="block text-sm font-medium mb-1">Expiry Date *</label>
                 <input
-                  {...adjustReg("expiryDate", {
-                    required: "Expiry date is required for stock increase",
-                  })}
+                  {...batchEditReg("expiryDate", { required: true })}
                   type="date"
                   className="input-field"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Purchase Price
+                  Quantity ({editBatchCtx.medicine.unitOfMeasure || "Nos"}) *
                 </label>
                 <input
-                  {...adjustReg("purchasePrice", { valueAsNumber: true })}
+                  {...batchEditReg("quantity", { valueAsNumber: true, required: true })}
                   type="number"
-                  step="0.01"
+                  min="0"
+                  step="1"
                   className="input-field"
-                  placeholder="Optional"
                 />
               </div>
-            </>
-          )}
-
-          {/* Remarks */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Remarks</label>
-            <textarea
-              {...adjustReg("remarks")}
-              className="input-field"
-              placeholder="Reason for adjustment (e.g., breakage, audit, correction)"
-              rows="3"
-            />
-          </div>
-
-          {/* Buttons */}
-          <div className="flex gap-3 justify-end pt-4 border-t">
-            <button
-              type="button"
-              onClick={() => {
-                setShowAdjustStock(null);
-                setAdjustType("reduce");
-                adjustReset();
-              }}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={adjustStockMut.isPending}
-              className="btn-primary"
-            >
-              <Package size={16} />
-              {adjustStockMut.isPending
-                ? "Adjusting..."
-                : `${adjustType === "reduce" ? "Reduce" : "Increase"} Stock`}
-            </button>
-          </div>
-        </form>
+              <div>
+                <label className="block text-sm font-medium mb-1">Received Date</label>
+                <input
+                  {...batchEditReg("receivedDate")}
+                  type="date"
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Selling Price</label>
+                <input
+                  {...batchEditReg("sellingPrice", { valueAsNumber: true })}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">MRP</label>
+                <input
+                  {...batchEditReg("mrp", { valueAsNumber: true })}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Purchase Price</label>
+                <input
+                  {...batchEditReg("purchasePrice", { valueAsNumber: true })}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Manufacturer</label>
+                <input {...batchEditReg("manufacturer")} className="input-field" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Supplier Invoice</label>
+                <input {...batchEditReg("supplierInvoice")} className="input-field" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Remarks (audit)</label>
+                <input
+                  {...batchEditReg("remarks")}
+                  className="input-field"
+                  placeholder="Why this batch was corrected"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end pt-4 border-t">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditBatchCtx(null);
+                  batchEditReset();
+                }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={updateBatchMut.isPending}
+                className="btn-primary"
+              >
+                <Pencil size={16} />
+                {updateBatchMut.isPending ? "Saving..." : "Save Batch"}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
-      {/* ── End Adjust Stock Modal ───────────────────────────────────────────── */}
 
+      <MedicineEditRequestModal
+        medicine={requestEditMed}
+        initialBatchId={requestEditBatchId}
+        isOpen={!!requestEditMed}
+        onClose={() => {
+          setRequestEditMed(null);
+          setRequestEditBatchId(null);
+        }}
+      />
     </div>
   );
 }

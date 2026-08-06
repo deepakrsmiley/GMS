@@ -37,7 +37,10 @@ export function resolveReferenceRange(referenceRange, patient = {}) {
 }
 
 export function parseNumericRange(rangeStr) {
-  const str = String(rangeStr || '').trim();
+  const str = String(rangeStr || '')
+    .trim()
+    .replace(/[\u2010-\u2015\u2212]/g, '-') // normalize unicode dashes to hyphen
+    .replace(/\s+/g, ' ');
   if (!str) return null;
 
   const opMatch = str.match(/^(<=|>=|<|>)\s*(-?\d+(?:\.\d+)?)/);
@@ -48,7 +51,7 @@ export function parseNumericRange(rangeStr) {
     if (op === '>' || op === '>=') return { min: num, max: Infinity };
   }
 
-  const rangeMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i);
+  const rangeMatch = str.match(/(-?\d+(?:\.\d+)?)\s*(?:-|to)\s*(-?\d+(?:\.\d+)?)/i);
   if (rangeMatch) {
     return { min: parseFloat(rangeMatch[1]), max: parseFloat(rangeMatch[2]) };
   }
@@ -102,8 +105,23 @@ export function analyzeResult({ value, referenceRange, criticalLow, criticalHigh
       return { displayRange, flag: 'NA', status: 'N/A', arrow: '', isCritical: false, isAbnormal: false };
     }
 
-    if (numValue < parsedRange.min) return { displayRange, flag: 'LOW', status: 'Abnormal', arrow: '↓', isCritical: false, isAbnormal: true };
-    if (numValue > parsedRange.max) return { displayRange, flag: 'HIGH', status: 'Abnormal', arrow: '↑', isCritical: false, isAbnormal: true };
+    const belowMin = numValue < parsedRange.min;
+    const aboveMax = numValue > parsedRange.max;
+
+    // Soft critical: far outside reference (±50% of range width) when no explicit critical limits
+    if (Number.isFinite(parsedRange.min) && Number.isFinite(parsedRange.max)) {
+      const span = Math.abs(parsedRange.max - parsedRange.min) || Math.abs(parsedRange.max) || 1;
+      const pad = span * 0.5;
+      if (numValue < parsedRange.min - pad) {
+        return { displayRange, flag: 'CRITICAL_LOW', status: 'Critical', arrow: '↓', isCritical: true, isAbnormal: true };
+      }
+      if (numValue > parsedRange.max + pad) {
+        return { displayRange, flag: 'CRITICAL_HIGH', status: 'Critical', arrow: '↑', isCritical: true, isAbnormal: true };
+      }
+    }
+
+    if (belowMin) return { displayRange, flag: 'LOW', status: 'Abnormal', arrow: '↓', isCritical: false, isAbnormal: true };
+    if (aboveMax) return { displayRange, flag: 'HIGH', status: 'Abnormal', arrow: '↑', isCritical: false, isAbnormal: true };
     return { displayRange, flag: 'NORMAL', status: 'Normal', arrow: '', isCritical: false, isAbnormal: false };
   }
 
@@ -113,8 +131,8 @@ export function analyzeResult({ value, referenceRange, criticalLow, criticalHigh
 // Flag -> Tailwind class presets used by LabReportTemplate
 export const FLAG_STYLES = {
   NORMAL: { text: 'text-emerald-700', row: 'bg-emerald-50/60', badge: 'bg-emerald-100 text-emerald-700' },
-  LOW: { text: 'text-red-600 font-semibold', row: 'bg-red-50/70', badge: 'bg-red-100 text-red-700' },
-  HIGH: { text: 'text-red-600 font-semibold', row: 'bg-red-50/70', badge: 'bg-red-100 text-red-700' },
+  LOW: { text: 'text-blue-700 font-semibold', row: 'bg-blue-50/70', badge: 'bg-blue-100 text-blue-700' },
+  HIGH: { text: 'text-orange-700 font-semibold', row: 'bg-orange-50/70', badge: 'bg-orange-100 text-orange-700' },
   ABNORMAL: { text: 'text-red-600 font-semibold', row: 'bg-red-50/70', badge: 'bg-red-100 text-red-700' },
   CRITICAL_LOW: { text: 'text-red-700 font-bold', row: 'bg-red-100', badge: 'bg-red-600 text-white' },
   CRITICAL_HIGH: { text: 'text-red-700 font-bold', row: 'bg-red-100', badge: 'bg-red-600 text-white' },

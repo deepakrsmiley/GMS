@@ -240,6 +240,21 @@ exports.createOPRegistration = asyncHandler(async (req, res) => {
     }
   }
 
+  try {
+    const { notifyUser } = require('../utils/notify');
+    if (populated.doctor?._id) {
+      await notifyUser(req, {
+        userId: populated.doctor._id,
+        title: 'New patient in queue',
+        message: `${populated.patient?.name || 'Patient'} — token ${populated.tokenNumber || ''}`.trim(),
+        type: 'queue',
+        link: '/op-queue',
+        relatedId: populated._id,
+        relatedModel: 'OPRegistration',
+      });
+    }
+  } catch (_) { /* ignore */ }
+
   res.status(201).json({ success: true, data: populated });
 });
 
@@ -259,6 +274,23 @@ exports.updateOPStatus = asyncHandler(async (req, res, next) => {
 
   if (req.app.get('io')) {
     req.app.get('io').emit('queue:update', { type: 'status_change', data: op });
+  }
+
+  if (req.body.status === 'in_consultation') {
+    try {
+      const { notifyUser } = require('../utils/notify');
+      if (op.doctor?._id) {
+        await notifyUser(req, {
+          userId: op.doctor._id,
+          title: 'Patient called',
+          message: `${op.patient?.name || 'Patient'} is in consultation (token ${op.tokenNumber || ''})`.trim(),
+          type: 'queue',
+          link: '/op-queue',
+          relatedId: op._id,
+          relatedModel: 'OPRegistration',
+        });
+      }
+    } catch (_) { /* ignore */ }
   }
 
   res.status(200).json({ success: true, data: op });

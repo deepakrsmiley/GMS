@@ -12,22 +12,19 @@ import OPQueuePage from './pages/OPQueuePage';
 import DoctorConsultationPage from './pages/DoctorConsultationPage';
 import IPAdmissionsPage from './pages/IPAdmissionsPage';
 import IPAdmissionDetailPage from './pages/IPAdmissionDetailPage';
+import NurseStationPage from './pages/NurseStationPage';
+import ChangeRequestsPage from './pages/ChangeRequestsPage';
 import BillingPage from './pages/BillingPage';
 import PharmacyPage from './pages/PharmacyPage';
 import PharmacyBillingPage from './pages/PharmacyBilling';
 import PharmacyExpiryReportPage from './pages/PharmacyExpiryReportPage';
 import LabPage from './pages/LabPage';
-import BedsPage from './pages/BedsPage';
-import StaffPage from './pages/StaffPage';
-import ReportsPage from './pages/ReportsPage';
-import AppointmentsPage from './pages/AppointmentsPage';
-import SettingsPage, { SettingsIndexRedirect } from './pages/SettingsPage';
-import ServiceMasterPage from './pages/ServiceMasterPage';
-import HospitalBrandingPage from './pages/HospitalBrandingPage';
-import TVQueueDisplayPage from './pages/TVQueueDisplayPage';
-import DepartmentPage from './pages/DepartmentPage';
-import AssetPage from './pages/AssetPage';
 import AssetComplaintPage from './pages/AssetComplaintPage';
+import BiomedicalPage from './pages/BiomedicalPage';
+import MastersPage from './pages/MastersPage';
+import AppointmentsPage from './pages/AppointmentsPage';
+import TVQueueDisplayPage from './pages/TVQueueDisplayPage';
+import ReportsPage from './pages/ReportsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
@@ -75,6 +72,8 @@ export default function App() {
           <Route path="/consultation/:opId" element={<ProtectedRoute routeKey="consultation"><DoctorConsultationPage /></ProtectedRoute>} />
           <Route path="/ip-admissions" element={<ProtectedRoute routeKey="ip-admissions"><IPAdmissionsPage /></ProtectedRoute>} />
           <Route path="/ip-admissions/:id" element={<ProtectedRoute routeKey="ip-admissions"><IPAdmissionDetailPage /></ProtectedRoute>} />
+          <Route path="/nurse-station" element={<ProtectedRoute routeKey="nurse-station"><NurseStationPage /></ProtectedRoute>} />
+          <Route path="/change-requests" element={<ProtectedRoute routeKey="change-requests"><ChangeRequestsPage /></ProtectedRoute>} />
           <Route path="/billing" element={<ProtectedRoute routeKey="billing"><BillingPage /></ProtectedRoute>} />
           <Route path="/pharmacy" element={<ProtectedRoute routeKey="pharmacy"><PharmacyPage /></ProtectedRoute>} />
 
@@ -85,19 +84,22 @@ export default function App() {
           <Route path="/pharmacy/expiry-report" element={<ProtectedRoute routeKey="expiry-report"><PharmacyExpiryReportPage /></ProtectedRoute>} />
 
           <Route path="/lab" element={<ProtectedRoute routeKey="lab"><LabPage /></ProtectedRoute>} />
-          <Route path="/beds" element={<ProtectedRoute routeKey="beds"><BedsPage /></ProtectedRoute>} />
-          <Route path="/departments" element={<ProtectedRoute routeKey="departments"><DepartmentPage /></ProtectedRoute>} />
-          <Route path="/assets" element={<ProtectedRoute routeKey="assets"><AssetPage /></ProtectedRoute>} />
-          <Route path="/asset-complaints" element={<ProtectedRoute routeKey="asset-complaints"><AssetComplaintPage /></ProtectedRoute>} />
-          <Route path="/appointments" element={<ProtectedRoute routeKey="appointments"><AppointmentsPage /></ProtectedRoute>} />
-          <Route path="/staff" element={<ProtectedRoute routeKey="staff"><StaffPage /></ProtectedRoute>} />
-          <Route path="/reports" element={<ProtectedRoute routeKey="reports"><ReportsPage /></ProtectedRoute>} />
+          <Route path="/masters" element={<ProtectedRoute routeKey="masters"><MastersPage /></ProtectedRoute>} />
+          <Route path="/masters/:section" element={<ProtectedRoute routeKey="masters"><MastersPage /></ProtectedRoute>} />
 
-          <Route path="/settings" element={<ProtectedRoute routeKey="settings"><SettingsPage /></ProtectedRoute>}>
-            <Route index element={<SettingsIndexRedirect />} />
-            <Route path="hospital-branding" element={<HospitalBrandingPage />} />
-            <Route path="services" element={<ServiceMasterPage />} />
-          </Route>
+          {/* Legacy master routes → unified Masters hub */}
+          <Route path="/beds" element={<Navigate to="/masters/beds" replace />} />
+          <Route path="/departments" element={<Navigate to="/masters/departments" replace />} />
+          <Route path="/assets" element={<Navigate to="/masters/assets" replace />} />
+          <Route path="/staff" element={<Navigate to="/masters/staff" replace />} />
+          <Route path="/settings" element={<Navigate to="/masters/branding" replace />} />
+          <Route path="/settings/hospital-branding" element={<Navigate to="/masters/branding" replace />} />
+          <Route path="/settings/services" element={<Navigate to="/masters/services" replace />} />
+
+          <Route path="/asset-complaints" element={<ProtectedRoute routeKey="asset-complaints"><AssetComplaintPage /></ProtectedRoute>} />
+          <Route path="/biomedical" element={<ProtectedRoute routeKey="biomedical"><BiomedicalPage /></ProtectedRoute>} />
+          <Route path="/appointments" element={<ProtectedRoute routeKey="appointments"><AppointmentsPage /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute routeKey="reports"><ReportsPage /></ProtectedRoute>} />
         </Route>
 
         <Route path="*" element={<NotFoundPage />} />

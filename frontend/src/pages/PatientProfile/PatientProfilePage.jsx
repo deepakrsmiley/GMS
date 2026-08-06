@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft, LayoutDashboard, History as HistoryIcon, Stethoscope, BedDouble,
   ArrowRightLeft, UserRound, Pill, FlaskConical, Scan, Syringe, HardDrive,
-  Scissors, Receipt, Wallet, FileText, ShieldAlert, ScrollText, Plus,
+  Scissors, Receipt, Wallet, FileText, ScrollText, Plus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -17,6 +17,7 @@ import AdmissionDetailModal from '../../components/patientProfile/AdmissionDetai
 import DocumentVault from '../../components/patientProfile/DocumentVault';
 import OperationFormModal from '../../components/patientProfile/OperationFormModal';
 import patientProfileApi from '../../services/patientProfileApi';
+import '../../styles/patient360.css';
 
 const money = (v) => `₹${(v || 0).toLocaleString('en-IN')}`;
 const dt = (v) => (v ? new Date(v).toLocaleString('en-IN') : '—');
@@ -70,54 +71,77 @@ export default function PatientProfilePage() {
   if (summaryQ.isLoading) return <LoadingSpinner fullScreen />;
   if (summaryQ.isError) {
     return (
-      <div className="p-10 text-center text-gray-500">
-        Could not load this patient's profile.
-        <button onClick={() => navigate('/patients')} className="btn-secondary mt-4 mx-auto">Back to Patients</button>
+      <div className="p360 p-10 text-center">
+        <p className="text-slate-500">Could not load this patient's profile.</p>
+        <button type="button" onClick={() => navigate('/patients')} className="btn-secondary mt-4 mx-auto">Back to Patients</button>
       </div>
     );
   }
 
+  const stats = summaryQ.data?.stats || {};
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/patients')} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">
-          <ArrowLeft size={18} />
+    <div className="p360 space-y-4">
+      <div className="p360-topbar">
+        <button type="button" onClick={() => navigate('/patients')} className="p360-back" aria-label="Back to patients">
+          <ArrowLeft size={16} />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Patient 360° Profile</h1>
-          <p className="text-xs text-gray-400">Complete lifetime Electronic Medical Record</p>
+          <p className="p360-topbar__eyebrow">Electronic Medical Record</p>
+          <h1 className="p360-topbar__title">Patient 360° Profile</h1>
         </div>
       </div>
 
       <AlertsBar alerts={alertsQ.data} />
       <PatientSummaryHeader data={summaryQ.data} />
 
-      <div className="flex gap-4 flex-col lg:flex-row">
-        {/* Left navigation */}
-        <div className="lg:w-56 shrink-0">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-2 lg:sticky lg:top-4 flex lg:flex-col gap-1 overflow-x-auto">
+      <div className="p360-layout">
+        <aside className="p360-nav">
+          <nav className="p360-nav__card" aria-label="Patient profile sections">
             {NAV.map((n) => {
               const Icon = n.icon;
               return (
                 <button
                   key={n.key}
+                  type="button"
                   onClick={() => setActiveTab(n.key)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${activeTab === n.key ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                  className={`p360-nav__btn${activeTab === n.key ? ' is-active' : ''}`}
                 >
-                  <Icon size={15} /> {n.label}
+                  <Icon size={14} /> {n.label}
                 </button>
               );
             })}
-          </div>
-        </div>
+          </nav>
+        </aside>
 
-        {/* Section content */}
-        <div className="flex-1 min-w-0">
+        <div className="p360-content">
           {activeTab === 'summary' && (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-5">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Overview</h3>
-              <p className="text-sm text-gray-500">Use the left navigation to explore this patient's complete lifetime history — OP visits, admissions, lab & radiology, medicines, billing, documents and more. Every section updates automatically as new records are created anywhere in the hospital system.</p>
-            </div>
+            <section className="p360-panel">
+              <div className="p360-panel__head">
+                <h3 className="p360-panel__title">Overview</h3>
+              </div>
+              <div className="p360-panel__body">
+                <div className="p360-overview">
+                  <div className="p360-overview__card">
+                    <h4>Clinical record</h4>
+                    <p>
+                      Use the left navigation to open this patient’s lifetime history — OP visits,
+                      admissions, lab &amp; radiology, medicines, billing, documents and more.
+                      Sections refresh automatically as new records are created across the hospital.
+                    </p>
+                  </div>
+                  <div className="p360-overview__card">
+                    <h4>At a glance</h4>
+                    <ul className="p360-overview__list">
+                      <li><span>OP visits</span><strong>{stats.totalOPVisits ?? 0}</strong></li>
+                      <li><span>IP admissions</span><strong>{stats.totalAdmissions ?? 0}</strong></li>
+                      <li><span>Procedures</span><strong>{stats.totalProcedures ?? 0}</strong></li>
+                      <li><span>Outstanding</span><strong>{money(stats.outstandingAmount)}</strong></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </section>
           )}
 
           {activeTab === 'timeline' && <PatientTimelineView events={timelineQ.data} loading={timelineQ.isLoading} />}

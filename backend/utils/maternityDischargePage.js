@@ -84,24 +84,33 @@ const fmtReviewDate = (v) => {
 function drawMaternityDischargeAdvicePage(doc, page, margin, maternityAdvice = {}) {
   const m = maternityAdvice || {};
   const checkedSet = new Set((m.adviceChecked || []).map((v) => Number(v)));
-  const width = page.width - margin * 2;
-  const colGap = 0;
-  const leftW = (width - colGap) * 0.52;
+
+  doc.addPage({ size: 'A4', margin: 0 });
+
+  const outerW = page.width - margin * 2;
+  const outerH = page.height - margin * 2;
+  doc.save();
+  doc.lineWidth(1.4).strokeColor('#1e3a8a').rect(margin, margin, outerW, outerH).stroke();
+  doc.lineWidth(0.5).strokeColor('#93c5fd').rect(margin + 3, margin + 3, outerW - 6, outerH - 6).stroke();
+  doc.restore();
+
+  const inset = 8;
+  const boxX = margin + inset;
+  const boxY = margin + inset;
+  const width = outerW - inset * 2;
+  const leftW = width * 0.52;
   const rightW = width - leftW;
-  const leftX = margin;
-  const rightX = margin + leftW;
+  const leftX = boxX;
+  const rightX = boxX + leftW;
+  let y = boxY;
+  const pageBottom = margin + outerH - inset;
 
-  doc.addPage({ size: 'A4', margin });
-  let y = margin - 8;
-
-  // Outer full-page border
-  const pageBottom = page.height - margin + 8;
-  drawBox(doc, margin, y, width, pageBottom - y);
+  drawBox(doc, boxX, y, width, pageBottom - y);
 
   // ── Top: Condition mother / baby ──────────────────────────────────
   const topH = 38;
   doc.moveTo(rightX, y).lineTo(rightX, y + topH).lineWidth(0.7).strokeColor('#111').stroke();
-  doc.moveTo(margin, y + topH).lineTo(margin + width, y + topH).stroke();
+  doc.moveTo(boxX, y + topH).lineTo(boxX + width, y + topH).stroke();
 
   doc.font('Helvetica-Bold').fontSize(8).fillColor('#111')
     .text('Condition of mother at discharge:', leftX + 4, y + 4, { width: leftW - 8 });
@@ -117,7 +126,7 @@ function drawMaternityDischargeAdvicePage(doc, page, margin, maternityAdvice = {
   const midTop = y;
   const midH = 420;
   doc.moveTo(rightX, midTop).lineTo(rightX, midTop + midH).lineWidth(0.7).strokeColor('#111').stroke();
-  doc.moveTo(margin, midTop + midH).lineTo(margin + width, midTop + midH).stroke();
+  doc.moveTo(boxX, midTop + midH).lineTo(boxX + width, midTop + midH).stroke();
 
   // Left column content
   let ly = midTop + 5;
@@ -177,8 +186,8 @@ function drawMaternityDischargeAdvicePage(doc, page, margin, maternityAdvice = {
   // ── If referred ───────────────────────────────────────────────────
   const ref = m.referral || {};
   const refH = 72;
-  doc.moveTo(margin, y + refH).lineTo(margin + width, y + refH).lineWidth(0.7).strokeColor('#111').stroke();
-  doc.font('Helvetica-Bold').fontSize(8).text('If referred:', margin + 4, y + 4);
+  doc.moveTo(boxX, y + refH).lineTo(boxX + width, y + refH).lineWidth(0.7).strokeColor('#111').stroke();
+  doc.font('Helvetica-Bold').fontSize(8).text('If referred:', boxX + 4, y + 4);
   const half = width * 0.55;
   let rfy = y + 16;
   [
@@ -186,32 +195,32 @@ function drawMaternityDischargeAdvicePage(doc, page, margin, maternityAdvice = {
     `Mode of Referral : ${ref.mode || '.............................................................'}`,
     `Reason for referral : ${ref.reason || '...........................................................'}`,
   ].forEach((line) => {
-    doc.font('Helvetica').fontSize(7).text(line, margin + 4, rfy, { width: half - 8 });
+    doc.font('Helvetica').fontSize(7).text(line, boxX + 4, rfy, { width: half - 8 });
     rfy += 14;
   });
   const yesNo = (v) => (v === 'Yes' || v === 'No' ? v : 'Yes / No');
   doc.font('Helvetica').fontSize(7)
-    .text(`Advance notification given – ${yesNo(ref.advanceNotification)}`, margin + half, y + 16, { width: width - half - 8 });
+    .text(`Advance notification given – ${yesNo(ref.advanceNotification)}`, boxX + half, y + 16, { width: width - half - 8 });
   doc.font('Helvetica').fontSize(7)
-    .text(`Accompanied by Health Care Provider with Emergency Drug tray / Delivery tray – ${yesNo(ref.accompanied)}`, margin + half, y + 40, { width: width - half - 8 });
+    .text(`Accompanied by Health Care Provider with Emergency Drug tray / Delivery tray – ${yesNo(ref.accompanied)}`, boxX + half, y + 40, { width: width - half - 8 });
   y += refH;
 
   // ── Condition at Referral ─────────────────────────────────────────
   const vitH = 68;
-  doc.moveTo(margin, y + vitH).lineTo(margin + width, y + vitH).lineWidth(0.7).strokeColor('#111').stroke();
+  doc.moveTo(boxX, y + vitH).lineTo(boxX + width, y + vitH).lineWidth(0.7).strokeColor('#111').stroke();
   doc.font('Helvetica-Bold').fontSize(8)
-    .text('Condition at Referral  Consciousness / Temperature / Pulse / RR / BP / Others', margin + 4, y + 4, { width: width - 8 });
+    .text('Condition at Referral  Consciousness / Temperature / Pulse / RR / BP / Others', boxX + 4, y + 4, { width: width - 8 });
   if (m.referralVitals) {
-    doc.font('Helvetica').fontSize(8).text(String(m.referralVitals), margin + 6, y + 18, { width: width - 12 });
+    doc.font('Helvetica').fontSize(8).text(String(m.referralVitals), boxX + 6, y + 18, { width: width - 12 });
   }
   y += vitH;
 
   // ── Treatment given with time ─────────────────────────────────────
   doc.font('Helvetica-Bold').fontSize(8)
-    .text('Treatment given with time:', margin + 4, y + 4);
+    .text('Treatment given with time:', boxX + 4, y + 4);
   if (m.treatmentGivenAtReferral) {
     doc.font('Helvetica').fontSize(8)
-      .text(String(m.treatmentGivenAtReferral), margin + 6, y + 18, { width: width - 12 });
+      .text(String(m.treatmentGivenAtReferral), boxX + 6, y + 18, { width: width - 12 });
   }
 }
 

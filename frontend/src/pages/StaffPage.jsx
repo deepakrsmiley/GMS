@@ -1,26 +1,49 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, UserCog, Edit2, ShieldCheck, RotateCcw, CheckSquare, Square } from 'lucide-react';
-import { useForm, useWatch } from 'react-hook-form';
+import { Plus, UserCog, Edit2, Trash2, ShieldCheck, RotateCcw, CheckSquare, Square, Search } from 'lucide-react';
+import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
+import { useSelector } from 'react-redux';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
 import { STAFF_ROLES } from '../utils/roles';
-import { PERMISSION_GROUPS, ALL_PERMISSIONS, getDefaultPermissionsForRole } from '../constants/permissions';
+import { PERMISSION_GROUPS, ALL_PERMISSIONS, getDefaultPermissionsForRole, PHARMACY_FULL_CONTROL_PERMISSIONS } from '../constants/permissions';
+import '../styles/staffManagement.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+/** Keep "Full inventory control" in sync with individual pharmacy edit boxes. */
+const syncPharmacyManageFlag = (perms) => {
+  const next = [...perms];
+  const hasAll = PHARMACY_FULL_CONTROL_PERMISSIONS.every((c) => next.includes(c));
+  if (hasAll && !next.includes('MANAGE_PHARMACY')) next.push('MANAGE_PHARMACY');
+  if (!hasAll) return next.filter((c) => c !== 'MANAGE_PHARMACY');
+  return next;
+};
+
+const expandPermissions = (perms) => {
+  if (!Array.isArray(perms) || perms.length === 0) return [];
+  if (perms.includes('*')) return [...ALL_PERMISSIONS];
+  let next = [...perms];
+  // Legacy: MANAGE_PHARMACY alone meant full control — expand so checkboxes match reality
+  if (next.includes('MANAGE_PHARMACY')) {
+    next = [...new Set([...next, 'VIEW_PHARMACY', ...PHARMACY_FULL_CONTROL_PERMISSIONS])];
+  }
+  return syncPharmacyManageFlag(next);
+};
 
 export default function StaffPage() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [editStaff, setEditStaff] = useState(null);
+  const [showDelete, setShowDelete] = useState(null);
   const [selectedPermissions, setSelectedPermissions] = useState([]);
+  const [isActiveChecked, setIsActiveChecked] = useState(true);
+  const [permSearch, setPermSearch] = useState('');
   const qc = useQueryClient();
+  const currentUser = useSelector((s) => s.auth?.user);
 
-  // Always holds the CURRENT editStaff value, readable inside closures
-  // (like the password validate function) that were created on an
-  // earlier render and would otherwise see a stale snapshot.
   const editStaffRef = useRef(null);
   useEffect(() => {
     editStaffRef.current = editStaff;
@@ -28,15 +51,15 @@ export default function StaffPage() {
 
   const { data: departments } = useQuery({
     queryKey: ['departments'],
-    queryFn: () => api.get('/departments').then(r => r.data.data),
+    queryFn: () => api.get('/departments').then((r) => r.data.data),
   });
 
   const { data, isLoading } = useQuery({
     queryKey: ['staff', page],
-    queryFn: () => api.get(`/staff?page=${page}&limit=20`).then(r => r.data),
+    queryFn: () => api.get(`/staff?page=${page}&limit=20`).then((r) => r.data),
   });
 
-  const { register, handleSubmit, reset, control, setValue, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
     shouldUnregister: true,
   });
   const selectedRole = watch('role');
@@ -49,52 +72,95 @@ export default function StaffPage() {
   }, [selectedRole, editStaff]);
 
   const togglePermission = (code) => {
-    setSelectedPermissions((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-    );
+    setSelectedPermissions((prev) => {
+      let next;
+      if (prev.includes(code)) {
+        next = prev.filter((c) => c !== code);
+        // Unchecking Full control → lock all pharmacy inventoy actions
+        if (code === 'MANAGE_PHARMACY') {
+          next = next.filter((c) => !PHARMACY_FULL_CONTROL_PERMISSIONS.includes(c));
+        }
+      } else {
+        next = [...prev, code];
+        // Checking Full control → enable every inventory action below it
+        if (code === 'MANAGE_PHARMACY') {
+          next = [...new Set([...next, 'VIEW_PHARMACY', ...PHARMACY_FULL_CONTROL_PERMISSIONS])];
+        }
+      }
+      // Unchecking Edit medicine / batch / etc. automatically clears Full control
+      return syncPharmacyManageFlag(next);
+    });
   };
 
   const toggleGroup = (groupCodes, allSelected) => {
-    setSelectedPermissions((prev) =>
-      allSelected ? prev.filter((c) => !groupCodes.includes(c)) : [...new Set([...prev, ...groupCodes])]
-    );
+    setSelectedPermissions((prev) => {
+      const next = allSelected
+        ? prev.filter((c) => !groupCodes.includes(c))
+        : [...new Set([...prev, ...groupCodes])];
+      return syncPharmacyManageFlag(next);
+    });
+  };
+
+  const closeForm = () => {
+    setShowAdd(false);
+    setEditStaff(null);
+    editStaffRef.current = null;
+    setSelectedPermissions([]);
+    setIsActiveChecked(true);
+    setPermSearch('');
+    reset();
   };
 
   const openEdit = (staff) => {
     setEditStaff(staff);
-    editStaffRef.current = staff; // set synchronously too, don't wait for the effect
+    editStaffRef.current = staff;
     Object.entries(staff).forEach(([k, v]) => {
       if (k === 'department') setValue(k, v?._id || v);
-      else if (k !== 'password') setValue(k, v);
+      else if (k !== 'password' && k !== 'isActive') setValue(k, v);
     });
     setValue('password', '');
-    setSelectedPermissions(
-      staff.permissions && staff.permissions.length > 0
-        ? staff.permissions
-        : getDefaultPermissionsForRole(staff.role)
-    );
+    setIsActiveChecked(staff.isActive !== false);
+    const raw = staff.permissions && staff.permissions.length > 0
+      ? staff.permissions
+      : getDefaultPermissionsForRole(staff.role);
+    setSelectedPermissions(expandPermissions(raw));
+    setShowAdd(true);
+  };
+
+  const openCreate = () => {
+    setEditStaff(null);
+    editStaffRef.current = null;
+    setSelectedPermissions([]);
+    setIsActiveChecked(true);
+    reset();
     setShowAdd(true);
   };
 
   const createMut = useMutation({
     mutationFn: (d) => {
-      const payload = { ...d, permissions: selectedPermissions };
+      const allSelected =
+        selectedPermissions.length === ALL_PERMISSIONS.length
+        || selectedPermissions.includes('*');
+      const payload = {
+        ...d,
+        isActive: isActiveChecked,
+        permissions: allSelected && selectedRole === 'Super Admin' ? ['*'] : selectedPermissions,
+      };
       if (editStaff && !payload.password) delete payload.password;
       return editStaff
         ? api.put(`/staff/${editStaff._id}`, payload)
         : api.post('/staff', payload);
     },
     onSuccess: () => {
-      toast.success(editStaff ? 'Staff updated!' : 'Staff added!');
+      toast.success(
+        editStaff
+          ? 'Staff updated. If their permissions changed, they must sign in again.'
+          : 'Staff added',
+      );
       qc.invalidateQueries(['staff']);
-      setShowAdd(false);
-      setEditStaff(null);
-      editStaffRef.current = null;
-      setSelectedPermissions([]);
-      reset();
+      closeForm();
     },
     onError: (err) => {
-      console.error('Staff save failed:', err);
       toast.error(err.response?.data?.message || 'Failed to save staff member');
     },
   });
@@ -104,258 +170,437 @@ export default function StaffPage() {
     onSuccess: () => qc.invalidateQueries(['staff']),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: (id) => api.delete(`/staff/${id}`),
+    onSuccess: () => {
+      toast.success('Staff member deleted');
+      qc.invalidateQueries(['staff']);
+      setShowDelete(null);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Failed to delete staff member');
+    },
+  });
+
   const onInvalid = (formErrors) => {
-    console.error('Staff form validation failed:', formErrors);
     const firstField = Object.keys(formErrors)[0];
     toast.error(`Please check the "${firstField}" field — it's required or invalid.`);
   };
 
+  const permCount = selectedPermissions.includes('*')
+    ? ALL_PERMISSIONS.length
+    : selectedPermissions.length;
+
+  const filteredPermGroups = useMemo(() => {
+    const q = permSearch.trim().toLowerCase();
+    if (!q) return PERMISSION_GROUPS;
+    return PERMISSION_GROUPS.map((group) => {
+      const moduleMatch = group.module.toLowerCase().includes(q);
+      const permissions = moduleMatch
+        ? group.permissions
+        : group.permissions.filter(
+            (p) =>
+              p.label.toLowerCase().includes(q) ||
+              p.code.toLowerCase().includes(q),
+          );
+      return { ...group, permissions };
+    }).filter((g) => g.permissions.length > 0);
+  }, [permSearch]);
+
   const columns = [
-    { key: 'name', header: 'Name', render: r => (
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold">{r.name?.charAt(0)}</div>
-        <div><p className="font-medium text-gray-900 dark:text-white">{r.name}</p><p className="text-xs text-gray-400">{r.email}</p></div>
-      </div>
-    )},
-    { key: 'role', header: 'Role', render: r => <span className="badge-blue capitalize">{r.role?.replace('_', ' ')}</span> },
-    { key: 'department', header: 'Dept', render: r => r.department?.name || 'N/A' },
-    { key: 'specialization', header: 'Specialization', render: r => r.specialization || '—' },
-    { key: 'phone', header: 'Phone', render: r => r.phone || 'N/A' },
-    { key: 'isActive', header: 'Status', render: r => <span className={r.isActive ? 'badge-green' : 'badge-red'}>{r.isActive ? 'Active' : 'Inactive'}</span> },
-    { key: 'permissions', header: 'Permissions', render: r => (
-      r.permissions && r.permissions.length > 0
-        ? <span className="badge-blue flex items-center gap-1 w-fit"><ShieldCheck size={12} /> Custom ({r.permissions.includes('*') ? 'All' : r.permissions.length})</span>
-        : <span className="text-xs text-gray-400">Role default</span>
-    )},
-    { key: 'actions', header: '', render: r => (
-      <div className="flex gap-2">
-        <button onClick={e => { e.stopPropagation(); openEdit(r); }} className="text-blue-600 hover:text-blue-800 p-1"><Edit2 size={14} /></button>
-        <button onClick={e => { e.stopPropagation(); toggleMut.mutate(r._id); }}
-          className={`text-xs font-medium ${r.isActive ? 'text-red-500 hover:text-red-700' : 'text-green-500 hover:text-green-700'}`}>
-          {r.isActive ? 'Deactivate' : 'Activate'}
-        </button>
-      </div>
-    )},
+    {
+      key: 'name',
+      header: 'Name',
+      render: (r) => (
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-sm bg-slate-800 text-white text-xs font-semibold flex items-center justify-center">
+            {r.name?.charAt(0)?.toUpperCase()}
+          </div>
+          <div>
+            <p className="font-medium text-slate-900 dark:text-white text-sm">{r.name}</p>
+            <p className="text-[11px] text-slate-400">{r.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      render: (r) => (
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-200">
+          {r.role}
+        </span>
+      ),
+    },
+    { key: 'department', header: 'Dept', render: (r) => r.department?.name || '—' },
+    { key: 'specialization', header: 'Specialization', render: (r) => r.specialization || '—' },
+    { key: 'phone', header: 'Phone', render: (r) => r.phone || '—' },
+    {
+      key: 'isActive',
+      header: 'Status',
+      render: (r) => (
+        <span className={r.isActive ? 'badge-green' : 'badge-red'}>
+          {r.isActive ? 'Active' : 'Inactive'}
+        </span>
+      ),
+    },
+    {
+      key: 'permissions',
+      header: 'Access',
+      render: (r) => (
+        r.permissions?.length > 0 ? (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700">
+            <ShieldCheck size={12} />
+            {r.permissions.includes('*') ? 'Full access' : `${r.permissions.length} permissions`}
+          </span>
+        ) : (
+          <span className="text-[11px] text-slate-400">Role default</span>
+        )
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (r) => {
+        const isSelf = currentUser && (r._id === currentUser._id || r._id === currentUser.id);
+        return (
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={(e) => { e.stopPropagation(); openEdit(r); }} className="text-blue-600 hover:text-blue-800 p-1" title="Edit">
+              <Edit2 size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); toggleMut.mutate(r._id); }}
+              className={`text-[11px] font-semibold ${r.isActive ? 'text-amber-600' : 'text-emerald-600'}`}
+            >
+              {r.isActive ? 'Deactivate' : 'Activate'}
+            </button>
+            {!isSelf && (
+              <button type="button" onClick={(e) => { e.stopPropagation(); setShowDelete(r); }} className="text-red-500 hover:text-red-700 p-1" title="Delete user">
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Staff Management</h1>
-        <button onClick={() => { setEditStaff(null); editStaffRef.current = null; setSelectedPermissions([]); reset(); setShowAdd(true); }} className="btn-primary">
-          <Plus size={16} /> Add Staff
+    <div className="staff-shell space-y-3">
+      <header className="staff-masthead">
+        <div>
+          <p className="staff-masthead__eyebrow">Administration · Access control</p>
+          <h1 className="staff-masthead__title">User Management</h1>
+        </div>
+        <button type="button" onClick={openCreate} className="staff-masthead__btn">
+          <Plus size={14} /> Add staff
         </button>
+      </header>
+
+      <div className="staff-table-card">
+        <DataTable
+          columns={columns}
+          data={data?.data || []}
+          loading={isLoading}
+          page={page}
+          pages={data?.pages || 1}
+          onPageChange={setPage}
+        />
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-        <DataTable columns={columns} data={data?.data || []} loading={isLoading} page={page} pages={data?.pages || 1} onPageChange={setPage} />
-      </div>
-
-      <Modal isOpen={showAdd} onClose={() => { setShowAdd(false); setEditStaff(null); editStaffRef.current = null; setSelectedPermissions([]); reset(); }}
-        title={editStaff ? 'Edit Staff' : 'Add Staff Member'} size="xl">
-        <form onSubmit={handleSubmit((d) => createMut.mutate(d), onInvalid)} className="p-6 space-y-5">
-          {/* Basic Info */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 pb-1 border-b border-gray-100 dark:border-gray-700">Basic Information</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Full Name *</label>
-                <input {...register('name', { required: true })} className="input-field" />
-                {errors.name && <p className="text-red-500 text-xs mt-1">Name is required</p>}
+      <Modal
+        isOpen={showAdd}
+        onClose={closeForm}
+        title={editStaff ? 'Edit Staff' : 'Add Staff Member'}
+        subtitle={
+          editStaff
+            ? `${editStaff.name} · ${editStaff.role || 'Staff'} · ${ALL_PERMISSIONS.length} permission options`
+            : `Create account and assign any of ${ALL_PERMISSIONS.length} HMS permissions`
+        }
+        size="xl"
+      >
+        <form onSubmit={handleSubmit((d) => createMut.mutate(d), onInvalid)} className="staff-form">
+          <div className="staff-form__body">
+            <section className="staff-section">
+              <div className="staff-section__head">
+                <h3 className="staff-section__title">Basic information</h3>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Email *</label>
-                <input {...register('email', { required: true })} type="email" className="input-field" />
-                {errors.email && <p className="text-red-500 text-xs mt-1">Email is required</p>}
-              </div>
-              {!editStaff && (
+              <div className="staff-section__body staff-grid-2">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Password *</label>
-                  <input
-                    {...register('password', {
-                      validate: (value) => {
-                        if (editStaffRef.current) return true;
-                        if (!value) return 'Password is required';
-                        if (value.length < 6) return 'Min 6 characters';
-                        return true;
-                      },
-                    })}
-                    type="password"
-                    className="input-field"
-                    placeholder="Min 6 characters"
-                  />
-                  {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
+                  <label className="staff-label">Full name *</label>
+                  <input {...register('name', { required: true })} className="staff-field" />
+                  {errors.name && <p className="staff-error">Name is required</p>}
                 </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium mb-1">Role *</label>
-                <select {...register('role', { required: true })} className="input-field">
-                  <option value="">Select role</option>
-                  {STAFF_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                {errors.role && <p className="text-red-500 text-xs mt-1">Role is required</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Phone</label>
-                <input {...register('phone')} className="input-field" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Qualification</label>
-                <input {...register('qualification')} className="input-field" placeholder="e.g. MBBS, MD" />
-              </div>
-            </div>
-          </div>
-
-          {/* Department Info */}
-          {isDoctor && (
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 pb-1 border-b border-gray-100 dark:border-gray-700">Department Information</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Department {isDoctor && <span className="text-red-500">*</span>}</label>
-                <select {...register('department', { required: isDoctor })} className="input-field">
-                  <option value="">Select department</option>
-                  {(departments || []).map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
-                </select>
-                {errors.department && <p className="text-red-500 text-xs mt-1">Department is required for doctors</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Specialization</label>
-                <input {...register('specialization')} className="input-field" placeholder="For doctors" />
-              </div>
-            </div>
-          </div>
-          )}
-
-          {/* Doctor-specific fields */}
-          {isDoctor && (
-            <>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 pb-1 border-b border-gray-100 dark:border-gray-700">Consultation Details</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="staff-label">Email *</label>
+                  <input {...register('email', { required: true })} type="email" className="staff-field" />
+                  {errors.email && <p className="staff-error">Email is required</p>}
+                </div>
+                {!editStaff && (
                   <div>
-                    <label className="block text-sm font-medium mb-1">Consultation Fee (₹)</label>
-                    <input {...register('consultationFee', { valueAsNumber: true })} type="number" className="input-field" defaultValue={200} />
+                    <label className="staff-label">Password *</label>
+                    <input
+                      {...register('password', {
+                        validate: (value) => {
+                          if (editStaffRef.current) return true;
+                          if (!value) return 'Password is required';
+                          if (value.length < 6) return 'Min 6 characters';
+                          return true;
+                        },
+                      })}
+                      type="password"
+                      className="staff-field"
+                      placeholder="Min 6 characters"
+                    />
+                    {errors.password && <p className="staff-error">{errors.password.message}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Follow-up Fee (₹)</label>
-                    <input {...register('followUpFee', { valueAsNumber: true })} type="number" className="input-field" defaultValue={100} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Morning Session Start</label>
-                    <input {...register('morningSessionStart')} type="time" className="input-field" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Morning Session End</label>
-                    <input {...register('morningSessionEnd')} type="time" className="input-field" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Evening Session Start</label>
-                    <input {...register('eveningSessionStart')} type="time" className="input-field" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Evening Session End</label>
-                    <input {...register('eveningSessionEnd')} type="time" className="input-field" />
-                  </div>
+                )}
+                <div>
+                  <label className="staff-label">Role *</label>
+                  <select {...register('role', { required: true })} className="staff-field">
+                    <option value="">Select role</option>
+                    {STAFF_ROLES.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  {errors.role && <p className="staff-error">Role is required</p>}
+                </div>
+                <div>
+                  <label className="staff-label">Phone</label>
+                  <input {...register('phone')} className="staff-field" />
+                </div>
+                <div>
+                  <label className="staff-label">Qualification</label>
+                  <input {...register('qualification')} className="staff-field" placeholder="e.g. MBBS, MD" />
                 </div>
               </div>
+            </section>
 
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 pb-1 border-b border-gray-100 dark:border-gray-700">Available Days</h3>
-                <div className="flex flex-wrap gap-2">
-                  {DAYS.map((day, i) => (
-                    <label key={day} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                      <input {...register(`availability.${i}.day`)} type="checkbox" value={day} className="w-4 h-4 rounded accent-blue-600" />
-                      {day.slice(0, 3)}
-                    </label>
-                  ))}
+            {isDoctor && (
+              <section className="staff-section">
+                <div className="staff-section__head">
+                  <h3 className="staff-section__title">Department</h3>
                 </div>
-              </div>
-            </>
-          )}
+                <div className="staff-section__body staff-grid-2">
+                  <div>
+                    <label className="staff-label">Department *</label>
+                    <select {...register('department', { required: isDoctor })} className="staff-field">
+                      <option value="">Select department</option>
+                      {(departments || []).map((d) => (
+                        <option key={d._id} value={d._id}>{d.name}</option>
+                      ))}
+                    </select>
+                    {errors.department && <p className="staff-error">Department is required for doctors</p>}
+                  </div>
+                  <div>
+                    <label className="staff-label">Specialization</label>
+                    <input {...register('specialization')} className="staff-field" />
+                  </div>
+                </div>
+              </section>
+            )}
 
-          {/* Feature Permissions */}
-          <div>
-            <div className="flex items-center justify-between mb-3 pb-1 border-b border-gray-100 dark:border-gray-700">
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
-                <ShieldCheck size={15} /> Feature Permissions
-              </h3>
-              <div className="flex gap-3 text-xs">
-                <button
-                  type="button"
-                  onClick={() => selectedRole && setSelectedPermissions(getDefaultPermissionsForRole(selectedRole))}
-                  className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-                  disabled={!selectedRole}
-                >
-                  <RotateCcw size={12} /> Reset to role default
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSelectedPermissions((prev) =>
-                      prev.length === ALL_PERMISSIONS.length ? [] : [...ALL_PERMISSIONS]
-                    )
-                  }
-                  className="flex items-center gap-1 text-gray-500 hover:text-gray-700"
-                >
-                  {selectedPermissions.length === ALL_PERMISSIONS.length
-                    ? <><Square size={12} /> Clear all</>
-                    : <><CheckSquare size={12} /> Select all</>}
-                </button>
-              </div>
-            </div>
+            {isDoctor && (
+              <>
+                <section className="staff-section">
+                  <div className="staff-section__head">
+                    <h3 className="staff-section__title">Consultation details</h3>
+                  </div>
+                  <div className="staff-section__body staff-grid-2">
+                    <div>
+                      <label className="staff-label">Consultation fee (₹)</label>
+                      <input {...register('consultationFee', { valueAsNumber: true })} type="number" className="staff-field" defaultValue={200} />
+                    </div>
+                    <div>
+                      <label className="staff-label">Follow-up fee (₹)</label>
+                      <input {...register('followUpFee', { valueAsNumber: true })} type="number" className="staff-field" defaultValue={100} />
+                    </div>
+                    <div>
+                      <label className="staff-label">Morning start</label>
+                      <input {...register('morningSessionStart')} type="time" className="staff-field" />
+                    </div>
+                    <div>
+                      <label className="staff-label">Morning end</label>
+                      <input {...register('morningSessionEnd')} type="time" className="staff-field" />
+                    </div>
+                    <div>
+                      <label className="staff-label">Evening start</label>
+                      <input {...register('eveningSessionStart')} type="time" className="staff-field" />
+                    </div>
+                    <div>
+                      <label className="staff-label">Evening end</label>
+                      <input {...register('eveningSessionEnd')} type="time" className="staff-field" />
+                    </div>
+                  </div>
+                </section>
 
-            <p className="text-xs text-gray-400 mb-3">
-              Choose exactly what this user can access. Defaults are filled in based on the selected role — untick anything they shouldn't see, or tick extra features to grant more access.
-            </p>
-
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4 max-h-72 overflow-y-auto pr-1">
-              {PERMISSION_GROUPS.map((group) => {
-                const groupCodes = group.permissions.map((p) => p.code);
-                const allSelected = groupCodes.every((c) => selectedPermissions.includes(c));
-                return (
-                  <div key={group.module} className="border border-gray-100 dark:border-gray-700 rounded-lg p-3">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="w-3.5 h-3.5 rounded accent-blue-600"
-                        checked={allSelected}
-                        onChange={() => toggleGroup(groupCodes, allSelected)}
-                      />
-                      {group.module}
-                    </label>
-                    <div className="space-y-1.5 pl-1">
-                      {group.permissions.map((perm) => (
-                        <label key={perm.code} className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="w-3.5 h-3.5 rounded accent-blue-600"
-                            checked={selectedPermissions.includes(perm.code)}
-                            onChange={() => togglePermission(perm.code)}
-                          />
-                          {perm.label}
+                <section className="staff-section">
+                  <div className="staff-section__head">
+                    <h3 className="staff-section__title">Available days</h3>
+                    <span className="staff-section__meta">Clinic schedule</span>
+                  </div>
+                  <div className="staff-section__body">
+                    <div className="staff-days">
+                      {DAYS.map((day, i) => (
+                        <label key={day} className="staff-day">
+                          <input {...register(`availability.${i}.day`)} type="checkbox" value={day} />
+                          <span>{day.slice(0, 3)}</span>
                         </label>
                       ))}
                     </div>
                   </div>
-                );
-              })}
+                </section>
+              </>
+            )}
+
+            <section className="staff-section">
+              <div className="staff-section__head">
+                <h3 className="staff-section__title">
+                  <span className="inline-flex items-center gap-1.5">
+                    <ShieldCheck size={12} /> Feature permissions
+                  </span>
+                </h3>
+                <div className="staff-perm-toolbar">
+                  <span className="staff-section__meta">{permCount} / {ALL_PERMISSIONS.length} selected</span>
+                  <button
+                    type="button"
+                    className="staff-perm-btn staff-perm-btn--accent"
+                    disabled={!selectedRole}
+                    onClick={() => selectedRole && setSelectedPermissions(
+                      expandPermissions(getDefaultPermissionsForRole(selectedRole))
+                    )}
+                  >
+                    <RotateCcw size={11} /> Reset default
+                  </button>
+                  <button
+                    type="button"
+                    className="staff-perm-btn"
+                    onClick={() =>
+                      setSelectedPermissions((prev) =>
+                        prev.length === ALL_PERMISSIONS.length || prev.includes('*')
+                          ? []
+                          : [...ALL_PERMISSIONS]
+                      )
+                    }
+                  >
+                    {permCount === ALL_PERMISSIONS.length
+                      ? <><Square size={11} /> Clear all</>
+                      : <><CheckSquare size={11} /> Select all</>}
+                  </button>
+                </div>
+              </div>
+              <div className="staff-section__body">
+                <p className="staff-perm-hint">
+                  Tick what this user can do. For Pharmacy: uncheck <strong>Edit medicine</strong> (or any inventory action)
+                  to lock direct edits — staff can still use <strong>Change Requests</strong> if that permission stays on.
+                  Unchecking an edit box also clears &quot;Full inventory control&quot; automatically.
+                </p>
+                <div className="relative mb-3">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    value={permSearch}
+                    onChange={(e) => setPermSearch(e.target.value)}
+                    className="staff-field pl-9"
+                    placeholder={`Search all ${ALL_PERMISSIONS.length} permissions (e.g. adjust stock, edit bill, discharge)…`}
+                  />
+                </div>
+                <div className="staff-perm-matrix">
+                  {filteredPermGroups.map((group) => {
+                    const groupCodes = group.permissions.map((p) => p.code);
+                    const selectedInGroup = groupCodes.filter((c) => selectedPermissions.includes(c)).length;
+                    const allSelected = groupCodes.length > 0 && selectedInGroup === groupCodes.length;
+                    return (
+                      <div key={group.module} className="staff-perm-module">
+                        <label className="staff-perm-module__head">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={() => toggleGroup(groupCodes, allSelected)}
+                          />
+                          <span className="staff-perm-module__name">{group.module}</span>
+                          <span className="staff-perm-module__count">{selectedInGroup}/{groupCodes.length}</span>
+                        </label>
+                        <div className="staff-perm-module__list">
+                          {group.permissions.map((perm) => (
+                            <label key={perm.code} className="staff-perm-item">
+                              <input
+                                type="checkbox"
+                                checked={selectedPermissions.includes(perm.code)}
+                                onChange={() => togglePermission(perm.code)}
+                              />
+                              <span>
+                                {perm.label}
+                                <span className="staff-perm-code"> {perm.code}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!filteredPermGroups.length && (
+                    <p className="text-sm text-slate-400 py-6 text-center">No permissions match “{permSearch}”.</p>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="staff-form__footer">
+            <label className="staff-status">
+              <input
+                type="checkbox"
+                checked={isActiveChecked}
+                onChange={(e) => setIsActiveChecked(e.target.checked)}
+              />
+              Account status
+              <span className={`staff-status__badge ${isActiveChecked ? 'is-on' : ''}`}>
+                {isActiveChecked ? 'Active' : 'Inactive'}
+              </span>
+            </label>
+            <div className="staff-actions">
+              {editStaff && currentUser && editStaff._id !== currentUser._id && editStaff._id !== currentUser.id && (
+                <button
+                  type="button"
+                  className="staff-btn staff-btn--danger"
+                  onClick={() => { closeForm(); setShowDelete(editStaff); }}
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              )}
+              <button type="button" onClick={closeForm} className="staff-btn staff-btn--ghost">Cancel</button>
+              <button type="submit" disabled={createMut.isPending} className="staff-btn staff-btn--primary">
+                <UserCog size={13} />
+                {createMut.isPending ? 'Saving…' : editStaff ? 'Update staff' : 'Add staff'}
+              </button>
             </div>
           </div>
+        </form>
+      </Modal>
 
-          {/* Status */}
-          <div className="flex items-center gap-2">
-            <input {...register('isActive')} type="checkbox" id="staffActive" defaultChecked className="w-4 h-4 rounded" />
-            <label htmlFor="staffActive" className="text-sm font-medium">Active</label>
-          </div>
-
-          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={() => { setShowAdd(false); setEditStaff(null); editStaffRef.current = null; setSelectedPermissions([]); reset(); }} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={createMut.isPending} className="btn-primary">
-              <UserCog size={16} /> {createMut.isPending ? 'Saving...' : editStaff ? 'Update Staff' : 'Add Staff'}
+      <Modal isOpen={!!showDelete} onClose={() => setShowDelete(null)} title="Delete Staff Member" size="sm">
+        <div className="p-6">
+          <p className="text-slate-600 dark:text-gray-300 mb-2 text-sm">
+            Permanently delete{' '}
+            <strong className="text-slate-900 dark:text-white">{showDelete?.name}</strong>
+            {showDelete?.email ? ` (${showDelete.email})` : ''}?
+          </p>
+          <p className="text-xs text-red-600 mb-5">This cannot be undone. Login access is removed immediately.</p>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setShowDelete(null)} className="staff-btn staff-btn--ghost">Cancel</button>
+            <button
+              type="button"
+              onClick={() => deleteMut.mutate(showDelete._id)}
+              disabled={deleteMut.isPending}
+              className="staff-btn staff-btn--primary"
+              style={{ background: '#b91c1c' }}
+            >
+              {deleteMut.isPending ? 'Deleting…' : 'Delete user'}
             </button>
           </div>
-        </form>
+        </div>
       </Modal>
     </div>
   );

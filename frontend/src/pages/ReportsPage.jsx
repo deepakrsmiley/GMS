@@ -1,543 +1,642 @@
 import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
-  Users, BedDouble, LogIn, LogOut, Wallet, Receipt, FlaskConical, Pill,
-  ShieldCheck, FileDown, FileSpreadsheet, Printer, RefreshCw, Search, ChevronDown,
-  Clock, Stethoscope, TestTube2, IndianRupee, ClipboardList, CalendarDays,
+  FileSpreadsheet, Printer, RefreshCw, CalendarRange,
+  LayoutDashboard, Users, UserRound, CalendarDays, Stethoscope, Pill,
+  Package, Receipt, Wallet, FlaskConical, Scan, BedDouble, HeartPulse,
+  Scissors, IndianRupee, ShieldCheck, UserCog, Lock, Server,
+  TrendingUp, TrendingDown, AlertCircle,
 } from 'lucide-react';
 import {
-  ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-} from 'recharts';
-import {
-  startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, subMonths, startOfYear, format,
+  startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, subMonths, format,
 } from 'date-fns';
-import api from '../services/api';
 import reportsApi from '../services/reportsApi';
-import patientProfileApi from '../services/patientProfileApi';
-import DataTable from '../components/common/DataTable';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { exportToCSV, printSection } from '../utils/exportUtils';
+import '../styles/auditReports.css';
 
-const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
-const PAYMENT_COLORS = { cash: '#3b82f6', upi: '#22c55e', card: '#f59e0b', insurance: '#8b5cf6', cheque: '#ef4444', online: '#06b6d4' };
+const PRESETS = [
+  { id: 'today', label: 'Today' },
+  { id: '7d', label: '7 Days' },
+  { id: 'thisMonth', label: 'This Month' },
+  { id: 'lastMonth', label: 'Last Month' },
+];
 
-const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-const shortDate = (d) => format(new Date(d), 'd MMM');
+const NAV_GROUPS = [
+  {
+    title: 'Overview',
+    items: [
+      { id: 'executive', label: 'Executive Summary', icon: LayoutDashboard },
+    ],
+  },
+  {
+    title: 'Operations',
+    items: [
+      { id: 'patient', label: 'Patient', icon: UserRound },
+      { id: 'appointment', label: 'Appointment', icon: CalendarDays },
+      { id: 'doctor', label: 'Doctor', icon: Stethoscope },
+      { id: 'bed', label: 'Bed Management', icon: BedDouble },
+      { id: 'ot', label: 'Operation Theatre', icon: Scissors },
+      { id: 'nurse', label: 'Nurse', icon: HeartPulse },
+    ],
+  },
+  {
+    title: 'Clinical',
+    items: [
+      { id: 'laboratory', label: 'Laboratory', icon: FlaskConical },
+      { id: 'radiology', label: 'Radiology', icon: Scan },
+      { id: 'pharmacy', label: 'Pharmacy & Medicines', icon: Pill },
+      { id: 'inventory', label: 'Inventory', icon: Package },
+    ],
+  },
+  {
+    title: 'Finance',
+    items: [
+      { id: 'billing', label: 'Billing', icon: Receipt },
+      { id: 'payment', label: 'Payments', icon: Wallet },
+      { id: 'financial', label: 'Financial', icon: IndianRupee },
+      { id: 'insurance', label: 'Insurance', icon: ShieldCheck },
+    ],
+  },
+  {
+    title: 'Governance',
+    items: [
+      { id: 'user-activity', label: 'User Activity', icon: Users },
+      { id: 'employee', label: 'Employee', icon: UserCog },
+      { id: 'security', label: 'Security', icon: Lock },
+      { id: 'system', label: 'System', icon: Server },
+    ],
+  },
+];
 
-const PRESETS = ['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'Last Month', 'This Year', 'Custom Range'];
+const ALL_SECTIONS = NAV_GROUPS.flatMap((g) => g.items);
 
-const presetRange = (preset) => {
+const DETAIL_COLUMNS = {
+  executive: [],
+  'user-activity': [
+    { key: 'name', header: 'Name' },
+    { key: 'email', header: 'Email' },
+    { key: 'role', header: 'Role' },
+    { key: 'lastLogin', header: 'Last Login' },
+    { key: 'failedLoginAttempts', header: 'Failed' },
+    { key: 'locked', header: 'Locked' },
+  ],
+  patient: [
+    { key: 'patientId', header: 'UHID' },
+    { key: 'name', header: 'Name' },
+    { key: 'gender', header: 'Gender' },
+    { key: 'age', header: 'Age' },
+    { key: 'phone', header: 'Phone' },
+    { key: 'registeredAt', header: 'Registered' },
+  ],
+  appointment: [
+    { key: 'date', header: 'Date' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'patientId', header: 'UHID' },
+    { key: 'doctor', header: 'Doctor' },
+    { key: 'status', header: 'Status' },
+  ],
+  doctor: [
+    { key: 'doctor', header: 'Doctor' },
+    { key: 'opCount', header: 'OP' },
+    { key: 'ipCount', header: 'IP' },
+    { key: 'bills', header: 'Bills' },
+    { key: 'revenue', header: 'Revenue', align: 'right' },
+    { key: 'labCount', header: 'Lab' },
+    { key: 'rxCount', header: 'Rx' },
+  ],
+  pharmacy: [
+    { key: 'name', header: 'Medicine' },
+    { key: 'qty', header: 'Qty Sold', align: 'right' },
+    { key: 'revenue', header: 'Sales', align: 'right' },
+    { key: 'cost', header: 'Cost', align: 'right' },
+    { key: 'profit', header: 'Profit / Loss', align: 'right' },
+    { key: 'margin', header: 'Margin', align: 'right' },
+  ],
+  inventory: [
+    { key: 'name', header: 'Medicine' },
+    { key: 'category', header: 'Category' },
+    { key: 'currentStock', header: 'Stock', align: 'right' },
+    { key: 'minimumStock', header: 'Minimum', align: 'right' },
+    { key: 'reorderLevel', header: 'Reorder', align: 'right' },
+  ],
+  billing: [
+    { key: 'billNumber', header: 'Bill #' },
+    { key: 'type', header: 'Type' },
+    { key: 'status', header: 'Status' },
+    { key: 'total', header: 'Total', align: 'right' },
+    { key: 'paid', header: 'Paid', align: 'right' },
+    { key: 'due', header: 'Due', align: 'right' },
+    { key: 'discount', header: 'Discount', align: 'right' },
+    { key: 'date', header: 'Date' },
+  ],
+  payment: [
+    { key: 'mode', header: 'Mode' },
+    { key: 'count', header: 'Count', align: 'right' },
+    { key: 'amount', header: 'Amount', align: 'right' },
+  ],
+  laboratory: [
+    { key: 'labNumber', header: 'Lab #' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'labType', header: 'Type' },
+    { key: 'status', header: 'Status' },
+    { key: 'priority', header: 'Priority' },
+    { key: 'amount', header: 'Amount', align: 'right' },
+    { key: 'date', header: 'Date' },
+  ],
+  radiology: [
+    { key: 'labNumber', header: 'Order #' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'modality', header: 'Modality' },
+    { key: 'status', header: 'Status' },
+    { key: 'amount', header: 'Amount', align: 'right' },
+    { key: 'date', header: 'Date' },
+  ],
+  bed: [
+    { key: 'bedNumber', header: 'Bed' },
+    { key: 'ward', header: 'Ward' },
+    { key: 'type', header: 'Type' },
+    { key: 'status', header: 'Status' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'dailyRate', header: 'Daily Rate', align: 'right' },
+  ],
+  nurse: [
+    { key: 'admission', header: 'Admission' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'medicine', header: 'Medicine' },
+    { key: 'quantity', header: 'Qty', align: 'right' },
+    { key: 'administeredAt', header: 'Administered' },
+  ],
+  ot: [
+    { key: 'operationNumber', header: 'OT #' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'surgeon', header: 'Surgeon' },
+    { key: 'status', header: 'Status' },
+    { key: 'scheduledDate', header: 'Scheduled' },
+    { key: 'charges', header: 'Charges', align: 'right' },
+  ],
+  financial: [],
+  insurance: [
+    { key: 'billNumber', header: 'Bill #' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'provider', header: 'Provider' },
+    { key: 'claimNumber', header: 'Claim #' },
+    { key: 'claimStatus', header: 'Status' },
+    { key: 'approved', header: 'Approved', align: 'right' },
+    { key: 'date', header: 'Date' },
+  ],
+  employee: [
+    { key: 'name', header: 'Name' },
+    { key: 'email', header: 'Email' },
+    { key: 'role', header: 'Role' },
+    { key: 'department', header: 'Department' },
+    { key: 'isActive', header: 'Active' },
+    { key: 'lastLogin', header: 'Last Login' },
+  ],
+  security: [
+    { key: 'action', header: 'Action' },
+    { key: 'user', header: 'User' },
+    { key: 'email', header: 'Email' },
+    { key: 'description', header: 'Description' },
+    { key: 'ip', header: 'IP' },
+    { key: 'date', header: 'Date' },
+  ],
+  system: [],
+};
+
+const MONEY_KEYS = new Set([
+  'revenue', 'amount', 'total', 'paid', 'due', 'discount', 'charges', 'approved', 'dailyRate',
+  'cost', 'profit',
+]);
+const DATE_KEYS = new Set([
+  'date', 'lastLogin', 'registeredAt', 'administeredAt', 'scheduledDate',
+]);
+const RIGHT_ALIGN_KEYS = new Set([
+  ...MONEY_KEYS, 'qty', 'count', 'opCount', 'ipCount', 'bills', 'labCount', 'rxCount',
+  'currentStock', 'minimumStock', 'reorderLevel', 'quantity', 'failedLoginAttempts', 'margin',
+]);
+
+const presetRange = (id) => {
   const now = new Date();
-  switch (preset) {
-    case 'Today': return [startOfDay(now), endOfDay(now)];
-    case 'Yesterday': { const y = subDays(now, 1); return [startOfDay(y), endOfDay(y)]; }
-    case 'Last 7 Days': return [startOfDay(subDays(now, 6)), endOfDay(now)];
-    case 'This Month': return [startOfMonth(now), endOfDay(now)];
-    case 'Last Month': { const lm = subMonths(now, 1); return [startOfMonth(lm), endOfMonth(lm)]; }
-    case 'This Year': return [startOfYear(now), endOfDay(now)];
-    default: return [startOfDay(subDays(now, 6)), endOfDay(now)];
+  switch (id) {
+    case 'today': return [startOfDay(now), endOfDay(now)];
+    case '7d': return [startOfDay(subDays(now, 6)), endOfDay(now)];
+    case 'thisMonth': return [startOfMonth(now), endOfDay(now)];
+    case 'lastMonth': {
+      const lm = subMonths(now, 1);
+      return [startOfMonth(lm), endOfMonth(lm)];
+    }
+    default: return [startOfMonth(now), endOfDay(now)];
   }
 };
 
-function Panel({ title, action, children, className = '' }) {
+const inr = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+
+const formatKpiValue = (item) => {
+  if (!item?.tracked || item.format === 'text') return item?.value ?? 'Not tracked yet';
+  if (item.format === 'currency') return inr(item.value);
+  if (item.format === 'percent') return `${item.value ?? 0}%`;
+  return Number(item.value ?? 0).toLocaleString('en-IN');
+};
+
+const formatCell = (key, value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (DATE_KEYS.has(key) && value) {
+    try { return format(new Date(value), 'dd MMM yyyy HH:mm'); } catch { return String(value); }
+  }
+  if (MONEY_KEYS.has(key) && typeof value === 'number') return inr(value);
+  return String(value);
+};
+
+function Panel({ title, subtitle, children, flush }) {
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700 ${className}`}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{title}</h3>
-        {action}
+    <section className="audit-panel">
+      {(title || subtitle) && (
+        <header className="audit-panel__head">
+          <h3 className="audit-panel__title">{title}</h3>
+          {subtitle && <p className="audit-panel__sub">{subtitle}</p>}
+        </header>
+      )}
+      <div className={flush ? 'audit-panel__body--flush' : 'audit-panel__body'}>
+        {children}
       </div>
-      {children}
+    </section>
+  );
+}
+
+function KpiGrid({ items }) {
+  if (!items?.length) return null;
+  return (
+    <div className="audit-kpi-grid">
+      {items.map((item) => {
+        const muted = item.tracked === false;
+        const isMoney = item.format === 'currency';
+        const isNeg = isMoney && Number(item.value) < 0;
+        const isPosMoney = isMoney && /profit|revenue|sales/i.test(item.label || '') && Number(item.value) > 0;
+        return (
+          <div key={item.key} className="audit-kpi">
+            <p className="audit-kpi__label">{item.label}</p>
+            <p
+              className={`audit-kpi__value ${
+                muted ? 'is-muted' : isNeg ? 'is-neg' : isPosMoney ? 'is-pos' : ''
+              }`}
+            >
+              {formatKpiValue(item)}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function KpiCard({ icon: Icon, color, label, value, change, sub }) {
-  const up = change >= 0;
+function BreakdownPanel({ rows }) {
+  if (!rows?.length) return null;
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-      <div className="flex items-center justify-between">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}1a`, color }}>
-          <Icon size={18} />
-        </div>
-        {change !== undefined && change !== null && (
-          <span className={`text-xs font-semibold ${up ? 'text-green-600' : 'text-red-500'}`}>
-            {up ? '↑' : '↓'} {Math.abs(change)}%
-          </span>
-        )}
+    <Panel title="Breakdown" subtitle="Period aggregates" flush>
+      <div className="audit-table-wrap">
+        <table className="audit-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Value</th>
+              <th className="is-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={`${r.label}-${i}`}>
+                <td>{r.label}</td>
+                <td>
+                  {r.format === 'currency' && typeof r.value === 'number' ? inr(r.value) : r.value}
+                </td>
+                <td className="is-right">{r.amount != null ? inr(r.amount) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-3">{label}</p>
-      <p className="text-xl font-bold text-gray-900 dark:text-white mt-0.5">{value}</p>
-      {sub && <p className="text-[11px] text-gray-400 mt-1">{sub}</p>}
+    </Panel>
+  );
+}
+
+function DetailTable({ columns, rows, title = 'Detail register' }) {
+  if (!columns?.length) return null;
+  return (
+    <Panel title={title} subtitle={`${rows?.length || 0} record(s)`} flush>
+      {!rows?.length ? (
+        <p className="audit-empty">No records for this period</p>
+      ) : (
+        <div className="audit-table-wrap">
+          <table className="audit-table">
+            <thead>
+              <tr>
+                {columns.map((c) => (
+                  <th
+                    key={c.key}
+                    className={c.align === 'right' || RIGHT_ALIGN_KEYS.has(c.key) ? 'is-right' : ''}
+                  >
+                    {c.header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={i}>
+                  {columns.map((c) => {
+                    const right = c.align === 'right' || RIGHT_ALIGN_KEYS.has(c.key);
+                    const profitTone = c.key === 'profit' && typeof row[c.key] === 'number'
+                      ? (row[c.key] >= 0 ? 'is-pos' : 'is-neg')
+                      : '';
+                    return (
+                      <td key={c.key} className={`${right ? 'is-right' : ''} ${profitTone}`}>
+                        {formatCell(c.key, row[c.key])}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ExecutiveScorecard({ kpis = [] }) {
+  if (!kpis.length) return null;
+  return (
+    <Panel title="Executive Scorecard" subtitle="Board-level hospital KPIs" flush>
+      <div className="audit-table-wrap">
+        <table className="audit-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th className="is-right">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {kpis.map((k) => (
+              <tr key={k.key}>
+                <td>{k.label}</td>
+                <td className="is-right" style={{ fontWeight: 600 }}>{formatKpiValue(k)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function MedicinePnlCard({ pnl }) {
+  if (!pnl) return null;
+  const profit = Number(pnl.netProfit || 0);
+  const isProfit = profit >= 0;
+  return (
+    <div className="audit-pnl">
+      <div className="audit-pnl__head">
+        <div>
+          <div className="audit-pnl__head-title">Medicine Profit &amp; Loss Statement</div>
+          <div className="audit-pnl__head-sub">Sales − COGS − expired / disposed loss</div>
+        </div>
+        <div className="audit-pnl__result">
+          {isProfit ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+          {isProfit ? 'Net Profit' : 'Net Loss'} · {inr(Math.abs(profit))}
+          <span style={{ opacity: 0.65, fontWeight: 500 }}>· Margin {pnl.marginPct ?? 0}%</span>
+        </div>
+      </div>
+      <div className="audit-pnl__body">
+        <div className="audit-pnl__row">
+          <span>Medicine sales (revenue)</span>
+          <span>{inr(pnl.revenue)}</span>
+        </div>
+        <div className="audit-pnl__row">
+          <span>Less: Cost of goods sold</span>
+          <span>{inr(pnl.cogs)}</span>
+        </div>
+        <div className="audit-pnl__row is-total">
+          <span>Gross profit</span>
+          <span className={pnl.grossProfit >= 0 ? 'is-pos' : 'is-neg'}>{inr(pnl.grossProfit)}</span>
+        </div>
+        <div className="audit-pnl__row">
+          <span>Less: Expired / disposed loss</span>
+          <span className="is-warn">{inr(pnl.expiredLoss)}</span>
+        </div>
+        <div className="audit-pnl__row is-net">
+          <span>Net profit / (loss)</span>
+          <span>{inr(pnl.netProfit)}</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function ReportsPage() {
-  const [preset, setPreset] = useState('This Month');
+  const [section, setSection] = useState('executive');
+  const [preset, setPreset] = useState('thisMonth');
   const [applied, setApplied] = useState(() => {
-    const [f, t] = presetRange('This Month');
-    return { from: f, to: t };
+    const [from, to] = presetRange('thisMonth');
+    return { from, to };
   });
   const [draft, setDraft] = useState(applied);
-  const [detailPage, setDetailPage] = useState(1);
 
-  const [patientQuery, setPatientQuery] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState(null);
-
-  const handlePreset = (p) => {
-    setPreset(p);
-    if (p !== 'Custom Range') {
-      const [f, t] = presetRange(p);
-      setDraft({ from: f, to: t });
-      setApplied({ from: f, to: t });
-      setDetailPage(1);
-    }
+  const handlePreset = (id) => {
+    setPreset(id);
+    const [from, to] = presetRange(id);
+    setDraft({ from, to });
+    setApplied({ from, to });
   };
 
-  const generateReport = () => {
+  const applyCustom = () => {
+    setPreset('custom');
     setApplied(draft);
-    setDetailPage(1);
   };
 
-  const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useQuery({
-    queryKey: ['reportsSummary', applied.from, applied.to],
-    queryFn: () => reportsApi.getSummary(applied.from, applied.to),
+  const { data, isLoading, isFetching, refetch, error } = useQuery({
+    queryKey: ['auditReport', section, applied.from, applied.to],
+    queryFn: () => reportsApi.getAuditSection(section, applied),
+    placeholderData: keepPreviousData,
   });
 
-  const { data: detailed, isLoading: loadingDetailed, refetch: refetchDetailed } = useQuery({
-    queryKey: ['reportsDetailed', applied.from, applied.to, detailPage],
-    queryFn: () => reportsApi.getDetailed(applied.from, applied.to, detailPage, 10),
-  });
+  const columns = DETAIL_COLUMNS[section] || [];
+  const sectionMeta = ALL_SECTIONS.find((s) => s.id === section);
+  const groupTitle = NAV_GROUPS.find((g) => g.items.some((i) => i.id === section))?.title;
 
-  const { data: patientResults } = useQuery({
-    queryKey: ['reportsPatientSearch', patientQuery],
-    queryFn: () => api.get(`/patients/search?q=${encodeURIComponent(patientQuery)}`).then((r) => r.data.data),
-    enabled: patientQuery.trim().length >= 2,
-  });
-
-  const { data: selectedSummary } = useQuery({
-    queryKey: ['reportsPatientSummary', selectedPatient?._id],
-    queryFn: () => patientProfileApi.getSummary(selectedPatient._id),
-    enabled: !!selectedPatient,
-  });
-
-  const { data: selectedTimeline, isLoading: loadingTimeline } = useQuery({
-    queryKey: ['reportsPatientTimeline', selectedPatient?._id],
-    queryFn: () => patientProfileApi.getTimeline(selectedPatient._id),
-    enabled: !!selectedPatient,
-  });
-
-  const k = summary?.kpis || {};
-  const bedOcc = summary?.bedOccupancy || {};
-
-  const kpiCards = [
-    { icon: Users, color: '#3b82f6', label: 'OP Count', value: k.opCount?.value ?? 0, change: k.opCount?.change },
-    { icon: BedDouble, color: '#06b6d4', label: 'IP Count', value: k.ipCount?.value ?? 0, change: k.ipCount?.change },
-    { icon: LogIn, color: '#22c55e', label: 'Admissions', value: k.admissions?.value ?? 0, change: k.admissions?.change },
-    { icon: LogOut, color: '#f59e0b', label: 'Discharges', value: k.discharges?.value ?? 0, change: k.discharges?.change },
-    { icon: Wallet, color: '#2563eb', label: 'Revenue', value: inr(k.revenue?.value), change: k.revenue?.change },
-    { icon: Receipt, color: '#eab308', label: 'Pending Bills', value: inr(k.pendingBills?.value) },
-    { icon: FlaskConical, color: '#8b5cf6', label: 'Lab Tests', value: k.labTests?.value ?? 0, change: k.labTests?.change },
-    { icon: Pill, color: '#10b981', label: 'Pharmacy Sales', value: inr(k.pharmacySales?.value), change: k.pharmacySales?.change },
-    { icon: BedDouble, color: '#ef4444', label: 'Bed Occupancy', value: `${k.bedOccupancy?.value ?? 0}%`, sub: `${k.bedOccupancy?.occupied ?? 0}/${k.bedOccupancy?.total ?? 0} beds` },
-    { icon: ShieldCheck, color: '#0ea5e9', label: 'Insurance Claims', value: inr(k.insuranceClaims?.value), change: k.insuranceClaims?.change },
-  ];
-
-  const detailColumns = [
-    { key: 'date', header: 'Date', render: (r) => format(new Date(r.date), 'dd MMM yyyy') },
-    { key: 'opCount', header: 'OP Count' },
-    { key: 'admissions', header: 'Admissions' },
-    { key: 'discharges', header: 'Discharges' },
-    { key: 'revenue', header: 'Revenue', render: (r) => inr(r.revenue) },
-    { key: 'labTests', header: 'Lab Tests' },
-    { key: 'pharmacySales', header: 'Pharmacy Sales', render: (r) => inr(r.pharmacySales) },
-    { key: 'pendingBills', header: 'Pending Bills', render: (r) => inr(r.pendingBills) },
-  ];
-
-  const handleExportExcel = () => {
-    exportToCSV(detailed?.data || [], [
-      { key: 'date', header: 'Date' },
-      { key: 'opCount', header: 'OP Count' },
-      { key: 'admissions', header: 'Admissions' },
-      { key: 'discharges', header: 'Discharges' },
-      { key: 'revenue', header: 'Revenue' },
-      { key: 'labTests', header: 'Lab Tests' },
-      { key: 'pharmacySales', header: 'Pharmacy Sales' },
-      { key: 'pendingBills', header: 'Pending Bills' },
-    ], `reports-${format(applied.from, 'yyyy-MM-dd')}_to_${format(applied.to, 'yyyy-MM-dd')}`);
-  };
-
-  const handlePrint = () => printSection('reports-print-area', 'Reports & Business Intelligence');
-
-  const handleRefresh = () => { refetchSummary(); refetchDetailed(); };
-
-  const timelineByDay = useMemo(() => {
-    const groups = {};
-    (selectedTimeline || []).forEach((ev) => {
-      const day = format(new Date(ev.date), 'd MMM yyyy');
-      groups[day] = groups[day] || [];
-      groups[day].push(ev);
-    });
-    return groups;
-  }, [selectedTimeline]);
-
-  const eventIcon = (type) => {
-    switch (type) {
-      case 'OP Visit': return Stethoscope;
-      case 'Admission': case 'Discharge': case 'Room Transfer': return BedDouble;
-      case 'Lab Test': return TestTube2;
-      case 'Medicine': return Pill;
-      case 'Bill': case 'Payment': return IndianRupee;
-      case 'Operation': return ClipboardList;
-      default: return Clock;
+  const exportRows = useMemo(() => {
+    if (data?.details?.length && columns.length) {
+      return data.details.map((row) => {
+        const out = {};
+        columns.forEach((c) => { out[c.key] = formatCell(c.key, row[c.key]); });
+        return out;
+      });
     }
+    return (data?.kpis || []).map((k) => ({
+      metric: k.label,
+      value: formatKpiValue(k),
+    }));
+  }, [data, columns]);
+
+  const exportColumns = useMemo(() => {
+    if (data?.details?.length && columns.length) return columns;
+    return [
+      { key: 'metric', header: 'Metric' },
+      { key: 'value', header: 'Value' },
+    ];
+  }, [data, columns]);
+
+  const handleExport = () => {
+    const rangeLabel = `${format(applied.from, 'yyyy-MM-dd')}_to_${format(applied.to, 'yyyy-MM-dd')}`;
+    exportToCSV(exportRows, exportColumns, `audit-${section}-${rangeLabel}`);
+  };
+
+  const handlePrint = () => {
+    printSection('audit-print-area', `Audit Reports — ${sectionMeta?.label || section}`);
   };
 
   return (
-    <div className="space-y-6" id="reports-print-area">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="audit-shell space-y-3">
+      <header className="audit-masthead">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Reports &amp; Business Intelligence</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Real-time analytics and comprehensive reporting</p>
+          <p className="audit-masthead__eyebrow">Sri Sanjeevi Hospital · Governance</p>
+          <h1 className="audit-masthead__title">Audit Reports</h1>
+          <p className="audit-masthead__sub">
+            Institutional performance, clinical operations, pharmacy P&amp;L, and compliance controls
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button onClick={handlePrint} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-            <FileDown size={15} /> Export PDF
-          </button>
-          <button onClick={handleExportExcel} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-            <FileSpreadsheet size={15} /> Export Excel
-          </button>
-          <button onClick={handlePrint} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-            <Printer size={15} /> Print
-          </button>
-          <button onClick={handleRefresh} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-            <RefreshCw size={15} /> Refresh
-          </button>
+        <div className="audit-masthead__meta">
+          <span className="audit-masthead__stamp">Confidential · Internal use</span>
+          <div className="audit-actions">
+            <button type="button" onClick={handleExport} className="audit-btn audit-btn--ghost">
+              <FileSpreadsheet size={13} /> Export CSV
+            </button>
+            <button type="button" onClick={handlePrint} className="audit-btn audit-btn--ghost">
+              <Printer size={13} /> Print
+            </button>
+            <button type="button" onClick={() => refetch()} className="audit-btn audit-btn--solid">
+              <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className="bg-white dark:bg-gray-800 rounded-2xl p-3 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-wrap items-center gap-2">
-        {PRESETS.map((p) => (
-          <button
-            key={p}
-            onClick={() => handlePreset(p)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${preset === p ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-          >
-            {p}
-          </button>
-        ))}
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
-          <label className="text-xs text-gray-500">From</label>
+      <div className="audit-period">
+        <div className="audit-period__label">
+          <CalendarRange size={14} />
+          Reporting period
+        </div>
+        <div className="audit-period__presets">
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => handlePreset(p.id)}
+              className={`audit-period__preset ${preset === p.id ? 'is-active' : ''}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="audit-period__dates">
           <input
             type="date"
             value={format(draft.from, 'yyyy-MM-dd')}
-            onChange={(e) => { setPreset('Custom Range'); setDraft((d) => ({ ...d, from: startOfDay(new Date(e.target.value)) })); }}
-            className="input-field w-40 !py-1.5 text-sm"
+            onChange={(e) => {
+              setPreset('custom');
+              setDraft((d) => ({ ...d, from: startOfDay(new Date(e.target.value)) }));
+            }}
           />
-          <label className="text-xs text-gray-500">To</label>
+          <span style={{ fontSize: 11, color: 'var(--ar-muted)' }}>to</span>
           <input
             type="date"
             value={format(draft.to, 'yyyy-MM-dd')}
-            onChange={(e) => { setPreset('Custom Range'); setDraft((d) => ({ ...d, to: endOfDay(new Date(e.target.value)) })); }}
-            className="input-field w-40 !py-1.5 text-sm"
+            onChange={(e) => {
+              setPreset('custom');
+              setDraft((d) => ({ ...d, to: endOfDay(new Date(e.target.value)) }));
+            }}
           />
-          <button onClick={generateReport} className="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
-            Generate Report
+          <button type="button" onClick={applyCustom} className="audit-period__apply">
+            Apply
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 items-start">
-        <div className="space-y-6 min-w-0">
-          {loadingSummary ? <LoadingSpinner /> : (
+      <div className="audit-workspace">
+        <aside className="audit-rail">
+          <div className="audit-rail__head">
+            <span>Audit modules</span>
+          </div>
+          <nav className="audit-rail__nav">
+            {NAV_GROUPS.map((group) => (
+              <div key={group.title} className="audit-rail__group">
+                <p className="audit-rail__group-title">{group.title}</p>
+                {group.items.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setSection(id)}
+                    className={`audit-rail__item ${section === id ? 'is-active' : ''}`}
+                  >
+                    <Icon size={13} strokeWidth={2} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        <div id="audit-print-area" className="audit-content">
+          <div className="audit-section-head">
+            <div>
+              <p className="audit-section-head__crumb">{groupTitle || 'Audit'}</p>
+              <h2 className="audit-section-head__title">{sectionMeta?.label || section}</h2>
+              <p className="audit-section-head__range">
+                {format(applied.from, 'd MMM yyyy')} — {format(applied.to, 'd MMM yyyy')}
+                {isFetching && <span className="audit-section-head__live">Updating…</span>}
+              </p>
+            </div>
+            <span className="audit-section-head__badge">
+              Generated {format(new Date(), 'd MMM yyyy · HH:mm')}
+            </span>
+          </div>
+
+          {isLoading && !data ? (
+            <div className="py-16 flex justify-center"><LoadingSpinner /></div>
+          ) : error ? (
+            <div className="audit-error">
+              <AlertCircle className="mx-auto mb-2" size={22} color="#b91c1c" />
+              <p>Failed to load audit data</p>
+              <span>{error?.response?.data?.message || error.message}</span>
+            </div>
+          ) : (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                {kpiCards.map((c) => <KpiCard key={c.label} {...c} />)}
-              </div>
+              {section === 'executive' && <ExecutiveScorecard kpis={data?.kpis || []} />}
+              {section === 'pharmacy' && <MedicinePnlCard pnl={data?.pnl} />}
+              {section !== 'executive' && <KpiGrid items={data?.kpis || []} />}
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Panel title={`Revenue Trend (${format(applied.from, 'd MMM')} - ${format(applied.to, 'd MMM')})`} className="lg:col-span-1">
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={summary?.revenueTrend || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={shortDate} />
-                      <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
-                      <Tooltip formatter={(v) => inr(v)} labelFormatter={shortDate} />
-                      <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                <Panel title="OP vs IP Trend">
-                  <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={summary?.opVsIpTrend || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={shortDate} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip labelFormatter={shortDate} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Area type="monotone" dataKey="opCount" name="OP Count" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} />
-                      <Area type="monotone" dataKey="ipCount" name="IP Count" stroke="#22c55e" fill="#22c55e" fillOpacity={0.25} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                <Panel title="Department Revenue" action={<span className="text-xs text-gray-400 flex items-center gap-1">This Range <ChevronDown size={12} /></span>}>
-                  <div className="space-y-3">
-                    {(summary?.departmentRevenue || []).length === 0 && <p className="text-sm text-gray-400 text-center py-8">No data</p>}
-                    {(summary?.departmentRevenue || []).map((d, i) => {
-                      const max = summary.departmentRevenue[0]?.revenue || 1;
-                      return (
-                        <div key={d.name}>
-                          <div className="flex justify-between text-xs mb-1">
-                            <span className="text-gray-600 dark:text-gray-300 font-medium">{d.name}</span>
-                            <span className="text-gray-900 dark:text-white font-semibold">{inr(d.revenue)}</span>
-                          </div>
-                          <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${(d.revenue / max) * 100}%`, background: COLORS[i % COLORS.length] }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Panel>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Panel title="Doctor Performance (Consultations)" action={<span className="text-xs text-gray-400 flex items-center gap-1">This Range <ChevronDown size={12} /></span>}>
-                  <div className="space-y-3">
-                    {(summary?.doctorPerformance || []).length === 0 && <p className="text-sm text-gray-400 text-center py-8">No data</p>}
-                    {(summary?.doctorPerformance || []).map((d, i) => (
-                      <div key={d._id || i} className="flex items-center gap-3">
-                        <span className="w-5 text-xs text-gray-400 font-semibold">{i + 1}</span>
-                        <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                          {(d.doctorName || '?').split(' ').map((w) => w[0]).slice(0, 2).join('')}
-                        </div>
-                        <span className="flex-1 text-sm text-gray-700 dark:text-gray-200 truncate">{d.doctorName}</span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">{d.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Panel>
-
-                <Panel title="Payment Mode Distribution">
-                  <div className="flex items-center gap-4">
-                    <ResponsiveContainer width="55%" height={180}>
-                      <PieChart>
-                        <Pie
-                          data={summary?.paymentModeDistribution || []}
-                          dataKey="amount" nameKey="mode" innerRadius={45} outerRadius={75} paddingAngle={2}
-                        >
-                          {(summary?.paymentModeDistribution || []).map((p, i) => (
-                            <Cell key={p.mode} fill={PAYMENT_COLORS[p.mode] || COLORS[i % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(v) => inr(v)} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="space-y-2 flex-1 min-w-0">
-                      {(summary?.paymentModeDistribution || []).map((p, i) => (
-                        <div key={p.mode} className="flex items-center gap-2 text-xs">
-                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: PAYMENT_COLORS[p.mode] || COLORS[i % COLORS.length] }} />
-                          <span className="capitalize text-gray-600 dark:text-gray-300 flex-1 truncate">{p.mode}</span>
-                          <span className="text-gray-400">{p.percent}%</span>
-                        </div>
+              <div className="audit-split">
+                <BreakdownPanel rows={data?.breakdown || []} />
+                {(data?.footnotes || []).length > 0 && (
+                  <Panel title="Data coverage notes">
+                    <ul className="audit-notes">
+                      {data.footnotes.map((f) => (
+                        <li key={f}>{f}</li>
                       ))}
-                      {(summary?.paymentModeDistribution || []).length === 0 && <p className="text-sm text-gray-400">No data</p>}
-                    </div>
-                  </div>
-                </Panel>
-
-                <Panel title="Admissions vs Discharges">
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={summary?.admissionsVsDischarges || []}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={shortDate} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip labelFormatter={shortDate} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar dataKey="admissions" name="Admissions" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="discharges" name="Discharges" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Panel>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Panel title="Pharmacy Sales">
-                  <ResponsiveContainer width="100%" height={180}>
-                    <BarChart data={summary?.pharmacySalesTrend || []}>
-                      <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={shortDate} />
-                      <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
-                      <Tooltip formatter={(v) => inr(v)} labelFormatter={shortDate} />
-                      <Bar dataKey="sales" fill="#10b981" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                <Panel title="Lab Tests Trend">
-                  <ResponsiveContainer width="100%" height={180}>
-                    <LineChart data={summary?.labTestsTrend || []}>
-                      <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={shortDate} />
-                      <YAxis tick={{ fontSize: 9 }} />
-                      <Tooltip labelFormatter={shortDate} />
-                      <Line type="monotone" dataKey="tests" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                <Panel title="Monthly Patient Growth">
-                  <ResponsiveContainer width="100%" height={180}>
-                    <LineChart data={summary?.monthlyPatientGrowth || []}>
-                      <XAxis dataKey="month" tick={{ fontSize: 9 }} tickFormatter={(v) => format(new Date(`${v}-01`), 'MMM')} />
-                      <YAxis tick={{ fontSize: 9 }} />
-                      <Tooltip labelFormatter={(v) => format(new Date(`${v}-01`), 'MMM yyyy')} />
-                      <Line type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                <Panel title="Bed Occupancy">
-                  <div className="relative flex items-center justify-center">
-                    <ResponsiveContainer width="100%" height={180}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Occupied', value: bedOcc.occupied || 0 },
-                            { name: 'Available', value: bedOcc.available || 0 },
-                            { name: 'Other', value: (bedOcc.cleaning || 0) + (bedOcc.maintenance || 0) + (bedOcc.reserved || 0) },
-                          ]}
-                          dataKey="value" innerRadius={50} outerRadius={75} paddingAngle={2}
-                        >
-                          <Cell fill="#3b82f6" />
-                          <Cell fill="#22c55e" />
-                          <Cell fill="#e5e7eb" />
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute text-center">
-                      <p className="text-xl font-bold text-gray-900 dark:text-white">{bedOcc.occupiedPercent ?? 0}%</p>
-                      <p className="text-[10px] text-gray-400">Occupied</p>
-                    </div>
-                  </div>
-                </Panel>
-              </div>
-            </>
-          )}
-
-          <Panel title="Detailed Report - OP Summary" action={
-            <div className="flex items-center gap-2">
-              <button onClick={handleExportExcel} className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1">
-                <FileSpreadsheet size={13} /> Export
-              </button>
-            </div>
-          }>
-            {loadingDetailed ? <LoadingSpinner /> : (
-              <DataTable
-                columns={detailColumns}
-                data={detailed?.data || []}
-                page={detailed?.pagination?.page || 1}
-                pages={detailed?.pagination?.totalPages || 1}
-                onPageChange={setDetailPage}
-              />
-            )}
-          </Panel>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700 xl:sticky xl:top-4 space-y-4">
-          <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white text-sm">History Center</h3>
-            <p className="text-xs text-gray-400">Patient Activity Timeline</p>
-          </div>
-
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={patientQuery}
-              onChange={(e) => { setPatientQuery(e.target.value); setSelectedPatient(null); }}
-              placeholder="Search by Name / UHID / Mobile"
-              className="input-field !pl-9 w-full text-sm"
-            />
-          </div>
-
-          {patientQuery.trim().length >= 2 && !selectedPatient && (
-            <div className="border border-gray-100 dark:border-gray-700 rounded-xl divide-y divide-gray-50 dark:divide-gray-700 max-h-56 overflow-y-auto">
-              {(patientResults || []).length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-4">No patients found</p>
-              )}
-              {(patientResults || []).map((p) => (
-                <button
-                  key={p._id}
-                  onClick={() => { setSelectedPatient(p); setPatientQuery(p.name); }}
-                  className="w-full text-left px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between"
-                >
-                  <span>
-                    <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">{p.name}</span>
-                    <span className="block text-[11px] text-gray-400">{p.patientId} · {p.phone}</span>
-                  </span>
-                  <span className="text-[11px] text-gray-400">{p.age}{p.gender?.[0]}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {selectedPatient && (
-            <>
-              <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
-                    {(selectedPatient.name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('')}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{selectedPatient.name}</p>
-                    <p className="text-[11px] text-gray-500">UHID: {selectedPatient.patientId}{selectedSummary?.currentStatus ? ` · ${selectedSummary.currentStatus}` : ''}</p>
-                  </div>
-                </div>
-                <a href={`/patients/${selectedPatient._id}/profile`} className="text-[11px] font-medium bg-white dark:bg-gray-800 border border-blue-200 dark:border-gray-600 text-blue-600 px-2.5 py-1.5 rounded-lg flex-shrink-0 whitespace-nowrap hover:bg-blue-50">
-                  View Patient
-                </a>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold text-blue-600 mb-2">Timeline</p>
-                {loadingTimeline ? <LoadingSpinner /> : (
-                  <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
-                    {Object.keys(timelineByDay).length === 0 && (
-                      <p className="text-xs text-gray-400 text-center py-6">No activity recorded</p>
-                    )}
-                    {Object.entries(timelineByDay).map(([day, events]) => (
-                      <div key={day}>
-                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">{day}</p>
-                        <div className="space-y-3 border-l border-gray-100 dark:border-gray-700 ml-3">
-                          {events.map((ev, i) => {
-                            const Icon = eventIcon(ev.type);
-                            return (
-                              <div key={i} className="relative pl-5">
-                                <span className="absolute -left-[9px] top-0.5 w-4 h-4 rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-600 flex items-center justify-center">
-                                  <Icon size={9} />
-                                </span>
-                                <p className="text-[11px] text-gray-400">{format(new Date(ev.date), 'hh:mm a')}</p>
-                                <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{ev.title}</p>
-                                {ev.subtitle && <p className="text-[11px] text-gray-400">{ev.subtitle}</p>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    </ul>
+                  </Panel>
                 )}
               </div>
-            </>
-          )}
 
-          {!selectedPatient && patientQuery.trim().length < 2 && (
-            <div className="text-center py-10">
-              <CalendarDays className="mx-auto text-gray-300 dark:text-gray-600" size={30} />
-              <p className="text-xs text-gray-400 mt-2">Search a patient to view their activity timeline</p>
-            </div>
+              <DetailTable
+                columns={columns}
+                rows={data?.details || []}
+                title={section === 'pharmacy' ? 'Medicine-wise Profit / Loss' : 'Detail register'}
+              />
+            </>
           )}
         </div>
       </div>

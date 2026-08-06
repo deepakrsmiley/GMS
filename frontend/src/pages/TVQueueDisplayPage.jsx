@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Beaker, Pill, CalendarClock, Users, CheckCircle2, Clock3,
+  Activity, Beaker, Pill, Users, Clock3,
   Volume2, Megaphone, Stethoscope, Globe, Wifi, WifiOff,
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import api from '../services/api';
 import { useBranding } from '../hooks/useBranding';
-import { initSocket, getSocket } from '../services/socket';
+import { initSocket } from '../services/socket';
+import '../styles/tvQueueDisplay.css';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Data hooks — every number on this screen comes from the live HMS database.
@@ -61,31 +62,422 @@ const STATUS_LABELS = {
   no_show: 'No Show',
 };
 
-const STATUS_COLORS = {
-  waiting: 'bg-blue-100 text-blue-800',
-  in_consultation: 'bg-emerald-100 text-emerald-800',
-  consultation_completed: 'bg-violet-100 text-violet-800',
-  completed: 'bg-slate-200 text-slate-700',
-  sent_to_pharmacy: 'bg-purple-100 text-purple-800',
-  pharmacy_completed: 'bg-slate-200 text-slate-700',
-  sent_to_lab: 'bg-amber-100 text-amber-800',
-  admitted: 'bg-cyan-100 text-cyan-800',
-  pending: 'bg-blue-100 text-blue-800',
-  sample_collected: 'bg-amber-100 text-amber-800',
-  processing: 'bg-purple-100 text-purple-800',
-  cancelled: 'bg-slate-200 text-slate-700',
-};
-
 const LANG_BADGES = [
   { code: 'en-IN', label: 'EN' },
   { code: 'ta-IN', label: 'TA' },
   { code: 'hi-IN', label: 'HI' },
 ];
 
+const BADGE_KEYS = new Set([
+  'waiting', 'in_consultation', 'consultation_completed', 'completed',
+  'sent_to_pharmacy', 'pharmacy_completed', 'sent_to_lab', 'admitted',
+  'pending', 'sample_collected', 'processing', 'cancelled',
+]);
+
 function StatusBadge({ status }) {
   const label = STATUS_LABELS[status] || status?.replace(/_/g, ' ') || '—';
-  const color = STATUS_COLORS[status] || 'bg-slate-100 text-slate-700';
-  return <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${color}`}>{label}</span>;
+  const tone = BADGE_KEYS.has(status) ? status : 'default';
+  return <span className={`tvq-badge tvq-badge--${tone}`}>{label}</span>;
+}
+
+// ── Name pronunciation for waiting-room TTS ─────────────────────────────────
+// Browser voices often mash Indian names. We clean titles/initials, insert
+// pauses between parts, and respell common patterns so speech is clearer.
+
+const TITLE_RE = /^(dr|doctor|mr|mister|mrs|miss|ms|prof|professor)\.?\s+/i;
+
+const NAME_PHONETICS = {
+  deepak: 'Dee-pak',
+  suresh: 'Soo-resh',
+  ramesh: 'Raa-mesh',
+  rajesh: 'Raa-jesh',
+  mahesh: 'Maa-hesh',
+  dinesh: 'Dee-nesh',
+  ganesh: 'Ga-nesh',
+  kamesh: 'Kaa-mesh',
+  naresh: 'Naa-resh',
+  hitesh: 'Hee-tesh',
+  mukesh: 'Moo-kesh',
+  rakesh: 'Raa-kesh',
+  lokesh: 'Lo-kesh',
+  yogesh: 'Yo-gesh',
+  kumar: 'Koo-mar',
+  kumari: 'Koo-maa-ri',
+  priya: 'Pree-ya',
+  priyanka: 'Pree-yaan-ka',
+  pooja: 'Poo-ja',
+  puja: 'Poo-ja',
+  anitha: 'A-nee-tha',
+  anita: 'A-nee-tha',
+  sunitha: 'Su-nee-tha',
+  sunita: 'Su-nee-tha',
+  kavitha: 'Ka-vee-tha',
+  kavita: 'Ka-vee-tha',
+  geetha: 'Gee-tha',
+  gita: 'Gee-tha',
+  meena: 'Mee-na',
+  mina: 'Mee-na',
+  reena: 'Ree-na',
+  rina: 'Ree-na',
+  seetha: 'See-tha',
+  sita: 'See-tha',
+  lakshmi: 'Laksh-mee',
+  laxmi: 'Laksh-mee',
+  saraswathi: 'Sa-ras-wa-thi',
+  saraswati: 'Sa-ras-wa-thi',
+  krishnan: 'Krish-nan',
+  krishna: 'Krish-na',
+  krish: 'Krish',
+  venkatesh: 'Ven-ka-tesh',
+  venkatesan: 'Ven-ka-te-san',
+  venkat: 'Ven-kat',
+  srinivasan: 'Sri-ni-vaa-san',
+  srinivas: 'Sri-ni-vas',
+  subramanian: 'Su-bra-ma-ni-an',
+  subramaniam: 'Su-bra-ma-ni-am',
+  balaji: 'Baa-laa-ji',
+  murugan: 'Mu-ru-gan',
+  murthy: 'Mur-thi',
+  murthi: 'Mur-thi',
+  sharma: 'Shar-ma',
+  verma: 'Ver-ma',
+  gupta: 'Gup-ta',
+  singh: 'Sing',
+  redy: 'Red-dy',
+  reddy: 'Red-dy',
+  naidu: 'Nai-du',
+  pillai: 'Pil-lai',
+  iyer: 'Ai-yer',
+  iyengar: 'Ai-yen-gar',
+  nair: 'Nair',
+  menon: 'Me-non',
+  joseph: 'Jo-sef',
+  john: 'Jon',
+  george: 'Jorj',
+  thomas: 'To-mas',
+  mary: 'Mair-ee',
+  fatima: 'Faa-thi-ma',
+  aisha: 'Ai-sha',
+  ahmed: 'Ah-med',
+  ahmad: 'Ah-mad',
+  mohammed: 'Mo-ham-med',
+  mohammad: 'Mo-ham-mad',
+  muhammad: 'Mu-ham-mad',
+  abdul: 'Ab-dul',
+  rahman: 'Rah-maan',
+  rahmanan: 'Rah-maa-nan',
+  sanjeevi: 'San-jee-vee',
+  sanjeev: 'San-jeev',
+  sanjeevani: 'San-jee-va-ni',
+  vijay: 'Vi-jay',
+  vijaya: 'Vi-ja-ya',
+  ajay: 'A-jay',
+  ajith: 'A-jith',
+  ajit: 'A-jit',
+  arun: 'A-run',
+  aruna: 'A-ru-na',
+  anand: 'Aa-nand',
+  ananth: 'Aa-nanth',
+  anantha: 'Aa-nan-tha',
+  karthik: 'Kar-thik',
+  karthikeyan: 'Kar-thi-ke-yan',
+  kartik: 'Kar-tik',
+  siva: 'Si-va',
+  shiva: 'Shi-va',
+  shivani: 'Shi-vaa-ni',
+  nithya: 'Nith-ya',
+  nitya: 'Nit-ya',
+  divya: 'Div-ya',
+  vidya: 'Vid-ya',
+  vidhya: 'Vidh-ya',
+  swetha: 'Swee-tha',
+  shweta: 'Shwe-tha',
+  swathi: 'Swaa-thi',
+  swati: 'Swaa-ti',
+  padma: 'Pad-ma',
+  kamala: 'Ka-ma-la',
+  radha: 'Raa-dha',
+  radhika: 'Raa-dhi-ka',
+  manoj: 'Ma-noj',
+  manoharan: 'Ma-no-ha-ran',
+  prakash: 'Pra-kaash',
+  prabhakaran: 'Pra-bhaa-ka-ran',
+  bharath: 'Bha-rath',
+  bharat: 'Bha-rat',
+  chandran: 'Chan-dran',
+  chandra: 'Chan-dra',
+  chandrasekar: 'Chan-dra-se-kar',
+  chandrasekaran: 'Chan-dra-se-ka-ran',
+  sekaran: 'Se-ka-ran',
+  sekhar: 'Se-khar',
+  shekar: 'She-kar',
+  gopal: 'Go-paal',
+  gopalan: 'Go-paa-lan',
+  ravi: 'Raa-vi',
+  ravichandran: 'Raa-vi-chan-dran',
+  selvam: 'Sel-vam',
+  selvi: 'Sel-vi',
+  kannan: 'Kan-nan',
+  pandian: 'Paan-di-an',
+  pandiyan: 'Paan-di-yan',
+  rajendran: 'Raa-jen-dran',
+  rajendra: 'Raa-jen-dra',
+  thirumalai: 'Thi-ru-maa-lai',
+  thirumal: 'Thi-ru-maal',
+  meenakshi: 'Mee-naak-shi',
+  minakshi: 'Mee-naak-shi',
+  janani: 'Ja-na-ni',
+  jaya: 'Ja-ya',
+  jayanthi: 'Ja-yan-thi',
+  jayanti: 'Ja-yan-ti',
+  kala: 'Kaa-la',
+  kalai: 'Ka-lai',
+  kalpana: 'Kal-pa-na',
+  nirmala: 'Nir-ma-la',
+  vimala: 'Vi-ma-la',
+  usha: 'U-sha',
+  uma: 'U-ma',
+  indira: 'In-di-ra',
+  indra: 'In-dra',
+  ram: 'Raam',
+  rama: 'Raa-ma',
+  ramya: 'Raam-ya',
+  raman: 'Raa-man',
+  ramalingam: 'Raa-ma-lin-gam',
+  lakshmanan: 'Laksh-ma-nan',
+  laxman: 'Laksh-man',
+  hari: 'Ha-ri',
+  harish: 'Ha-rish',
+  harini: 'Ha-ri-ni',
+  gowri: 'Gow-ri',
+  gauri: 'Gau-ri',
+  parvathi: 'Par-va-thi',
+  parvati: 'Par-va-ti',
+  shanthi: 'Shaan-thi',
+  shanti: 'Shaan-ti',
+  santhi: 'Shaan-thi',
+  vasanth: 'Va-santh',
+  vasanthi: 'Va-san-thi',
+  vinoth: 'Vi-noth',
+  vinod: 'Vi-nod',
+  vimal: 'Vi-mal',
+  vivek: 'Vi-vek',
+  vikram: 'Vik-ram',
+  sakthi: 'Sak-thi',
+  shakti: 'Shak-ti',
+  tamil: 'Ta-mil',
+  selvan: 'Sel-van',
+  murugesh: 'Mu-ru-gesh',
+  palani: 'Pa-la-ni',
+  palanisamy: 'Pa-la-ni-saa-my',
+  samy: 'Saa-my',
+  swamy: 'Swaa-my',
+  nagaraj: 'Naa-ga-raaj',
+  nagarajan: 'Naa-ga-raa-jan',
+  sathya: 'Sath-ya',
+  satya: 'Sat-ya',
+  sathyam: 'Sath-yam',
+  bala: 'Baa-la',
+  balasubramanian: 'Baa-la-su-bra-ma-ni-an',
+  mohan: 'Mo-han',
+  mohana: 'Mo-ha-na',
+  madhavi: 'Maad-ha-vi',
+  madhu: 'Ma-dhu',
+  madhumitha: 'Ma-dhu-mi-tha',
+  nandhini: 'Nan-dhi-ni',
+  nandini: 'Nan-di-ni',
+  keerthana: 'Keer-tha-na',
+  kirthana: 'Kir-tha-na',
+  keerti: 'Keer-thi',
+  kiran: 'Ki-ran',
+  varun: 'Va-run',
+  varalakshmi: 'Va-ra-laksh-mee',
+  sudha: 'Su-dha',
+  sudhakar: 'Su-dhaa-kar',
+  babu: 'Baa-bu',
+  ammu: 'Am-mu',
+  amir: 'A-meer',
+  ameer: 'A-meer',
+  farzana: 'Far-zaa-na',
+  yasmin: 'Yas-min',
+  jasmine: 'Jas-min',
+};
+
+function stripNameTitles(name) {
+  let s = String(name || '').trim();
+  while (TITLE_RE.test(s)) s = s.replace(TITLE_RE, '');
+  return s.trim();
+}
+
+function splitCamelCase(word) {
+  return word
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+}
+
+function expandInitialToken(token) {
+  const t = token.replace(/\./g, '').trim();
+  if (!t) return '';
+  // Single letter or short ALL-CAPS initial cluster: A / AK / A.K
+  if (/^[A-Za-z]{1,3}$/.test(t) && t === t.toUpperCase()) {
+    return t.split('').join('. ') + '.';
+  }
+  if (/^[A-Za-z]\.?$/.test(token)) {
+    return `${t.toUpperCase()}.`;
+  }
+  return null;
+}
+
+function phoneticWord(word) {
+  const clean = word.replace(/[^A-Za-z]/g, '');
+  if (!clean) return word;
+  const key = clean.toLowerCase();
+  if (NAME_PHONETICS[key]) return NAME_PHONETICS[key];
+
+  // Heuristic syllable breaks for long Indian-style names not in the map
+  let w = clean;
+  w = w.replace(/([aeiou])([^aeiouyr]{1})([aeiou])/gi, '$1$2-$3');
+  // Common ending chunks
+  w = w.replace(/(krishnan)$/i, 'krish-nan');
+  w = w.replace(/(nathan)$/i, 'na-than');
+  w = w.replace(/(swamy|samy)$/i, 'saa-my');
+  w = w.replace(/(esh|ish)$/i, (m) => m.toLowerCase() === 'esh' ? 'esh' : 'ish');
+  // Prefer hyphens already inserted; fall back to spaced soft vowels
+  if (!w.includes('-') && w.length >= 7) {
+    w = w.replace(/([bcdfghjklmnpqrstvwxyz]{2,})([aeiou])/gi, '$1-$2');
+  }
+  // Spaces (not hyphens) — many TTS engines literally say "hyphen"
+  return w
+    .split('-')
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/** Display-safe cleaned name (titles stripped, spaced properly). */
+function displayPersonName(name) {
+  if (!name) return '';
+  return stripNameTitles(name)
+    .replace(/[_.]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * TTS-friendly spoken form of a person name (core only, no titles).
+ * Example: "Dr. A.K. Suresh Kumar" → "A. K., Soo resh, Koo mar"
+ */
+function speakPersonName(name) {
+  const cleaned = displayPersonName(name);
+  if (!cleaned) return '';
+
+  const rawParts = cleaned
+    .split(/[\s_/]+/)
+    .flatMap((part) => {
+      if (/^[A-Za-z](\.[A-Za-z])+\.?$/i.test(part)) {
+        return part.replace(/\./g, ' ').trim().split(/\s+/);
+      }
+      if (/^[A-Za-z](\.[A-Za-z])+[A-Za-z]{2,}/i.test(part)) {
+        const m = part.match(/^([A-Za-z](?:\.[A-Za-z])+)\.?(.*)$/i);
+        if (m) return [...m[1].replace(/\./g, ' ').trim().split(/\s+/), m[2]].filter(Boolean);
+      }
+      return [splitCamelCase(part)];
+    })
+    .join(' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const spoken = rawParts.map((part) => {
+    const initial = expandInitialToken(part);
+    if (initial) return initial;
+    return phoneticWord(part);
+  });
+
+  // Commas = natural PA pauses between name parts
+  return spoken.join(', ');
+}
+
+function patientHonorificEn(patient) {
+  const g = (patient?.gender || '').toLowerCase();
+  if (g === 'male') return 'Mister';
+  if (g === 'female') return 'Miss';
+  return '';
+}
+
+/** Build EN→TA→HI speech parts; names always spoken with clear English voice. */
+function buildTrilingualCall({
+  patient, doctor,
+  enBeforeName, enBetweenNameAndDoc, enAfterDoc,
+  taBeforeName, taBetweenNameAndDoc, taAfterDoc,
+  hiBeforeName, hiBetweenNameAndDoc, hiAfterDoc,
+  enOnlyAfterName, taOnlyAfterName, hiOnlyAfterName,
+}) {
+  const nameCore = speakPersonName(patient?.name);
+  const docCore = doctor ? speakPersonName(doctor?.name) : '';
+  const hon = patientHonorificEn(patient);
+  const sayName = nameCore
+    ? (hon ? `${hon}, ${nameCore}` : nameCore)
+    : '';
+  const sayDoc = docCore || '';
+
+  const enName = sayName || 'the patient';
+  const taName = nameCore || 'நோயாளி';
+  const hiName = nameCore || 'मरीज़';
+  const enDoc = sayDoc ? `Doctor, ${sayDoc}` : 'the consulting doctor';
+  const taDoc = sayDoc || '';
+  const hiDoc = sayDoc || '';
+
+  const withDoc = Boolean(doctor && (enBetweenNameAndDoc || taBetweenNameAndDoc));
+
+  return [
+    {
+      lang: 'en-IN',
+      parts: withDoc ? [
+        { lang: 'en-IN', text: enBeforeName },
+        { lang: 'en-IN', text: enName, isName: true },
+        { lang: 'en-IN', text: enBetweenNameAndDoc },
+        { lang: 'en-IN', text: enDoc, isName: true },
+        { lang: 'en-IN', text: enAfterDoc },
+      ] : [
+        { lang: 'en-IN', text: enBeforeName },
+        { lang: 'en-IN', text: enName, isName: true },
+        { lang: 'en-IN', text: enOnlyAfterName || enAfterDoc },
+      ],
+    },
+    {
+      lang: 'ta-IN',
+      parts: withDoc ? [
+        { lang: 'ta-IN', text: taBeforeName },
+        { lang: 'en-IN', text: taName, isName: true },
+        { lang: 'ta-IN', text: taBetweenNameAndDoc },
+        { lang: 'en-IN', text: taDoc, isName: true },
+        { lang: 'ta-IN', text: taAfterDoc },
+      ] : [
+        { lang: 'ta-IN', text: taBeforeName },
+        { lang: 'en-IN', text: taName, isName: true },
+        { lang: 'ta-IN', text: taOnlyAfterName || taAfterDoc },
+      ],
+    },
+    {
+      lang: 'hi-IN',
+      parts: withDoc ? [
+        { lang: 'hi-IN', text: hiBeforeName },
+        { lang: 'en-IN', text: hiName, isName: true },
+        { lang: 'hi-IN', text: hiBetweenNameAndDoc },
+        { lang: 'en-IN', text: hiDoc, isName: true },
+        { lang: 'hi-IN', text: hiAfterDoc },
+      ] : [
+        { lang: 'hi-IN', text: hiBeforeName },
+        { lang: 'en-IN', text: hiName, isName: true },
+        { lang: 'hi-IN', text: hiOnlyAfterName || hiAfterDoc },
+      ],
+    },
+  ].map((speech) => ({
+    ...speech,
+    // Keep a flat preview string for the on-screen script panel
+    text: speech.parts.map((p) => p.text).join(''),
+    parts: speech.parts.filter((p) => p.text && String(p.text).trim()),
+  }));
 }
 
 export default function TVQueueDisplayPage() {
@@ -97,8 +489,11 @@ export default function TVQueueDisplayPage() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speakingLang, setSpeakingLang] = useState(null);
+  const [speakingText, setSpeakingText] = useState('');
+  const [activeVoiceName, setActiveVoiceName] = useState('');
   const callIndexRef = useRef(0);
   const speakIntervalRef = useRef(null);
+  const voicesRef = useRef([]);
 
   const opQuery = useOpQueue();
   const labQuery = useLabQueue();
@@ -221,132 +616,166 @@ export default function TVQueueDisplayPage() {
     });
   }, [doctors, opList]);
 
-  // Turns a patient record into "Mr./Ms. Name" the way a receptionist would
-  // actually say it over a PA system. Falls back gracefully if gender/name
-  // is missing rather than saying "undefined". Kept English-only — Tamil
-  // and Hindi versions use their own honorific words (ஜி/அவர்கள், जी)
-  // instead of "Mr./Ms." since that reads naturally in those languages.
-  const salutedName = (patient) => {
-    if (!patient?.name) return 'the patient';
-    const g = (patient.gender || '').toLowerCase();
+  // Screen text keeps normal spelling; voice uses phonetic spoken forms.
+  const displayPatient = (patient) => {
+    const n = displayPersonName(patient?.name);
+    if (!n) return 'Patient';
+    const g = (patient?.gender || '').toLowerCase();
     const title = g === 'male' ? 'Mr.' : g === 'female' ? 'Ms.' : '';
-    return title ? `${title} ${patient.name}` : patient.name;
+    return title ? `${title} ${n}` : n;
   };
-  const rawName = (patient) => patient?.name || null;
-  const doctorEn = (doctor) => (doctor?.name ? `Doctor ${doctor.name}` : 'the consulting doctor');
-  const doctorTa = (doctor) => (doctor?.name ? `டாக்டர் ${doctor.name}` : 'மருத்துவர்');
-  const doctorHi = (doctor) => (doctor?.name ? `डॉक्टर ${doctor.name}` : 'डॉक्टर');
+  const displayDoctor = (doctor) => (doctor?.name ? `Dr. ${displayPersonName(doctor.name)}` : 'Doctor');
 
-  // A single source of truth for "who is being called right now", across
-  // OP, Lab, Pharmacy and Online/Scheduled appointments. This drives both
-  // the announcements ticker and the voice announcer below.
-  //
-  // Corporate PA-system rule for OP: once a token is INSIDE the consultation
-  // room (in_consultation), it is never called out again — that would be
-  // confusing to a full waiting room. Instead the system calls out the NEXT
-  // waiting token by name, doctor and department, exactly like a real
-  // hospital's token-call system.
-  //
-  // Every call is spoken in three languages, in this order: English, Tamil,
-  // Hindi — the way a real corporate hospital PA system announces, one
-  // language after another, back to back.
+  // Speak token codes clearly for a waiting-room PA (A12 → "A, 1, 2").
+  const speakTokenEn = (token) => {
+    if (!token) return 'unknown';
+    return String(token)
+      .toUpperCase()
+      .split('')
+      .map((ch) => (/[A-Z]/.test(ch) ? ch : /[0-9]/.test(ch) ? ch : ' '))
+      .join(', ')
+      .replace(/,\s*,/g, ',')
+      .replace(/^,\s*|,\s*$/g, '')
+      .trim();
+  };
+  const DIGIT_TA = { 0: 'பூஜ்யம்', 1: 'ஒன்று', 2: 'இரண்டு', 3: 'மூன்று', 4: 'நான்கு', 5: 'ஐந்து', 6: 'ஆறு', 7: 'ஏழு', 8: 'எட்டு', 9: 'ஒன்பது' };
+  const DIGIT_HI = { 0: 'शून्य', 1: 'एक', 2: 'दो', 3: 'तीन', 4: 'चार', 5: 'पाँच', 6: 'छह', 7: 'सात', 8: 'आठ', 9: 'नौ' };
+  const speakTokenTa = (token) => String(token || '')
+    .toUpperCase()
+    .split('')
+    .map((ch) => (DIGIT_TA[ch] || ch))
+    .join(' ');
+  const speakTokenHi = (token) => String(token || '')
+    .toUpperCase()
+    .split('')
+    .map((ch) => (DIGIT_HI[ch] || ch))
+    .join(' ');
+
+  // Active calls drive screen text + voice. OP calls the NEXT waiting token
+  // (not the patient already inside). Each call is spoken EN → TA → HI.
   const activeCalls = useMemo(() => {
     const calls = [];
 
     if (opNextCalling) {
-      const nameEn = salutedName(opNextCalling.patient);
-      const nameLocal = rawName(opNextCalling.patient) || 'நோயாளி';
-      const nameHi = rawName(opNextCalling.patient) || 'मरीज़';
-      const dept = opNextCalling.department?.name || 'the OPD';
+      const token = opNextCalling.tokenNumber;
+      const showName = displayPatient(opNextCalling.patient);
+      const showDoc = displayDoctor(opNextCalling.doctor);
+      const dept = opNextCalling.department?.name || 'OPD';
       calls.push({
         key: `op-${opNextCalling._id}`,
-        color: 'text-blue-700',
-        text: `Token ${opNextCalling.tokenNumber} — ${nameEn}, kindly proceed to ${dept} for consultation with ${doctorEn(opNextCalling.doctor)}.`,
-        speeches: [
-          { lang: 'en-IN', text: `Attention please. Token number ${opNextCalling.tokenNumber}. ${nameEn}, kindly proceed to ${dept}, for consultation with ${doctorEn(opNextCalling.doctor)}. Thank you.` },
-          { lang: 'ta-IN', text: `கவனிக்கவும். டோக்கன் எண் ${opNextCalling.tokenNumber}. ${nameLocal} அவர்கள், ${doctorTa(opNextCalling.doctor)} உடன் ஆலோசனைக்காக ${dept} பிரிவுக்கு தயவுசெய்து செல்லவும். நன்றி.` },
-          { lang: 'hi-IN', text: `कृपया ध्यान दें। टोकन नंबर ${opNextCalling.tokenNumber}. ${nameHi} जी, कृपया ${doctorHi(opNextCalling.doctor)} के परामर्श के लिए ${dept} में जाएं। धन्यवाद।` },
-        ],
+        tone: 'op',
+        title: 'OP Consultation',
+        text: `Token ${token} — ${showName}. Please go to ${dept} for consultation with ${showDoc}.`,
+        speeches: buildTrilingualCall({
+          patient: opNextCalling.patient,
+          doctor: opNextCalling.doctor,
+          enBeforeName: `Attention please. This is an out-patient consultation call. Token number ${speakTokenEn(token)}. Patient name is, `,
+          enBetweenNameAndDoc: `. Please proceed now to the ${dept} consultation room, for your appointment with `,
+          enAfterDoc: `. Kindly carry your O P slip and wait outside the room until called in. Thank you.`,
+          taBeforeName: `கவனம் செலுத்துங்கள். இது வெளிநோயாளி ஆலோசனை அழைப்பு. டோக்கன் எண் ${speakTokenTa(token)}. நோயாளியின் பெயர், `,
+          taBetweenNameAndDoc: ` அவர்கள். தயவுசெய்து இப்போது ${dept} ஆலோசனை அறைக்குச் செல்லுங்கள். டாக்டர் `,
+          taAfterDoc: ` அவர்களுடன் ஆலோசனைக்காக. உங்கள் ஓ பி சீட்டை எடுத்துச் சென்று, அறைக்கு வெளியே காத்திருங்கள். நன்றி.`,
+          hiBeforeName: `कृपया ध्यान दें। यह आउट पेशेंट परामर्श की घोषणा है। टोकन नंबर ${speakTokenHi(token)}। मरीज़ का नाम है, `,
+          hiBetweenNameAndDoc: `। कृपया अभी ${dept} परामर्श कक्ष में जाएँ, डॉक्टर `,
+          hiAfterDoc: ` से मिलने के लिए। अपना ओ पी पर्ची साथ रखें और कमरे के बाहर प्रतीक्षा करें। धन्यवाद।`,
+        }),
       });
     }
 
     if (labNowServing) {
       const labToken = labNowServing.labNumber || labNowServing._id.slice(-5).toUpperCase();
-      const nameEn = salutedName(labNowServing.patient);
-      const nameLocal = rawName(labNowServing.patient) || 'நோயாளி';
-      const nameHi = rawName(labNowServing.patient) || 'मरीज़';
+      const showName = displayPatient(labNowServing.patient);
+      const tests = labNowServing.tests?.map((t) => t.testName).filter(Boolean).slice(0, 3).join(', ')
+        || labNowServing.labType
+        || 'lab test';
       calls.push({
         key: `lab-${labNowServing._id}`,
-        color: 'text-emerald-700',
-        text: `Lab token ${labToken} — ${nameEn}, please proceed to the sample collection counter.`,
-        speeches: [
-          { lang: 'en-IN', text: `Attention please. Lab token ${labToken}. ${nameEn}, kindly proceed to the sample collection counter. Thank you.` },
-          { lang: 'ta-IN', text: `கவனிக்கவும். லேப் டோக்கன் ${labToken}. ${nameLocal} அவர்கள், மாதிரி சேகரிப்பு கவுண்டருக்கு தயவுசெய்து செல்லவும். நன்றி.` },
-          { lang: 'hi-IN', text: `कृपया ध्यान दें। लैब टोकन ${labToken}. ${nameHi} जी, कृपया सैंपल कलेक्शन काउंटर पर जाएं। धन्यवाद।` },
-        ],
+        tone: 'lab',
+        title: 'Laboratory',
+        text: `Lab token ${labToken} — ${showName}. Please go to the sample collection counter.`,
+        speeches: buildTrilingualCall({
+          patient: labNowServing.patient,
+          enBeforeName: `Attention please. This is a laboratory call. Lab token number ${speakTokenEn(labToken)}. Patient name is, `,
+          enOnlyAfterName: `. Please proceed now to the sample collection counter in the laboratory. Carry your lab request form or prescription. Tests: ${tests}. Thank you.`,
+          taBeforeName: `கவனம் செலுத்துங்கள். இது ஆய்வக அழைப்பு. லேப் டோக்கன் எண் ${speakTokenTa(labToken)}. நோயாளியின் பெயர், `,
+          taOnlyAfterName: ` அவர்கள். தயவுசெய்து இப்போது ஆய்வக மாதிரி சேகரிப்பு கவுண்டருக்குச் செல்லுங்கள். உங்கள் லேப் படிவம் அல்லது மருந்துச்சீட்டை எடுத்துச் செல்லுங்கள். நன்றி.`,
+          hiBeforeName: `कृपया ध्यान दें। यह प्रयोगशाला की घोषणा है। लैब टोकन नंबर ${speakTokenHi(labToken)}। मरीज़ का नाम है, `,
+          hiOnlyAfterName: `। कृपया अभी लैब सैंपल कलेक्शन काउंटर पर जाएँ। अपनी लैब पर्ची या नुस्खा साथ रखें। धन्यवाद।`,
+        }),
       });
     }
 
     if (pharmacyNowServing) {
-      const nameEn = salutedName(pharmacyNowServing.patient);
-      const nameLocal = rawName(pharmacyNowServing.patient) || 'நோயாளி';
-      const nameHi = rawName(pharmacyNowServing.patient) || 'मरीज़';
+      const token = pharmacyNowServing.tokenNumber;
+      const showName = displayPatient(pharmacyNowServing.patient);
       calls.push({
         key: `pharma-${pharmacyNowServing._id}`,
-        color: 'text-purple-700',
-        text: `Token ${pharmacyNowServing.tokenNumber} — ${nameEn}, your medicines are ready at the pharmacy counter.`,
-        speeches: [
-          { lang: 'en-IN', text: `Attention please. Token number ${pharmacyNowServing.tokenNumber}. ${nameEn}, kindly collect your medicines at the pharmacy counter. Thank you.` },
-          { lang: 'ta-IN', text: `கவனிக்கவும். டோக்கன் எண் ${pharmacyNowServing.tokenNumber}. ${nameLocal} அவர்கள், தயவுசெய்து மருந்தகக் கவுண்டரில் உங்கள் மருந்துகளைப் பெற்றுக் கொள்ளவும். நன்றி.` },
-          { lang: 'hi-IN', text: `कृपया ध्यान दें। टोकन नंबर ${pharmacyNowServing.tokenNumber}. ${nameHi} जी, कृपया फार्मेसी काउंटर से अपनी दवाइयाँ ले लें। धन्यवाद।` },
-        ],
+        tone: 'pharma',
+        title: 'Pharmacy',
+        text: `Token ${token} — ${showName}. Medicines ready at the pharmacy counter.`,
+        speeches: buildTrilingualCall({
+          patient: pharmacyNowServing.patient,
+          enBeforeName: `Attention please. This is a pharmacy call. Token number ${speakTokenEn(token)}. Patient name is, `,
+          enOnlyAfterName: `. Your medicines are ready. Please proceed now to the pharmacy counter and collect your medicines. Bring your token slip or prescription for verification. Thank you.`,
+          taBeforeName: `கவனம் செலுத்துங்கள். இது மருந்தக அழைப்பு. டோக்கன் எண் ${speakTokenTa(token)}. நோயாளியின் பெயர், `,
+          taOnlyAfterName: ` அவர்கள். உங்கள் மருந்துகள் தயார். தயவுசெய்து இப்போது மருந்தகக் கவுண்டருக்குச் சென்று மருந்துகளைப் பெற்றுக்கொள்ளுங்கள். சரிபார்ப்புக்கு உங்கள் டோக்கன் சீட்டு அல்லது மருந்துச்சீட்டை எடுத்து வாருங்கள். நன்றி.`,
+          hiBeforeName: `कृपया ध्यान दें। यह फार्मेसी की घोषणा है। टोकन नंबर ${speakTokenHi(token)}। मरीज़ का नाम है, `,
+          hiOnlyAfterName: `। आपकी दवाइयाँ तैयार हैं। कृपया अभी फार्मेसी काउंटर पर जाएँ और दवाइयाँ ले लें। जाँच के लिए अपना टोकन या नुस्खा साथ लाएँ। धन्यवाद।`,
+        }),
       });
     }
 
     if (scheduledList[0]) {
       const appt = scheduledList[0];
-      const nameEn = salutedName(appt.patient);
-      const nameLocal = rawName(appt.patient) || 'நோயாளி';
-      const nameHi = rawName(appt.patient) || 'मरीज़';
-      const dept = appt.department?.name || 'the OPD';
+      const token = appt.tokenNumber;
+      const showName = displayPatient(appt.patient);
+      const showDoc = displayDoctor(appt.doctor);
+      const dept = appt.department?.name || 'OPD';
       const timeStr = new Date(appt.scheduledTime || appt.tokenDate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
       calls.push({
         key: `sched-${appt._id}`,
-        color: 'text-orange-700',
-        text: `Appointment reminder — ${nameEn}, scheduled at ${timeStr} with ${doctorEn(appt.doctor)}, ${dept}.`,
-        speeches: [
-          { lang: 'en-IN', text: `Attention please. This is a reminder for ${nameEn}, with an appointment scheduled at ${timeStr}, with ${doctorEn(appt.doctor)} in ${dept}. Kindly proceed to the reception counter. Thank you.` },
-          { lang: 'ta-IN', text: `கவனிக்கவும். ${nameLocal} அவர்களுக்கு, ${timeStr} மணிக்கு ${doctorTa(appt.doctor)} உடன் ${dept} பிரிவில் நேரம் ஒதுக்கப்பட்டுள்ளது என்பதை நினைவூட்டுகிறோம். வரவேற்பு கவுண்டருக்குச் செல்லவும். நன்றி.` },
-          { lang: 'hi-IN', text: `कृपया ध्यान दें। ${nameHi} जी को याद दिलाया जाता है कि उनका अपॉइंटमेंट ${timeStr} बजे ${doctorHi(appt.doctor)} के साथ ${dept} में निर्धारित है। कृपया रिसेप्शन काउंटर पर जाएं। धन्यवाद।` },
-        ],
+        tone: 'sched',
+        title: 'Appointment',
+        text: `Appointment — ${showName} at ${timeStr} with ${showDoc}, ${dept}. Please report to reception.`,
+        speeches: buildTrilingualCall({
+          patient: appt.patient,
+          doctor: appt.doctor,
+          enBeforeName: `Attention please. This is an appointment reminder. Token number ${speakTokenEn(token)}. Patient name is, `,
+          enBetweenNameAndDoc: `. Your appointment is scheduled at ${timeStr}, with `,
+          enAfterDoc: `, in ${dept}. Please proceed now to the reception counter to check in. Thank you.`,
+          taBeforeName: `கவனம் செலுத்துங்கள். இது நேரம் ஒதுக்கீட்டு நினைவூட்டல். டோக்கன் எண் ${speakTokenTa(token)}. நோயாளியின் பெயர், `,
+          taBetweenNameAndDoc: ` அவர்கள். உங்கள் நேரம் ${timeStr} மணிக்கு, டாக்டர் `,
+          taAfterDoc: ` உடன், ${dept} பிரிவில் ஒதுக்கப்பட்டுள்ளது. தயவுசெய்து இப்போது வரவேற்பு கவுண்டருக்குச் சென்று பதிவு செய்யுங்கள். நன்றி.`,
+          hiBeforeName: `कृपया ध्यान दें। यह अपॉइंटमेंट की याद दिलाने वाली घोषणा है। टोकन नंबर ${speakTokenHi(token)}। मरीज़ का नाम है, `,
+          hiBetweenNameAndDoc: `। आपका अपॉइंटमेंट ${timeStr} बजे, डॉक्टर `,
+          hiAfterDoc: ` के साथ, ${dept} में निर्धारित है। कृपया अभी रिसेप्शन काउंटर पर जाएँ और चेक इन करें। धन्यवाद।`,
+        }),
       });
     }
 
     return calls;
   }, [opNextCalling?._id, labNowServing?._id, pharmacyNowServing?._id, scheduledList]);
 
-
   const announcements = useMemo(
-    () => activeCalls.map((c) => ({ time: now, text: c.text, color: c.color })),
+    () => activeCalls.map((c) => ({ time: now, text: c.text, tone: c.tone, title: c.title })),
     [activeCalls, now]
   );
 
-  // Voice announcer — for every active call, speaks the English script, then
-  // Tamil, then Hindi, one after another (the way a real hospital/airport PA
-  // system does it), then pauses briefly and moves to the next active call
-  // (OP → Lab → Pharmacy → Online, repeating). We chain each utterance off
-  // the previous one's `onend` rather than a fixed interval, since a
-  // three-language announcement doesn't take a fixed amount of time.
-  //
-  // Browsers (especially kiosk/Android TV Chrome) block any audio, including
-  // speech synthesis, until the page has received one user gesture — so we
-  // gate the whole thing behind a one-tap "Enable Sound" overlay instead of
-  // hoping autoplay is allowed.
-  const voicesRef = useRef([]);
+  const tickerItems = useMemo(() => {
+    if (announcements.length === 0) {
+      return [
+        'Welcome — please wait for your token to be called',
+        'Voice announcements: English, then Tamil, then Hindi',
+        branding.footerNote || 'Better Experience, Better Care',
+      ];
+    }
+    return announcements.map((a) => a.text);
+  }, [announcements, branding.footerNote]);
 
+  // Prefer a clear female Indian / neural PA voice when the OS provides one.
   useEffect(() => {
     if (!('speechSynthesis' in window)) return undefined;
-    const loadVoices = () => { voicesRef.current = window.speechSynthesis.getVoices(); };
+    const loadVoices = () => { voicesRef.current = window.speechSynthesis.getVoices() || []; };
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
     return () => { window.speechSynthesis.onvoiceschanged = null; };
@@ -356,36 +785,157 @@ export default function TVQueueDisplayPage() {
     const voices = voicesRef.current;
     if (!voices?.length) return null;
     const base = lang.split('-')[0];
-    return voices.find((v) => v.lang === lang) || voices.find((v) => v.lang?.startsWith(base)) || null;
+    const wantIndianEnglish = base === 'en';
+
+    // Indian English only — never fall back to American / UK / Australian English
+    // when an en-IN voice is available on this PC/TV.
+    const indianEn = voices.filter((v) => {
+      const name = `${v.name} ${v.lang}`.toLowerCase();
+      const isEn = (v.lang || '').toLowerCase().startsWith('en');
+      if (!isEn) return false;
+      if ((v.lang || '').toLowerCase().startsWith('en-in')) return true;
+      if (/india|indian|neerja|heera|ravi \(?natural\)?|en-in/.test(name) && /english|en-/.test(name)) return true;
+      // Explicit Indian English Microsoft / Google voices by name
+      if (/\bneerja\b|\bheera\b|\bravi\b/.test(name) && !/us english|american|en-us|en_us/.test(name)) return true;
+      return false;
+    });
+
+    const notWesternEn = (v) => {
+      const name = `${v.name} ${v.lang}`.toLowerCase();
+      if (/en-us|en_us|en-gb|en-au|en-ca|american|united states|us english|uk english|british|australian/.test(name)) return false;
+      if (/zira|david|mark|susan|linda|richard|george|hazel|susan|sam\b/.test(name) && /en-us|american|us /.test(name)) return false;
+      return true;
+    };
+
+    let pool;
+    if (wantIndianEnglish) {
+      pool = indianEn.length
+        ? indianEn
+        : voices.filter((v) => (v.lang || '').toLowerCase().startsWith('en-in'));
+      // Last resort: any English that is NOT American/UK (still avoid US accent)
+      if (!pool.length) {
+        pool = voices.filter((v) => (v.lang || '').toLowerCase().startsWith('en') && notWesternEn(v));
+      }
+    } else {
+      // Tamil / Hindi — prefer India locale voices only
+      pool = voices.filter((v) => {
+        const l = (v.lang || '').toLowerCase();
+        return l === lang.toLowerCase() || l.startsWith(`${base}-in`) || l === base;
+      });
+      if (!pool.length) {
+        pool = voices.filter((v) => (v.lang || '').toLowerCase().startsWith(base));
+      }
+    }
+
+    if (!pool.length) return null;
+
+    const score = (v) => {
+      const name = `${v.name} ${v.lang}`.toLowerCase();
+      const l = (v.lang || '').toLowerCase();
+      let s = 0;
+
+      if (l === lang.toLowerCase()) s += 60;
+      if (l.startsWith(`${base}-in`)) s += 80;
+      if (/india|indian|en-in/.test(name)) s += 50;
+
+      // Strongly reject American / Western English accents
+      if (/en-us|en_us|american|united states|us english/.test(name)) s -= 200;
+      if (/en-gb|british|uk english|en-au|australian|en-ca/.test(name)) s -= 120;
+
+      // Prefer natural Indian voices
+      if (/neural|natural|online|premium|enhanced|wavenet|studio/.test(name)) s += 35;
+      if (/microsoft|google/.test(name)) s += 15;
+
+      // Known Indian English voices (Windows / Chrome)
+      if (/\bneerja\b/.test(name)) s += 70; // Microsoft Indian English female
+      if (/\bheera\b/.test(name)) s += 65;
+      if (/\bravi\b/.test(name) && /en/.test(name)) s += 55; // Microsoft Indian English male
+      if (/vaani|ananya|swara|kavya|priya|raveena|lekha|meera|sonia/.test(name)) s += 40;
+
+      // Hospital PA: prefer clear female Indian voice when available
+      if (/female|woman|neerja|heera|vaani|ananya|swara/.test(name)) s += 20;
+      if (/zira|david|mark|susan/.test(name)) s -= 80; // classic US Windows voices
+
+      return s;
+    };
+
+    return [...pool].sort((a, b) => score(b) - score(a))[0] || null;
   };
 
   useEffect(() => {
     if (!soundEnabled || muted || !('speechSynthesis' in window)) return undefined;
     let cancelled = false;
 
-    const speakSegment = (segments, idx, onCallDone) => {
+    const speakUtterance = (part, uiLang, onDone) => {
       if (cancelled) return;
-      if (idx >= segments.length) { onCallDone(); return; }
-      const seg = segments[idx];
-      const utter = new SpeechSynthesisUtterance(seg.text);
-      utter.lang = seg.lang;
-      const voice = pickVoice(seg.lang);
-      if (voice) utter.voice = voice;
-      utter.rate = 0.95;
-      setSpeakingLang(seg.lang);
-      utter.onend = () => { if (!cancelled) speakSegment(segments, idx + 1, onCallDone); };
-      utter.onerror = () => { if (!cancelled) speakSegment(segments, idx + 1, onCallDone); };
+      const utter = new SpeechSynthesisUtterance(part.text);
+      // Force Indian English locale for any English segment (never en-US)
+      let lang = part.lang || uiLang;
+      if ((lang || '').toLowerCase().startsWith('en')) lang = 'en-IN';
+      utter.lang = lang;
+      const voice = pickVoice(lang);
+      if (voice) {
+        utter.voice = voice;
+        utter.lang = voice.lang || lang;
+        setActiveVoiceName(`${voice.name} (${voice.lang})`);
+      } else {
+        setActiveVoiceName(lang);
+      }
+      // Names slower + clearer; other lines at normal PA pace
+      utter.rate = part.isName ? 0.72 : (lang.startsWith('en') ? 0.88 : 0.85);
+      utter.pitch = part.isName ? 1.0 : 1.05;
+      utter.volume = 1;
+      setSpeakingLang(uiLang);
+      utter.onend = () => { if (!cancelled) onDone(); };
+      utter.onerror = () => { if (!cancelled) onDone(); };
       window.speechSynthesis.speak(utter);
     };
 
+    const speakParts = (parts, idx, uiLang, onSpeechDone) => {
+      if (cancelled) return;
+      if (idx >= parts.length) { onSpeechDone(); return; }
+      const part = parts[idx];
+      const pauseAfter = part.isName ? 450 : 120;
+      speakUtterance(part, uiLang, () => {
+        if (cancelled) return;
+        speakIntervalRef.current = setTimeout(
+          () => speakParts(parts, idx + 1, uiLang, onSpeechDone),
+          pauseAfter
+        );
+      });
+    };
+
+    const speakLanguageBlock = (speeches, idx, onCallDone) => {
+      if (cancelled) return;
+      if (idx >= speeches.length) { onCallDone(); return; }
+      const speech = speeches[idx];
+      const parts = speech.parts?.length
+        ? speech.parts
+        : [{ lang: speech.lang, text: speech.text }];
+      setSpeakingText(speech.text || parts.map((p) => p.text).join(''));
+      speakParts(parts, 0, speech.lang, () => {
+        if (cancelled) return;
+        // Pause between English / Tamil / Hindi blocks
+        speakIntervalRef.current = setTimeout(
+          () => speakLanguageBlock(speeches, idx + 1, onCallDone),
+          700
+        );
+      });
+    };
+
     const speakNextCall = () => {
-      if (cancelled || activeCalls.length === 0) return;
+      if (cancelled || activeCalls.length === 0) {
+        setSpeakingText('');
+        setSpeakingLang(null);
+        return;
+      }
       const call = activeCalls[callIndexRef.current % activeCalls.length];
       callIndexRef.current += 1;
       window.speechSynthesis.cancel();
-      speakSegment(call.speeches, 0, () => {
+      speakLanguageBlock(call.speeches, 0, () => {
         setSpeakingLang(null);
-        if (!cancelled) speakIntervalRef.current = setTimeout(speakNextCall, 4000);
+        setSpeakingText('');
+        if (!cancelled) speakIntervalRef.current = setTimeout(speakNextCall, 5000);
       });
     };
 
@@ -394,6 +944,8 @@ export default function TVQueueDisplayPage() {
       cancelled = true;
       clearTimeout(speakIntervalRef.current);
       window.speechSynthesis.cancel();
+      setSpeakingText('');
+      setActiveVoiceName('');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [soundEnabled, muted, activeCalls.map((c) => c.key).join(',')]);
@@ -404,93 +956,106 @@ export default function TVQueueDisplayPage() {
   const isLoading = opQuery.isLoading || labQuery.isLoading || pharmacyQuery.isLoading;
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50 text-slate-900 flex flex-col">
-      {/* HEADER */}
-      <header className="flex items-center justify-between px-8 py-4 bg-white border-b border-slate-200 shadow-sm shrink-0">
-        <div className="flex items-center gap-4">
+    <div className="tvq">
+      <header className="tvq-header">
+        <div className="tvq-brand">
           {branding.logo ? (
-            <img src={branding.logo} alt="logo" className="w-14 h-14 rounded-xl object-cover shadow" />
+            <img src={branding.logo} alt="" className="tvq-logo" />
           ) : (
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#0F4C81] to-[#1976D2] flex items-center justify-center text-white shadow-lg">
+            <div className="tvq-logo tvq-logo-fallback">
               <Stethoscope className="w-7 h-7" />
             </div>
           )}
-          <div>
-            <h1 className="text-2xl font-extrabold text-[#0F4C81] leading-tight">{branding.hospitalName}</h1>
-            <p className="text-sm text-slate-500">{branding.tagline}</p>
+          <div className="tvq-brand-text">
+            <h1 className="tvq-hospital-name">{branding.hospitalName}</h1>
+            <p className="tvq-tagline">{branding.tagline || 'Patient Queue Display'}</p>
           </div>
         </div>
 
-        <div className="flex flex-col items-center">
-          <div className="text-3xl font-bold text-[#1976D2] tabular-nums flex items-center gap-2">
-            <Clock3 className="w-6 h-6" /> {timeStr}
+        <div className="tvq-clock">
+          <div className="tvq-time">
+            <Clock3 className="w-5 h-5 opacity-70" />
+            {timeStr}
           </div>
-          <div className="text-sm text-slate-500">{dateStr}</div>
+          <div className="tvq-date">{dateStr}</div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="glass-card px-4 py-2 rounded-full flex items-center gap-3 shadow-sm">
-            <StatPill icon={Users} label="Waiting" value={opStats.waiting} color="text-blue-700" />
-            <StatPill icon={Activity} label="In Consult" value={opStats.in_consultation} color="text-emerald-700" />
-            <StatPill icon={CheckCircle2} label="Completed" value={opStats.completed} color="text-slate-600" />
-            <StatPill icon={CalendarClock} label="Tokens Today" value={opStats.total} color="text-indigo-700" />
+        <div className="tvq-header-right">
+          <div className="tvq-stats">
+            <div className="tvq-stat">
+              <span className="tvq-stat-value">{opStats.waiting}</span>
+              <span className="tvq-stat-label">Waiting</span>
+            </div>
+            <div className="tvq-stat">
+              <span className="tvq-stat-value">{opStats.in_consultation}</span>
+              <span className="tvq-stat-label">In Consult</span>
+            </div>
+            <div className="tvq-stat">
+              <span className="tvq-stat-value">{opStats.completed}</span>
+              <span className="tvq-stat-label">Completed</span>
+            </div>
+            <div className="tvq-stat">
+              <span className="tvq-stat-value">{opStats.total}</span>
+              <span className="tvq-stat-label">Today</span>
+            </div>
           </div>
-          <div className={`px-3 py-2 rounded-full flex items-center gap-2 border ${socketConnected ? 'bg-red-50 border-red-200' : 'bg-slate-100 border-slate-200'}`}>
-            <div className={`w-2.5 h-2.5 rounded-full ${socketConnected ? 'bg-red-500 animate-pulse' : 'bg-slate-400'}`} />
-            <span className={`text-xs font-bold ${socketConnected ? 'text-red-700' : 'text-slate-500'}`}>{socketConnected ? 'LIVE' : 'OFFLINE'}</span>
+
+          <div className={`tvq-live ${socketConnected ? 'tvq-live--on' : 'tvq-live--off'}`}>
+            <span className="tvq-live-dot" />
+            {socketConnected ? 'Live' : 'Offline'}
           </div>
+
           <button
+            type="button"
             onClick={() => setMuted((m) => !m)}
-            className="p-2 rounded-lg hover:bg-slate-100 transition"
+            className={`tvq-mute-btn ${muted || !soundEnabled ? 'tvq-mute-btn--off' : ''}`}
             title={muted ? 'Unmute announcements' : 'Mute announcements'}
           >
-            <Volume2 className={`w-6 h-6 ${muted || !soundEnabled ? 'text-slate-300' : 'text-slate-600'}`} />
+            <Volume2 className="w-5 h-5" />
           </button>
         </div>
       </header>
 
       {!soundEnabled && (
-        <button
-          onClick={() => setSoundEnabled(true)}
-          className="absolute inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center gap-3 text-white cursor-pointer"
-        >
-          <Volume2 className="w-14 h-14 animate-pulse" />
-          <p className="text-2xl font-bold">Tap anywhere to enable voice announcements</p>
-          <p className="text-sm opacity-80">Browsers require one tap before a page is allowed to play sound</p>
+        <button type="button" onClick={() => setSoundEnabled(true)} className="tvq-sound-gate">
+          <div className="tvq-sound-gate-icon">
+            <Volume2 className="w-10 h-10" />
+          </div>
+          <h2>Tap to enable voice announcements</h2>
+          <p>English → Tamil → Hindi · Required once per session</p>
         </button>
       )}
 
-      {/* MAIN GRID */}
-      <div className="flex-1 grid grid-cols-4 gap-6 p-6 overflow-hidden min-h-0">
+      <div className="tvq-main">
         <QueueColumn
-          title="OP CONSULTATION"
+          variant="op"
+          title="OP Consultation"
           icon={Activity}
-          color="blue"
-          nowCallingLabel="NOW CALLING"
+          nowCallingLabel="Now Calling"
           nowToken={opNextCalling?.tokenNumber}
           nowSubtitle={opNextCalling?.patient?.name}
-          nowDetail={[opNextCalling?.doctor?.name, opNextCalling?.department?.name].filter(Boolean).join(' • ')}
+          nowDetail={[opNextCalling?.doctor?.name, opNextCalling?.department?.name].filter(Boolean).join(' · ')}
           secondary={opInConsultation ? {
-            label: 'IN CONSULTATION',
+            label: 'In Consultation',
             token: opInConsultation.tokenNumber,
             subtitle: opInConsultation.patient?.name,
-            detail: [opInConsultation.doctor?.name, opInConsultation.department?.name].filter(Boolean).join(' • '),
+            detail: [opInConsultation.doctor?.name, opInConsultation.department?.name].filter(Boolean).join(' · '),
           } : null}
           rows={opSorted.slice(0, 8).map((o) => ({
             id: o._id,
             token: o.tokenNumber,
             name: o.patient?.name,
-            meta: `${o.patient?.age ?? '—'}${o.patient?.gender ? '/' + o.patient.gender : ''} • ${o.doctor?.name || 'Unassigned'}`,
+            meta: `${o.patient?.age ?? '—'}${o.patient?.gender ? '/' + o.patient.gender : ''} · ${o.doctor?.name || 'Unassigned'}`,
             status: o.status,
           }))}
-          emptyLabel="No patients in the OP queue right now"
+          emptyLabel="No patients in the OP queue"
         />
 
         <QueueColumn
-          title="LAB QUEUE"
+          variant="lab"
+          title="Laboratory"
           icon={Beaker}
-          color="green"
-          nowCallingLabel="NOW PROCESSING"
+          nowCallingLabel="Now Processing"
           nowToken={labNowServing?.labNumber || (labNowServing ? labNowServing._id.slice(-5).toUpperCase() : undefined)}
           nowSubtitle={labNowServing?.patient?.name}
           nowDetail={labNowServing?.tests?.map((t) => t.testName).join(', ') || labNowServing?.labType}
@@ -505,10 +1070,10 @@ export default function TVQueueDisplayPage() {
         />
 
         <QueueColumn
-          title="PHARMACY"
+          variant="pharma"
+          title="Pharmacy"
           icon={Pill}
-          color="purple"
-          nowCallingLabel="NOW SERVING"
+          nowCallingLabel="Now Serving"
           nowToken={pharmacyNowServing?.tokenNumber}
           nowSubtitle={pharmacyNowServing?.patient?.name}
           nowDetail={pharmacyNowServing?.doctor?.name ? `Prescribed by ${pharmacyNowServing.doctor.name}` : ''}
@@ -519,14 +1084,14 @@ export default function TVQueueDisplayPage() {
             meta: p.doctor?.name || '—',
             status: p.status,
           }))}
-          emptyLabel="No prescriptions waiting at pharmacy"
+          emptyLabel="No prescriptions waiting"
         />
 
         <QueueColumn
-          title="ONLINE / SCHEDULED"
+          variant="sched"
+          title="Online / Scheduled"
           icon={Globe}
-          color="orange"
-          nowCallingLabel="NEXT SCHEDULED"
+          nowCallingLabel="Next Scheduled"
           nowToken={scheduledList[0]?.tokenNumber}
           nowSubtitle={scheduledList[0]?.patient?.name}
           nowDetail={scheduledList[0] ? new Date(scheduledList[0].scheduledTime || scheduledList[0].tokenDate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
@@ -537,146 +1102,183 @@ export default function TVQueueDisplayPage() {
             meta: o.doctor?.name || '—',
             status: o.status,
           }))}
-          emptyLabel="No online appointments waiting"
+          emptyLabel="No scheduled appointments waiting"
         />
       </div>
 
-      {/* BOTTOM ROW */}
-      <div className="grid grid-cols-3 gap-6 px-6 pb-6 shrink-0" style={{ height: '30%' }}>
-        <div className="glass-card rounded-2xl p-5 shadow-lg overflow-y-auto">
-          <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><Users className="w-5 h-5 text-[#1976D2]" /> Doctor Availability</h3>
-          <div className="space-y-2">
-            {doctorRows.length === 0 && <p className="text-sm text-slate-400">No doctors on duty found.</p>}
-            {doctorRows.map((doc) => (
-              <div key={doc._id} className="flex items-center justify-between border-b border-slate-100 last:border-0 pb-2">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">{doc.name}</p>
-                  <p className="text-xs text-slate-500">{doc.specialization || doc.department?.name || 'General'}</p>
+      <div className="tvq-bottom">
+        <section className="tvq-panel">
+          <div className="tvq-panel-head">
+            <Users className="w-4 h-4 text-[var(--tvq-accent)]" />
+            Doctor Availability
+          </div>
+          <div className="tvq-panel-body">
+            {doctorRows.length === 0 && <p className="tvq-empty">No doctors on duty found.</p>}
+            {doctorRows.map((doc) => {
+              const statusClass = doc.status === 'In Consultation'
+                ? 'tvq-doc-status--consult'
+                : doc.status === 'Available'
+                  ? 'tvq-doc-status--available'
+                  : 'tvq-doc-status--free';
+              return (
+                <div key={doc._id} className="tvq-doc-row">
+                  <div>
+                    <p className="tvq-doc-name">{doc.name}</p>
+                    <p className="tvq-doc-spec">{doc.specialization || doc.department?.name || 'General'}</p>
+                  </div>
+                  <div className="tvq-doc-right">
+                    <span className={`tvq-doc-status ${statusClass}`}>{doc.status}</span>
+                    <p className="tvq-doc-meta">Token {doc.currentToken} · {doc.waitingCount} waiting</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                    doc.status === 'In Consultation' ? 'bg-emerald-100 text-emerald-700'
-                    : doc.status === 'Available' ? 'bg-blue-100 text-blue-700'
-                    : 'bg-slate-100 text-slate-500'
-                  }`}>{doc.status}</span>
-                  <p className="text-[11px] text-slate-500 mt-1">Token {doc.currentToken} • {doc.waitingCount} waiting</p>
-                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="tvq-panel">
+          <div className="tvq-panel-head">
+            <Megaphone className="w-4 h-4 text-[var(--tvq-accent)]" />
+            Live Announcements
+          </div>
+          <div className="tvq-panel-body">
+            {announcements.length === 0 && <p className="tvq-empty">No active announcements.</p>}
+            {announcements.map((a, i) => (
+              <div key={i} className="tvq-announce-item">
+                <span className="tvq-announce-time">
+                  {a.time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span className={`tvq-announce-text tvq-announce-text--${a.tone || 'op'}`}>{a.text}</span>
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="glass-card rounded-2xl p-5 shadow-lg overflow-y-auto">
-          <h3 className="font-bold text-amber-900 mb-3 flex items-center gap-2"><Megaphone className="w-5 h-5 text-orange-600" /> Announcements</h3>
-          <div className="space-y-2">
-            {announcements.length === 0 && <p className="text-sm text-slate-400">No active announcements.</p>}
-            {announcements.map((a, i) => (
-              <p key={i} className={`text-sm font-medium ${a.color}`}>
-                <span className="text-slate-400 mr-2">{a.time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
-                {a.text}
+        <section className="tvq-panel">
+          <div className="tvq-panel-head">
+            <Volume2 className="w-4 h-4 text-[var(--tvq-accent)]" />
+            Voice Announcer
+          </div>
+          <div className="tvq-voice">
+            <div className={`tvq-voice-icon ${!soundEnabled || muted ? 'tvq-voice-icon--off' : activeCalls.length ? 'tvq-voice-icon--active' : ''}`}>
+              <Volume2 className="w-6 h-6" />
+            </div>
+            <p className="tvq-voice-title">
+              {!soundEnabled
+                ? 'Tap screen to enable sound'
+                : muted
+                  ? 'Announcements muted'
+                  : activeCalls.length === 0
+                    ? 'Waiting for next token'
+                    : 'Speaking now'}
+            </p>
+            {soundEnabled && !muted && (
+              <div className="tvq-lang-row">
+                {LANG_BADGES.map((l) => (
+                  <span key={l.code} className={`tvq-lang ${speakingLang === l.code ? 'tvq-lang--on' : ''}`}>
+                    {l.label}
+                  </span>
+                ))}
+              </div>
+            )}
+            {activeVoiceName && soundEnabled && !muted && (
+              <p className="tvq-voice-hint">Voice: {activeVoiceName}</p>
+            )}
+            <p className="tvq-voice-hint">Order: Indian English → Tamil → Hindi · Indian accent only</p>
+            {speakingText ? (
+              <p className="tvq-speaking-script">{speakingText}</p>
+            ) : (
+              <p className="tvq-voice-hint">
+                Patient and doctor names use phonetic English pacing so they are easy to understand.
               </p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="tvq-ticker">
+        <div className="tvq-ticker-label">
+          <Megaphone className="w-3.5 h-3.5" />
+          Notice
+        </div>
+        <div className="tvq-ticker-track">
+          <div className="tvq-ticker-content">
+            {tickerItems.map((t, i) => (
+              <span key={i}>{t}</span>
+            ))}
+            {tickerItems.map((t, i) => (
+              <span key={`dup-${i}`}>{t}</span>
             ))}
           </div>
         </div>
-
-        <div className="glass-card rounded-2xl p-5 shadow-lg flex flex-col items-center justify-center text-center">
-          <Volume2 className={`w-10 h-10 mb-2 ${!soundEnabled || muted ? 'text-slate-300' : 'text-[#1976D2] animate-pulse'}`} />
-          <p className="font-bold text-slate-800">
-            {!soundEnabled ? 'Tap the screen to enable sound' : muted ? 'Voice Announcements Muted' : activeCalls.length === 0 ? 'Voice Ready — no active calls' : 'Voice Announcement Active'}
-          </p>
-          {soundEnabled && !muted && speakingLang && (
-            <div className="flex items-center gap-1.5 mt-1.5">
-              {LANG_BADGES.map((l) => (
-                <span key={l.code} className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${speakingLang === l.code ? 'bg-[#1976D2] text-white' : 'bg-slate-100 text-slate-400'}`}>
-                  {l.label}
-                </span>
-              ))}
-            </div>
-          )}
-          <p className="text-xs text-slate-500 mt-1">English → தமிழ் → हिन्दी, then next call</p>
-        </div>
       </div>
 
-      {/* FOOTER STRIP */}
-      <footer className="bg-gradient-to-r from-[#0F4C81] to-[#1976D2] text-white text-xs px-8 py-2 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-6">
-          <span className="flex items-center gap-1"><Volume2 className="w-3.5 h-3.5" /> Announcements in English, Tamil &amp; Hindi</span>
-          <span className="flex items-center gap-1"><Wifi className="w-3.5 h-3.5" /> Live updates on all screens</span>
-          <span className="flex items-center gap-1"><Globe className="w-3.5 h-3.5" /> OP • Lab • Pharmacy • Online</span>
+      <footer className="tvq-footer">
+        <div className="tvq-footer-left">
+          <span className="tvq-footer-item"><Volume2 className="w-3.5 h-3.5" /> Multilingual PA</span>
+          <span className="tvq-footer-item"><Wifi className="w-3.5 h-3.5" /> Real-time sync</span>
+          <span className="tvq-footer-item"><Globe className="w-3.5 h-3.5" /> OP · Lab · Pharmacy · Online</span>
         </div>
-        <span>{branding.footerNote || 'Better Experience, Better Care'}</span>
+        <span className="tvq-footer-note">{branding.footerNote || 'Better Experience, Better Care'}</span>
       </footer>
 
       {isLoading && (
-        <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-          <p className="text-slate-500 font-medium">Loading live queue data…</p>
+        <div className="tvq-loading">
+          <div className="tvq-loading-card">Loading live queue data…</div>
         </div>
       )}
       {(opQuery.isError || labQuery.isError || pharmacyQuery.isError) && !isLoading && (
-        <div className="absolute bottom-4 right-4 bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg flex items-center gap-2">
-          <WifiOff className="w-4 h-4" /> Couldn't refresh some queues — retrying automatically.
+        <div className="tvq-error-toast">
+          <WifiOff className="w-4 h-4" /> Couldn&apos;t refresh some queues — retrying automatically.
         </div>
       )}
     </div>
   );
 }
 
-function StatPill({ icon: Icon, label, value, color }) {
+function QueueColumn({
+  variant, title, icon: Icon, nowCallingLabel, nowToken, nowSubtitle, nowDetail, secondary, rows, emptyLabel,
+}) {
   return (
-    <div className="flex items-center gap-1.5">
-      <Icon className={`w-4 h-4 ${color}`} />
-      <span className={`font-bold ${color}`}>{value}</span>
-      <span className="text-[11px] text-slate-500 hidden xl:inline">{label}</span>
-    </div>
-  );
-}
-
-const COLUMN_THEME = {
-  blue: { header: 'bg-[#0F4C81]', now: 'from-[#0F4C81] to-[#1976D2]' },
-  green: { header: 'bg-emerald-600', now: 'from-emerald-600 to-emerald-700' },
-  purple: { header: 'bg-purple-600', now: 'from-purple-600 to-purple-700' },
-  orange: { header: 'bg-orange-500', now: 'from-orange-500 to-orange-600' },
-};
-
-function QueueColumn({ title, icon: Icon, color, nowCallingLabel, nowToken, nowSubtitle, nowDetail, secondary, rows, emptyLabel }) {
-  const theme = COLUMN_THEME[color];
-  return (
-    <div className="flex flex-col rounded-2xl overflow-hidden shadow-lg border border-slate-200 bg-white min-h-0">
-      <div className={`${theme.header} text-white px-4 py-3 flex items-center gap-2 font-bold text-sm shrink-0`}>
-        <Icon className="w-5 h-5" /> {title}
+    <div className={`tvq-col tvq-col--${variant}`}>
+      <div className="tvq-col-head">
+        <Icon className="w-4 h-4" />
+        {title}
       </div>
 
       {secondary && (
-        <div className="bg-emerald-50 border-b border-emerald-100 px-4 py-2 text-center shrink-0">
-          <div className="text-[10px] uppercase tracking-widest font-bold text-emerald-700">{secondary.label}</div>
-          <div className="text-sm font-bold text-emerald-900">
+        <div className="tvq-secondary">
+          <div className="tvq-secondary-label">{secondary.label}</div>
+          <div className="tvq-secondary-token">
             Token {secondary.token}{secondary.subtitle ? ` — ${secondary.subtitle}` : ''}
           </div>
-          {secondary.detail && <div className="text-[11px] text-emerald-700">{secondary.detail}</div>}
+          {secondary.detail && <div className="tvq-secondary-detail">{secondary.detail}</div>}
         </div>
       )}
 
-      <div className={`bg-gradient-to-br ${theme.now} text-white p-4 text-center shrink-0`}>
-        <div className="text-[11px] uppercase tracking-widest opacity-90 font-bold">{nowCallingLabel}</div>
-        <div className="text-5xl font-black my-1 drop-shadow">{nowToken || '—'}</div>
-        {nowSubtitle && <div className="text-sm font-semibold">{nowSubtitle}</div>}
-        {nowDetail && <div className="text-xs opacity-80 mt-0.5">{nowDetail}</div>}
+      <div className="tvq-now">
+        <div className="tvq-now-label">{nowCallingLabel}</div>
+        <div className={`tvq-now-token ${nowToken ? '' : 'tvq-now-token--empty'}`}>{nowToken || '—'}</div>
+        {nowSubtitle && <div className="tvq-now-name">{nowSubtitle}</div>}
+        {nowDetail && <div className="tvq-now-detail">{nowDetail}</div>}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-2 min-h-0">
-        {rows.length === 0 && <p className="text-xs text-slate-400 text-center mt-4">{emptyLabel}</p>}
+      <div className="tvq-rows">
+        {rows.length === 0 && <p className="tvq-empty">{emptyLabel}</p>}
         {rows.map((r) => (
-          <div key={r.id} className="flex items-center gap-2 p-2 mb-1 bg-slate-50 rounded-lg text-xs">
-            <span className="font-bold text-slate-700 w-14 shrink-0">{r.token}</span>
-            <span className="flex-1 truncate text-slate-700 font-medium">{r.name || '—'}</span>
-            <span className="hidden xl:block text-slate-500 truncate max-w-[35%]">{r.meta}</span>
+          <div key={r.id} className="tvq-row">
+            <span className="tvq-row-token">{r.token}</span>
+            <div className="tvq-row-body">
+              <div className="tvq-row-name">{r.name || '—'}</div>
+              {r.meta && <div className="tvq-row-meta">{r.meta}</div>}
+            </div>
             <StatusBadge status={r.status} />
           </div>
         ))}
       </div>
 
-      <div className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500 bg-slate-50 shrink-0">
-        Showing {Math.min(8, rows.length)} of {rows.length} • auto-refresh
+      <div className="tvq-col-foot">
+        Showing {Math.min(8, rows.length)} · auto-refresh
       </div>
     </div>
   );

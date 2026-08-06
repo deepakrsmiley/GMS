@@ -7,12 +7,13 @@ import api from '../../services/api';
 import Modal from '../common/Modal';
 
 const CHARGE_TYPE_LABEL = { per_use: 'per use', per_hour: 'per hour', per_day: 'per day' };
-const CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Other'];
+const CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Laboratory', 'Other'];
 const CATEGORY_BADGE = {
   Equipment: 'bg-purple-50 text-purple-700 border-purple-200',
   Procedure: 'bg-blue-50 text-blue-700 border-blue-200',
   Nursing: 'bg-teal-50 text-teal-700 border-teal-200',
   Injection: 'bg-amber-50 text-amber-700 border-amber-200',
+  Laboratory: 'bg-violet-50 text-violet-700 border-violet-200',
   Other: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
@@ -29,7 +30,7 @@ const emptyForm = () => ({
 const field = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400 bg-white';
 const label = 'block text-xs font-medium text-gray-500 mb-1';
 
-// Logs bedside equipment/procedure usage (Nebulizer, Ventilator, O2, Injection, etc.)
+// Logs bedside equipment/procedure/lab usage (Nebulizer, Ventilator, O2, Injection, Lab, etc.)
 // against an IP admission. Each saved entry is automatically picked up as a
 // billable line item next time a bill is generated for this patient
 // (see backend services/billingService.js).
@@ -117,7 +118,7 @@ export default function ServiceUsageModal({ admission, isOpen, onClose }) {
           <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg px-3 py-2 mb-3">
             <span>No rate list set up yet — you can still type a service and price below.</span>
             <Link
-              to="/settings/services"
+              to="/masters/services"
               onClick={onClose}
               className="flex items-center gap-1 font-medium whitespace-nowrap hover:underline"
             >

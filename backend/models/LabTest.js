@@ -58,6 +58,7 @@ const labTestSchema = new mongoose.Schema({
   tests: [{
     testProfile: { type: mongoose.Schema.Types.ObjectId, ref: 'TestProfile' },
     testName: { type: String, required: true },
+    profileName: String, // e.g. "CBC (Complete Blood Count)" — for result grouping
     price: Number,
     status: {
       type: String,
@@ -80,6 +81,22 @@ const labTestSchema = new mongoose.Schema({
   },
 
   priority: { type: String, enum: ['routine', 'urgent', 'stat'], default: 'routine' },
+
+  // Display name of the profile package (CBC, RFT, LFT, …) — joined summary for multi-profile orders
+  testProfile: String,
+  /** All packages on this single Lab No. (multi-select stays one order) */
+  profiles: [{ type: String }],
+  /**
+   * Who raised the order — drives Lab desk queues:
+   * reception (OP), lab_desk (technician), nurse_ip (Nurse Station), doctor, other
+   */
+  orderSource: {
+    type: String,
+    enum: ['reception', 'lab_desk', 'nurse_ip', 'doctor', 'other'],
+    default: 'other',
+    index: true,
+  },
+  notes: String,
 
   results: [labResultSchema],
   remarks: String,
@@ -106,6 +123,7 @@ const labTestSchema = new mongoose.Schema({
 labTestSchema.index({ patient: 1 });
 labTestSchema.index({ status: 1 });
 labTestSchema.index({ labType: 1 });
+labTestSchema.index({ orderSource: 1, status: 1, createdAt: -1 });
 labTestSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('LabTest', labTestSchema);

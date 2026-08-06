@@ -117,6 +117,35 @@ exports.createAppointment = asyncHandler(async (req, res, next) => {
   });
 
   const populated = await Appointment.findById(appointment._id).populate(POPULATE);
+
+  try {
+    const { notifyRoles, notifyUser } = require('../utils/notify');
+    const when = appointment.appointmentDate
+      ? new Date(appointment.appointmentDate).toLocaleDateString('en-IN')
+      : 'scheduled date';
+    await notifyRoles(req, {
+      roles: ['Receptionist', 'Admin', 'Super Admin'],
+      title: 'New appointment',
+      message: `${populated.patient?.name || 'Patient'} with Dr. ${populated.doctor?.name || ''} on ${when}${appointment.appointmentTime ? ` ${appointment.appointmentTime}` : ''}`.trim(),
+      type: 'appointment',
+      link: '/appointments',
+      relatedId: appointment._id,
+      relatedModel: 'Appointment',
+      excludeUserId: req.user._id,
+    });
+    if (populated.doctor?._id) {
+      await notifyUser(req, {
+        userId: populated.doctor._id,
+        title: 'New appointment booked',
+        message: `${populated.patient?.name || 'Patient'} on ${when}${appointment.appointmentTime ? ` at ${appointment.appointmentTime}` : ''}`,
+        type: 'appointment',
+        link: '/appointments',
+        relatedId: appointment._id,
+        relatedModel: 'Appointment',
+      });
+    }
+  } catch (_) { /* ignore */ }
+
   res.status(201).json({ success: true, data: populated });
 });
 

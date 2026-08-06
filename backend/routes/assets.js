@@ -12,8 +12,8 @@ const { authenticateUser, authorizeRoles } = require('../middleware/auth');
 
 router.use(authenticateUser);
 
-const ASSET_ROLES = ['Super Admin', 'Admin'];
-const ASSET_VIEW_ROLES = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'];
+const ASSET_ROLES = ['Super Admin', 'Admin', 'Biomedical Engineer'];
+const ASSET_VIEW_ROLES = ['Super Admin', 'Admin', 'Biomedical Engineer', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'];
 
 router.get('/dashboard', authorizeRoles(...ASSET_VIEW_ROLES), getAssetDashboard);
 
