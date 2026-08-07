@@ -99,15 +99,11 @@ const calculateItemAmounts = (items = []) =>
 
 const toPlain = (value) => JSON.parse(JSON.stringify(value || null));
 
+// Pharmacists can manage pharmacy bills and any IP bill (so they can add
+// medicines and generate bills for admitted patients).
 const isPharmacyScopeBill = (bill) => {
   const type = bill.billType || "unified";
-  const items = bill.items || [];
-  const hasOnlyMedicines =
-    items.length > 0 &&
-    items.every(
-      (item) => item.type === "medicine" || item.category === "Pharmacy",
-    );
-  return type === "pharmacy" || (type === "ip" && hasOnlyMedicines);
+  return type === "pharmacy" || type === "ip";
 };
 
 const requirePharmacistBillScope = (req, billLike, next) => {

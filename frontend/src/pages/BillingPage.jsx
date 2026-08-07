@@ -159,7 +159,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       retry: 1,
     });
 
-    const [chargeMeta, setChargeMeta] = useState({ doctor: null, department: null });
+    const [chargeMeta, setChargeMeta] = useState({ doctor: null, department: null, patientType: null });
 
     const loadPatientCharges = useCallback(async (patientId) => {
       setLoadingCharges(true);
@@ -167,7 +167,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         const { data } = await api.get(`/billing/patient/${patientId}/charges`);
         const rawCharges = (data.data.charges || []).map((c) => ({ ...c, included: c.included !== false }));
         setCharges(mergeConsultationCharges(rawCharges, data.data.doctor));
-        setChargeMeta({ doctor: data.data.doctor, department: data.data.department });
+        setChargeMeta({ doctor: data.data.doctor, department: data.data.department, patientType: data.data.patientType });
       } catch (err) {
         toast.error(err.response?.data?.message || 'Failed to load charges');
         setCharges([]);
@@ -293,7 +293,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setDiscount(0);
       setPaidAmount(0);
       setPaymentMode('cash');
-      setChargeMeta({ doctor: null, department: null });
+      setChargeMeta({ doctor: null, department: null, patientType: null });
       setShowConsultForm(false);
       setConsultForm({ description: 'Consultation Fee', doctorName: '', fee: '', gstPercent: 0 });
       setCreateMedQuery('');
@@ -390,15 +390,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     // ── Any non-cancelled bill (OP/IP/Pharmacy/unified) can now be edited by
-    // billing-capable roles. Pharmacist stays scoped to pharmacy-only bills
-    // (pure pharmacy bills, or IP bills made up entirely of medicine items)
-    // to mirror the backend's requirePharmacistBillScope check.
+    // billing-capable roles. Pharmacist can manage pharmacy bills and any IP
+    // bill — mirrors the backend's requirePharmacistBillScope check.
     const canEditBill = (bill) => {
       if (!bill || bill.status === 'cancelled') return false;
       if (user?.role === 'Pharmacist') {
-        const isPharmacyScope = bill.billType === 'pharmacy'
-          || (bill.billType === 'ip' && bill.items?.every((item) => item.type === 'medicine' || item.category === 'Pharmacy'));
-        return isPharmacyScope;
+        return bill.billType === 'pharmacy' || bill.billType === 'ip';
       }
       return ['Super Admin', 'Admin', 'Receptionist', 'Accountant'].includes(user?.role);
     };
@@ -676,7 +673,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       }
 
       const payload = {
-        billType: 'unified',
+        // IP patients get an 'ip' bill so pharmacy users stay within their
+        // allowed scope; everyone else keeps the unified bill type.
+        billType: chargeMeta.patientType === 'ip' ? 'ip' : 'unified',
         patient: selectedPatient._id,
         doctor: chargeMeta.doctor?._id,
         department: chargeMeta.department?._id,
