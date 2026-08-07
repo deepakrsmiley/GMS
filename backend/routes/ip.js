@@ -29,8 +29,8 @@ router.use(protect);
 
 const IP_VIEW = ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Nurse', 'Pharmacist'];
 const IP_ADMIT = ['Super Admin', 'Admin', 'Receptionist'];
-const IP_DISCHARGE_SUMMARY = ['Super Admin', 'Doctor'];
-const IP_DISCHARGE = ['Super Admin', 'Receptionist', 'Doctor'];
+const IP_DISCHARGE_SUMMARY = ['Super Admin', 'Admin', 'Doctor', 'Receptionist'];
+const IP_DISCHARGE = ['Super Admin', 'Admin', 'Receptionist', 'Doctor'];
 const NURSE_STATION = ['Super Admin', 'Admin', 'Doctor', 'Nurse'];
 
 router.route('/').get(

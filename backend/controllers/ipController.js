@@ -561,8 +561,8 @@ exports.saveDischargeSummary = asyncHandler(async (req, res, next) => {
   if (admission.status === 'discharged') return next(new ErrorResponse('Patient already discharged', 400));
 
   const role = normalizeRole(req.user.role);
-  if (!['Super Admin', 'Doctor'].includes(role)) {
-    return next(new ErrorResponse('Only doctors can create discharge summaries', 403));
+  if (!['Super Admin', 'Admin', 'Doctor', 'Receptionist'].includes(role)) {
+    return next(new ErrorResponse('Only doctors and receptionists can create discharge summaries', 403));
   }
 
   const details = { ...req.body, completedAt: new Date(), completedBy: req.user._id };

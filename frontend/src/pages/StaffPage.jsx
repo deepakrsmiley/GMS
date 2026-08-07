@@ -146,6 +146,14 @@ export default function StaffPage() {
         isActive: isActiveChecked,
         permissions: allSelected && selectedRole === 'Super Admin' ? ['*'] : selectedPermissions,
       };
+      // Unchecked day checkboxes submit `false`, which the backend's enum
+      // validation rejects — keep only real day names.
+      if (Array.isArray(payload.availability)) {
+        payload.availability = payload.availability.filter(
+          (a) => a && typeof a.day === 'string' && a.day,
+        );
+      }
+      if (payload.department === '') delete payload.department;
       if (editStaff && !payload.password) delete payload.password;
       return editStaff
         ? api.put(`/staff/${editStaff._id}`, payload)

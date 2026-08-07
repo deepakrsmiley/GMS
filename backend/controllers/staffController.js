@@ -30,10 +30,30 @@ exports.getStaffMember = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: staff });
 });
 
+const VALID_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+// Drop malformed entries (e.g. unchecked checkboxes submitting `day: false`)
+// so schema enum validation never rejects the whole save.
+const sanitizeStaffBody = (body) => {
+  if (body.availability !== undefined) {
+    body.availability = Array.isArray(body.availability)
+      ? body.availability.filter((a) => a && VALID_DAYS.includes(a.day))
+      : [];
+  }
+  if (body.department === '') delete body.department;
+  ['consultationFee', 'followUpFee', 'experience'].forEach((field) => {
+    if (field in body && (body[field] === '' || body[field] === null || Number.isNaN(Number(body[field])))) {
+      delete body[field];
+    }
+  });
+  return body;
+};
+
 exports.createStaff = asyncHandler(async (req, res) => {
   if (req.body.permissions !== undefined) {
     req.body.permissions = sanitizePermissions(req.body.permissions) || [];
   }
+  sanitizeStaffBody(req.body);
 
   const staff = await User.create(req.body);
   
@@ -47,7 +67,8 @@ exports.createStaff = asyncHandler(async (req, res) => {
 
 exports.updateStaff = asyncHandler(async (req, res, next) => {
   if (req.body.password) delete req.body.password;
-  
+  sanitizeStaffBody(req.body);
+
   const existingStaff = await User.findById(req.params.id);
   if (!existingStaff) return next(new ErrorResponse('Staff member not found', 404));
   
