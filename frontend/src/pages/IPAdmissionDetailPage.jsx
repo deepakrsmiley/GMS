@@ -20,16 +20,16 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-IN') : '—');
 const fmtDateTime = (v) => (v ? new Date(v).toLocaleString('en-IN') : '—');
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
 
-/** Paper-style: 08/07/26 AT 12:00PM */
+/** Paper-style: 08/07/2026 AT 12:00PM (date/month/year) */
 const fmtPaperDT = (v) => {
   if (!v) return '—';
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return '—';
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
+  const yyyy = d.getFullYear();
   const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase().replace(/\s/g, '');
-  return `${dd}/${mm}/${yy} AT ${time}`;
+  return `${dd}/${mm}/${yyyy} AT ${time}`;
 };
 const fmtPaperDate = (v) => {
   if (!v) return '—';
@@ -41,7 +41,7 @@ const fmtDotDate = (v) => {
   if (!v) return '';
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 };
 
 // Converts a Date/ISO-string coming back from the API into the yyyy-MM-dd /

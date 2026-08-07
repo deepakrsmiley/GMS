@@ -408,16 +408,16 @@ const generateAppointmentSlipPDF = async (appointment, res, branding) => {
   doc.end();
 };
 
-/** Date like paper: 08/07/26 AT 12:00PM */
+/** Date like paper: 08/07/2026 AT 12:00PM (date/month/year) */
 const fmtDischargeDT = (value) => {
   if (!value) return '';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
+  const yyyy = d.getFullYear();
   const timePretty = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase().replace(/\s/g, '');
-  return `${dd}/${mm}/${yy} AT ${timePretty}`;
+  return `${dd}/${mm}/${yyyy} AT ${timePretty}`;
 };
 
 const fmtDischargeDate = (value) => {
@@ -437,7 +437,7 @@ const fmtDotDate = (value) => {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
-  return `${dd}.${mm}.${yyyy}`;
+  return `${dd}/${mm}/${yyyy}`;
 };
 
 /** Strip chars PDFKit Times (WinAnsi) can't encode cleanly */

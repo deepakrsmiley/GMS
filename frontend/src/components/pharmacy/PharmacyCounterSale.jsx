@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
-import PharmacyTaxInvoice from '../billing/PharmacyTaxInvoice';
+import InvoicePrint from '../billing/InvoicePrint';
 import {
   flattenMedicineBatchOptions,
   formatBatchExpiry,
@@ -15,6 +15,26 @@ const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'online'];
+
+async function downloadBillPdf(id, thermal = false, size = 'A4') {
+  try {
+    const endpoint = thermal
+      ? `/billing/${id}/thermal`
+      : `/billing/${id}/print?size=${encodeURIComponent(size)}`;
+    const response = await api.get(endpoint, { responseType: 'blob' });
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = thermal
+      ? `thermal-${id}.pdf`
+      : `invoice-${id}-${size}.pdf`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+  } catch {
+    toast.error('Unable to download invoice');
+  }
+}
 
 /**
  * Walk-in / return patient medicine sale — no doctor visit required.
@@ -415,7 +435,13 @@ export default function PharmacyCounterSale({ canDispense }) {
       </div>
 
       {printBill && (
-        <PharmacyTaxInvoice bill={printBill} onClose={() => setPrintBill(null)} />
+        <InvoicePrint
+          bill={printBill}
+          onClose={() => setPrintBill(null)}
+          onDownloadPdf={(id) => downloadBillPdf(id, false, 'A4')}
+          onDownloadPdfA5={(id) => downloadBillPdf(id, false, 'A5')}
+          onDownloadThermal={(id) => downloadBillPdf(id, true)}
+        />
       )}
     </div>
   );

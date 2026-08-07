@@ -37,7 +37,7 @@ import PageHeader from "../components/common/PageHeader";
 import PharmacyInventoryDashboard from "../components/pharmacy/PharmacyInventoryDashboard";
 import DistributorDesk from "../components/pharmacy/DistributorDesk";
 import PharmacyCounterSale from "../components/pharmacy/PharmacyCounterSale";
-import PharmacyTaxInvoice from "../components/billing/PharmacyTaxInvoice";
+import InvoicePrint from "../components/billing/InvoicePrint";
 import OPServiceUsageModal from "../components/op/OPServiceUsageModal";
 import {
   flattenMedicineBatchOptions,
@@ -64,6 +64,26 @@ const categories = [
 ];
 const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+async function downloadBillPdf(id, thermal = false, size = "A4") {
+  try {
+    const endpoint = thermal
+      ? `/billing/${id}/thermal`
+      : `/billing/${id}/print?size=${encodeURIComponent(size)}`;
+    const response = await api.get(endpoint, { responseType: "blob" });
+    const blob = new Blob([response.data], { type: "application/pdf" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = thermal
+      ? `thermal-${id}.pdf`
+      : `invoice-${id}-${size}.pdf`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+  } catch {
+    toast.error("Unable to download invoice");
+  }
+}
 
 function PendingPharmacyPanel({ canDispense }) {
   const qc = useQueryClient();
@@ -962,9 +982,12 @@ function PendingPharmacyPanel({ canDispense }) {
       />
 
       {printBill && (
-        <PharmacyTaxInvoice
+        <InvoicePrint
           bill={printBill}
           onClose={() => setPrintBill(null)}
+          onDownloadPdf={(id) => downloadBillPdf(id, false, "A4")}
+          onDownloadPdfA5={(id) => downloadBillPdf(id, false, "A5")}
+          onDownloadThermal={(id) => downloadBillPdf(id, true)}
         />
       )}
     </div>
