@@ -598,6 +598,11 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
           }
           #invoice-print-root table { page-break-inside: auto !important; }
           #invoice-print-root thead { display: table-header-group !important; }
+          /* tfoot defaults to table-footer-group, which browsers repeat
+             on every printed page (same mechanism as thead repeating).
+             We only want the TOTAL row once, on the last page, so force
+             it to behave like a normal row-group instead. */
+          #invoice-print-root tfoot { display: table-row-group !important; }
           #invoice-print-root tbody tr {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
