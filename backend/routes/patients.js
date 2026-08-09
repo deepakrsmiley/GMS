@@ -5,26 +5,28 @@ const {
   getPatient, 
   createPatient, 
   updatePatient, 
+  deletePatient,
   searchPatients, 
   getPatientStats 
 } = require('../controllers/patientController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizePermissions } = require('../middleware/auth');
 const advancedResults = require('../middleware/advancedResults');
 const Patient = require('../models/Patient');
 
 router.use(authenticateUser);
 
-const PATIENT_VIEW_ROLES = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Accountant'];
-
-router.get('/search', authorizeRoles(...PATIENT_VIEW_ROLES), searchPatients);
-router.get('/stats', authorizeRoles(...PATIENT_VIEW_ROLES), getPatientStats);
+// Permission-driven access — Super Admin controls these per-user via the
+// Users & Access "Feature permissions" checkboxes (Patients group).
+router.get('/search', authorizePermissions('VIEW_PATIENT'), searchPatients);
+router.get('/stats', authorizePermissions('VIEW_PATIENT'), getPatientStats);
 
 router.route('/')
-  .get(authorizeRoles(...PATIENT_VIEW_ROLES), advancedResults(Patient, [{ path: 'registeredBy', select: 'name' }]), getPatients)
-  .post(authorizeRoles('Super Admin', 'Admin', 'Receptionist', 'Nurse'), createPatient);
+  .get(authorizePermissions('VIEW_PATIENT'), advancedResults(Patient, [{ path: 'registeredBy', select: 'name' }]), getPatients)
+  .post(authorizePermissions('CREATE_PATIENT'), createPatient);
 
 router.route('/:id')
   .get(getPatient) // Single patient fetch check is handled inside the controller for Patient role ownership
-  .put(authorizeRoles('Super Admin', 'Admin', 'Receptionist', 'Nurse'), updatePatient);
+  .put(authorizePermissions('UPDATE_PATIENT'), updatePatient)
+  .delete(authorizePermissions('DELETE_PATIENT'), deletePatient);
 
 module.exports = router;

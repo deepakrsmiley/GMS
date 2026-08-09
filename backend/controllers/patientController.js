@@ -106,8 +106,34 @@ exports.createPatient = asyncHandler(async (req, res) => {
 exports.updatePatient = asyncHandler(async (req, res, next) => {
   let patient = await Patient.findById(req.params.id);
   if (!patient) return next(new ErrorResponse('Patient not found', 404));
-  patient = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const payload = sanitizePatientPayload(req.body);
+  patient = await Patient.findByIdAndUpdate(req.params.id, payload, { new: true, runValidators: true });
   res.status(200).json({ success: true, data: patient });
+});
+
+exports.deletePatient = asyncHandler(async (req, res, next) => {
+  const patient = await Patient.findById(req.params.id);
+  if (!patient) return next(new ErrorResponse('Patient not found', 404));
+
+  // Never orphan medical / financial history — only wrongly-created or
+  // duplicate records (no visits, admissions, or bills) can be deleted.
+  const OPRegistration = require('../models/OPRegistration');
+  const IPAdmission = require('../models/IPAdmission');
+  const Bill = require('../models/Bill');
+  const [opCount, ipCount, billCount] = await Promise.all([
+    OPRegistration.countDocuments({ patient: patient._id }),
+    IPAdmission.countDocuments({ patient: patient._id }),
+    Bill.countDocuments({ patient: patient._id }),
+  ]);
+  if (opCount || ipCount || billCount) {
+    return next(new ErrorResponse(
+      'This patient has OP visits, admissions, or bills. Records with history cannot be deleted.',
+      400,
+    ));
+  }
+
+  await patient.deleteOne();
+  res.status(200).json({ success: true, message: 'Patient deleted' });
 });
 
 exports.searchPatients = asyncHandler(async (req, res) => {

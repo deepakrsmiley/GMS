@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Phone, Bed } from 'lucide-react';
+import { Plus, Search, Phone, Bed, Edit2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 import '../styles/patients.css';
 
 const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -22,10 +22,16 @@ const fmtDate = (v) => {
 export default function PatientsPage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
-  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
+  // Driven by Users & Access feature-permission checkboxes (Patients group)
+  const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
+  const canCreate = hasPermission(user, 'CREATE_PATIENT');
+  const canEdit = hasPermission(user, 'UPDATE_PATIENT');
+  const canDelete = hasPermission(user, 'DELETE_PATIENT');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [editPatient, setEditPatient] = useState(null);
+  const [showDelete, setShowDelete] = useState(null);
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -35,13 +41,54 @@ export default function PatientsPage() {
 
   const { register, handleSubmit, reset } = useForm();
 
+  const closeForm = () => {
+    setShowAdd(false);
+    setEditPatient(null);
+    reset();
+  };
+
+  const openEdit = (p) => {
+    setEditPatient(p);
+    reset({
+      name: p.name || '',
+      phone: p.phone || '',
+      age: p.age ?? '',
+      gender: p.gender || '',
+      bloodGroup: p.bloodGroup || '',
+      email: p.email || '',
+      address: { street: p.address?.street || '' },
+      emergencyContact: {
+        name: p.emergencyContact?.name || '',
+        phone: p.emergencyContact?.phone || '',
+      },
+    });
+    setShowAdd(true);
+  };
+
   const createMut = useMutation({
-    mutationFn: (d) => api.post('/patients', d),
+    mutationFn: (d) => (editPatient
+      ? api.put(`/patients/${editPatient._id}`, d)
+      : api.post('/patients', d)),
     onSuccess: () => {
-      toast.success('Patient registered');
+      toast.success(editPatient ? 'Patient updated' : 'Patient registered');
       qc.invalidateQueries(['patients']);
-      setShowAdd(false);
-      reset();
+      closeForm();
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Failed to save patient');
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id) => api.delete(`/patients/${id}`),
+    onSuccess: () => {
+      toast.success('Patient deleted');
+      qc.invalidateQueries(['patients']);
+      setShowDelete(null);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Failed to delete patient');
+      setShowDelete(null);
     },
   });
 
@@ -90,21 +137,51 @@ export default function PatientsPage() {
       header: 'Registered',
       render: (r) => <span className="pt-date">{fmtDate(r.createdAt)}</span>,
     },
-    ...(canAdmit
+    ...((canAdmit || canEdit || canDelete)
       ? [{
           key: 'actions',
           header: 'Action',
           render: (r) => (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/ip-admissions?patient=${r._id}`);
-              }}
-              className="pt-admit"
-            >
-              <Bed size={12} /> Admit
-            </button>
+            <div className="flex items-center gap-2">
+              {canAdmit && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/ip-admissions?patient=${r._id}`);
+                  }}
+                  className="pt-admit"
+                >
+                  <Bed size={12} /> Admit
+                </button>
+              )}
+              {canEdit && (
+                <button
+                  type="button"
+                  title="Edit patient"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEdit(r);
+                  }}
+                  className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                >
+                  <Edit2 size={14} />
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  title="Delete patient"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDelete(r);
+                  }}
+                  className="p-1.5 rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
           ),
         }]
       : []),
@@ -128,9 +205,11 @@ export default function PatientsPage() {
               <Bed size={14} /> Admit IP
             </button>
           )}
-          <button type="button" onClick={() => setShowAdd(true)} className="pt-btn pt-btn--primary">
-            <Plus size={14} /> Register Patient
-          </button>
+          {canCreate && (
+            <button type="button" onClick={() => { setEditPatient(null); reset(); setShowAdd(true); }} className="pt-btn pt-btn--primary">
+              <Plus size={14} /> Register Patient
+            </button>
+          )}
         </div>
       </header>
 
@@ -163,7 +242,7 @@ export default function PatientsPage() {
         </div>
       </section>
 
-      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Register New Patient" size="lg">
+      <Modal isOpen={showAdd} onClose={closeForm} title={editPatient ? `Edit Patient — ${editPatient.patientId || editPatient.name}` : 'Register New Patient'} size="lg">
         <form
           onSubmit={handleSubmit((d) => createMut.mutate(d))}
           className="p-6 space-y-4 pt-shell"
@@ -217,12 +296,36 @@ export default function PatientsPage() {
           </div>
 
           <div className="flex gap-3 justify-end pt-4 border-t border-blue-100">
-            <button type="button" onClick={() => setShowAdd(false)} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={closeForm} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={createMut.isPending} className="btn-primary">
-              {createMut.isPending ? 'Registering…' : 'Register Patient'}
+              {createMut.isPending
+                ? 'Saving…'
+                : (editPatient ? 'Update Patient' : 'Register Patient')}
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={!!showDelete} onClose={() => setShowDelete(null)} title="Delete Patient" size="sm">
+        {showDelete && (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Delete <strong>{showDelete.name}</strong> ({showDelete.patientId})?
+              This cannot be undone. Patients with OP visits, admissions, or bills cannot be deleted.
+            </p>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowDelete(null)} className="btn-secondary flex-1 justify-center">Cancel</button>
+              <button
+                type="button"
+                disabled={deleteMut.isPending}
+                onClick={() => deleteMut.mutate(showDelete._id)}
+                className="btn-primary flex-1 justify-center !bg-red-600 hover:!bg-red-700"
+              >
+                <Trash2 size={14} /> {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

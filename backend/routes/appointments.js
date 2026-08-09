@@ -10,24 +10,22 @@ const {
   printAppointmentSlip,
   getTodayStats,
 } = require('../controllers/appointmentController');
-const { protect, authorizeRoles } = require('../middleware/auth');
+const { protect, authorizePermissions } = require('../middleware/auth');
 
 router.use(protect);
 
-const VIEW = ['Super Admin', 'Admin', 'Receptionist', 'Doctor'];
-const MANAGE = ['Super Admin', 'Admin', 'Receptionist'];
-
-router.get('/stats/today', authorizeRoles(...VIEW), getTodayStats);
+// Permission-driven access — controlled per-user via Users & Access checkboxes.
+router.get('/stats/today', authorizePermissions('VIEW_APPOINTMENT'), getTodayStats);
 router.route('/')
-  .get(authorizeRoles(...VIEW), getAppointments)
-  .post(authorizeRoles(...MANAGE), createAppointment);
+  .get(authorizePermissions('VIEW_APPOINTMENT'), getAppointments)
+  .post(authorizePermissions('CREATE_APPOINTMENT'), createAppointment);
 
-router.get('/:id/print', authorizeRoles(...VIEW), printAppointmentSlip);
-router.put('/:id/cancel', authorizeRoles(...MANAGE), cancelAppointment);
-router.put('/:id/confirm', authorizeRoles(...MANAGE, 'Doctor'), confirmAppointment);
+router.get('/:id/print', authorizePermissions('VIEW_APPOINTMENT'), printAppointmentSlip);
+router.put('/:id/cancel', authorizePermissions('CANCEL_APPOINTMENT'), cancelAppointment);
+router.put('/:id/confirm', authorizePermissions('UPDATE_APPOINTMENT'), confirmAppointment);
 
 router.route('/:id')
-  .get(authorizeRoles(...VIEW), getAppointment)
-  .put(authorizeRoles(...MANAGE), updateAppointment);
+  .get(authorizePermissions('VIEW_APPOINTMENT'), getAppointment)
+  .put(authorizePermissions('UPDATE_APPOINTMENT'), updateAppointment);
 
 module.exports = router;

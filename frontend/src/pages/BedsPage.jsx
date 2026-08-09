@@ -30,8 +30,8 @@ export default function BedsPage() {
   const [showAddBed, setShowAddBed] = useState(false);
   const [showAddWard, setShowAddWard] = useState(false);
   const [editWard, setEditWard] = useState(null);
-  const [selectedBed, setSelectedBed] = useState(null);
-  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [editRoom, setEditRoom] = useState(null);
+  const [editBed, setEditBed] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const qc = useQueryClient();
@@ -72,11 +72,11 @@ export default function BedsPage() {
     enabled: view === 'beds',
   });
 
-  const { register: registerRoom, handleSubmit: handleRoomSubmit, reset: resetRoom } = useForm({
-    defaultValues: { type: 'general', dailyCharge: 1500, floor: 1 },
+  const { register: registerRoom, handleSubmit: handleRoomSubmit, reset: resetRoom, setValue: setRoomValue } = useForm({
+    defaultValues: { type: 'general', dailyCharge: 1500, floor: 1, status: 'available' },
   });
-  const { register: registerBed, handleSubmit: handleBedSubmit, reset: resetBed } = useForm({
-    defaultValues: { type: 'general', dailyRate: 500 },
+  const { register: registerBed, handleSubmit: handleBedSubmit, reset: resetBed, setValue: setBedValue } = useForm({
+    defaultValues: { type: 'general', dailyRate: 500, status: 'available' },
   });
   const { register: registerWard, handleSubmit: handleWardSubmit, reset: resetWard, setValue: setWardValue } = useForm({
     defaultValues: { type: 'general' },
@@ -91,31 +91,47 @@ export default function BedsPage() {
     refetchWards();
   };
 
-  const addRoom = useMutation({
-    mutationFn: (d) => api.post('/rooms', {
-      ...d,
-      bedNumber: d.bedNumber || d.roomNumber,
-      floor: d.floor ? Number(d.floor) : undefined,
-      dailyCharge: Number(d.dailyCharge || 0),
-    }),
+  const saveRoom = useMutation({
+    mutationFn: (d) => {
+      const payload = {
+        ...d,
+        bedNumber: d.bedNumber || d.roomNumber,
+        floor: d.floor !== '' && d.floor != null ? Number(d.floor) : undefined,
+        dailyCharge: Number(d.dailyCharge || 0),
+      };
+      // Occupied rooms are only ever moved out of "occupied" by the
+      // discharge flow — never let the edit form downgrade/overwrite it.
+      if (editRoom?.status === 'occupied') delete payload.status;
+      return editRoom
+        ? api.put(`/rooms/${editRoom._id}`, payload)
+        : api.post('/rooms', payload);
+    },
     onSuccess: () => {
-      toast.success('Room added');
+      toast.success(editRoom ? 'Room updated' : 'Room added');
       invalidateAll();
       setShowAddRoom(false);
-      resetRoom({ type: 'general', dailyCharge: 1500, floor: 1 });
+      setEditRoom(null);
+      resetRoom({ type: 'general', dailyCharge: 1500, floor: 1, status: 'available' });
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Failed to add room'),
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to save room'),
   });
 
-  const addBed = useMutation({
-    mutationFn: (d) => api.post('/beds', d),
+  const saveBed = useMutation({
+    mutationFn: (d) => {
+      const payload = { ...d, dailyRate: Number(d.dailyRate || 0) };
+      if (editBed?.status === 'occupied') delete payload.status;
+      return editBed
+        ? api.put(`/beds/${editBed._id}`, payload)
+        : api.post('/beds', payload);
+    },
     onSuccess: () => {
-      toast.success('Bed added');
+      toast.success(editBed ? 'Bed updated' : 'Bed added');
       invalidateAll();
       setShowAddBed(false);
-      resetBed({ type: 'general', dailyRate: 500 });
+      setEditBed(null);
+      resetBed({ type: 'general', dailyRate: 500, status: 'available' });
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Failed to add bed'),
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to save bed'),
   });
 
   const saveWard = useMutation({
@@ -130,26 +146,6 @@ export default function BedsPage() {
       resetWard({ type: 'general' });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to save ward'),
-  });
-
-  const updateBedStatus = useMutation({
-    mutationFn: ({ id, status }) => api.put(`/beds/${id}/status`, { status }),
-    onSuccess: () => {
-      toast.success('Bed status updated');
-      invalidateAll();
-      setSelectedBed(null);
-    },
-    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update status'),
-  });
-
-  const updateRoomStatus = useMutation({
-    mutationFn: ({ id, status }) => api.put(`/rooms/${id}`, { status }),
-    onSuccess: () => {
-      toast.success('Room status updated');
-      invalidateAll();
-      setSelectedRoom(null);
-    },
-    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update status'),
   });
 
   const deleteMut = useMutation({
@@ -187,6 +183,28 @@ export default function BedsPage() {
     setShowAddWard(true);
   };
 
+  const openEditRoom = (r) => {
+    setEditRoom(r);
+    setRoomValue('roomNumber', r.roomNumber || '');
+    setRoomValue('bedNumber', r.bedNumber || r.bed?.bedNumber || '');
+    setRoomValue('ward', r.ward?._id || r.ward || '');
+    setRoomValue('type', r.type || 'general');
+    setRoomValue('floor', r.floor ?? '');
+    setRoomValue('dailyCharge', r.dailyCharge ?? 0);
+    setRoomValue('status', r.status || 'available');
+    setShowAddRoom(true);
+  };
+
+  const openEditBed = (b) => {
+    setEditBed(b);
+    setBedValue('bedNumber', b.bedNumber || '');
+    setBedValue('ward', b.ward?._id || b.ward || '');
+    setBedValue('type', b.type || 'general');
+    setBedValue('dailyRate', b.dailyRate ?? 0);
+    setBedValue('status', b.status || 'available');
+    setShowAddBed(true);
+  };
+
   const primaryAction = () => {
     if (view === 'wards') {
       setEditWard(null);
@@ -195,9 +213,13 @@ export default function BedsPage() {
       return;
     }
     if (view === 'beds') {
+      setEditBed(null);
+      resetBed({ type: 'general', dailyRate: 500, status: 'available' });
       setShowAddBed(true);
       return;
     }
+    setEditRoom(null);
+    resetRoom({ type: 'general', dailyCharge: 1500, floor: 1, status: 'available' });
     setShowAddRoom(true);
   };
 
@@ -319,7 +341,7 @@ export default function BedsPage() {
                       <td>{r.bedNumber || r.bed?.bedNumber || '—'}</td>
                       <td>
                         <div className="flex items-center gap-1 justify-end">
-                          <button type="button" className="rb-icon-btn" title="Status" onClick={() => setSelectedRoom(r)}>
+                          <button type="button" className="rb-icon-btn" title="Edit room" onClick={() => openEditRoom(r)}>
                             <Pencil size={14} />
                           </button>
                           {r.status !== 'occupied' && (
@@ -377,7 +399,7 @@ export default function BedsPage() {
                       <td>{b.currentPatient?.name || '—'}</td>
                       <td>
                         <div className="flex items-center gap-1 justify-end">
-                          <button type="button" className="rb-icon-btn" title="Update status" onClick={() => setSelectedBed(b)}>
+                          <button type="button" className="rb-icon-btn" title="Edit bed" onClick={() => openEditBed(b)}>
                             <Pencil size={14} />
                           </button>
                           {b.status !== 'occupied' && (
@@ -442,79 +464,20 @@ export default function BedsPage() {
         </div>
       )}
 
-      {/* Bed status */}
-      <Modal isOpen={!!selectedBed} onClose={() => setSelectedBed(null)} title={`Bed ${selectedBed?.bedNumber || ''}`} size="sm">
-        {selectedBed && (
-          <div className="rb-detail">
-            <div className="rb-detail__row"><span>Ward</span><span>{selectedBed.ward?.name || '—'}</span></div>
-            <div className="rb-detail__row"><span>Type</span><span className="capitalize">{pretty(selectedBed.type)}</span></div>
-            <div className="rb-detail__row"><span>Rate</span><span>{inr(selectedBed.dailyRate)}</span></div>
-            <div className="rb-detail__row"><span>Status</span><span><StatusBadge status={selectedBed.status} /></span></div>
-            {selectedBed.currentPatient && (
-              <div className="rb-detail__row"><span>Patient</span><span>{selectedBed.currentPatient.name}</span></div>
-            )}
-            {selectedBed.status !== 'occupied' ? (
-              <div>
-                <p className="rb-label">Update status</p>
-                <div className="rb-status-grid">
-                  {BED_STATUSES.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      className={`rb-status-btn ${selectedBed.status === s ? 'is-active' : ''}`}
-                      onClick={() => updateBedStatus.mutate({ id: selectedBed._id, status: s })}
-                    >
-                      {pretty(s)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="rb-hint">Occupied beds are released automatically on discharge.</p>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      {/* Room status */}
-      <Modal isOpen={!!selectedRoom} onClose={() => setSelectedRoom(null)} title={`Room ${selectedRoom?.roomNumber || ''}`} size="sm">
-        {selectedRoom && (
-          <div className="rb-detail">
-            <div className="rb-detail__row"><span>Ward</span><span>{selectedRoom.ward?.name || '—'}</span></div>
-            <div className="rb-detail__row"><span>Type</span><span className="capitalize">{pretty(selectedRoom.type)}</span></div>
-            <div className="rb-detail__row"><span>Charge</span><span>{inr(selectedRoom.dailyCharge)}</span></div>
-            <div className="rb-detail__row"><span>Status</span><span><StatusBadge status={selectedRoom.status} /></span></div>
-            {selectedRoom.currentPatient && (
-              <div className="rb-detail__row"><span>Patient</span><span>{selectedRoom.currentPatient.name}</span></div>
-            )}
-            {selectedRoom.status !== 'occupied' ? (
-              <div>
-                <p className="rb-label">Update status</p>
-                <div className="rb-status-grid">
-                  {ROOM_STATUSES.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      className={`rb-status-btn ${selectedRoom.status === s ? 'is-active' : ''}`}
-                      onClick={() => updateRoomStatus.mutate({ id: selectedRoom._id, status: s })}
-                    >
-                      {pretty(s)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="rb-hint">Occupied rooms are released automatically on discharge.</p>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      {/* Add room */}
-      <Modal isOpen={showAddRoom} onClose={() => setShowAddRoom(false)} title="Add Room" size="md" subtitle="Creates room and linked bed for IP admission">
-        <form onSubmit={handleRoomSubmit((d) => addRoom.mutate(d))} className="rb-form">
-          {wardsList.length === 0 && (
+      {/* Add / Edit room */}
+      <Modal
+        isOpen={showAddRoom}
+        onClose={() => { setShowAddRoom(false); setEditRoom(null); resetRoom({ type: 'general', dailyCharge: 1500, floor: 1, status: 'available' }); }}
+        title={editRoom ? `Edit Room ${editRoom.roomNumber || ''}` : 'Add Room'}
+        size="md"
+        subtitle={editRoom ? 'Update charges, type, ward or status' : 'Creates room and linked bed for IP admission'}
+      >
+        <form onSubmit={handleRoomSubmit((d) => saveRoom.mutate(d))} className="rb-form">
+          {!editRoom && wardsList.length === 0 && (
             <p className="rb-hint">No wards yet — create a ward before adding rooms.</p>
+          )}
+          {editRoom?.currentPatient && (
+            <p className="rb-hint">Currently occupied by <strong>{editRoom.currentPatient.name}</strong>. Status stays "Occupied" until discharge.</p>
           )}
           <div className="rb-form__grid">
             <div>
@@ -546,19 +509,46 @@ export default function BedsPage() {
               <label className="rb-label">Daily charge (₹)</label>
               <input {...registerRoom('dailyCharge', { valueAsNumber: true })} type="number" className="rb-field" />
             </div>
+            {editRoom && (
+              <div>
+                <label className="rb-label">Status</label>
+                {editRoom.status === 'occupied' ? (
+                  <input value="Occupied" disabled className="rb-field" />
+                ) : (
+                  <select {...registerRoom('status')} className="rb-field">
+                    {ROOM_STATUSES.map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
+                  </select>
+                )}
+              </div>
+            )}
           </div>
           <div className="rb-form__footer">
-            <button type="button" className="rb-btn rb-btn--ghost" onClick={() => setShowAddRoom(false)}>Cancel</button>
-            <button type="submit" className="rb-btn rb-btn--primary" disabled={addRoom.isPending || !wardsList.length}>
-              {addRoom.isPending ? 'Saving…' : 'Add room'}
+            <button
+              type="button"
+              className="rb-btn rb-btn--ghost"
+              onClick={() => { setShowAddRoom(false); setEditRoom(null); resetRoom({ type: 'general', dailyCharge: 1500, floor: 1, status: 'available' }); }}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="rb-btn rb-btn--primary" disabled={saveRoom.isPending || (!editRoom && !wardsList.length)}>
+              {saveRoom.isPending ? 'Saving…' : editRoom ? 'Save changes' : 'Add room'}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* Add bed */}
-      <Modal isOpen={showAddBed} onClose={() => setShowAddBed(false)} title="Add Bed" size="sm" subtitle="Use when you need a bed without a room record">
-        <form onSubmit={handleBedSubmit((d) => addBed.mutate(d))} className="rb-form">
+      {/* Add / Edit bed */}
+      <Modal
+        isOpen={showAddBed}
+        onClose={() => { setShowAddBed(false); setEditBed(null); resetBed({ type: 'general', dailyRate: 500, status: 'available' }); }}
+        title={editBed ? `Edit Bed ${editBed.bedNumber || ''}` : 'Add Bed'}
+        size="sm"
+        subtitle={editBed ? 'Update ward, type, rate or status' : 'Use when you need a bed without a room record'}
+      >
+        <form onSubmit={handleBedSubmit((d) => saveBed.mutate(d))} className="rb-form">
+          {editBed?.currentPatient && (
+            <p className="rb-hint">Currently occupied by <strong>{editBed.currentPatient.name}</strong>. Status stays "Occupied" until discharge.</p>
+          )}
           <div>
             <label className="rb-label">Bed number *</label>
             <input {...registerBed('bedNumber', { required: true })} className="rb-field" placeholder="e.g. W1-B01" />
@@ -580,10 +570,28 @@ export default function BedsPage() {
             <label className="rb-label">Daily rate (₹)</label>
             <input {...registerBed('dailyRate', { valueAsNumber: true })} type="number" className="rb-field" />
           </div>
+          {editBed && (
+            <div>
+              <label className="rb-label">Status</label>
+              {editBed.status === 'occupied' ? (
+                <input value="Occupied" disabled className="rb-field" />
+              ) : (
+                <select {...registerBed('status')} className="rb-field">
+                  {BED_STATUSES.map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
+                </select>
+              )}
+            </div>
+          )}
           <div className="rb-form__footer">
-            <button type="button" className="rb-btn rb-btn--ghost" onClick={() => setShowAddBed(false)}>Cancel</button>
-            <button type="submit" className="rb-btn rb-btn--primary" disabled={addBed.isPending}>
-              {addBed.isPending ? 'Saving…' : 'Add bed'}
+            <button
+              type="button"
+              className="rb-btn rb-btn--ghost"
+              onClick={() => { setShowAddBed(false); setEditBed(null); resetBed({ type: 'general', dailyRate: 500, status: 'available' }); }}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="rb-btn rb-btn--primary" disabled={saveBed.isPending}>
+              {saveBed.isPending ? 'Saving…' : editBed ? 'Save changes' : 'Add bed'}
             </button>
           </div>
         </form>

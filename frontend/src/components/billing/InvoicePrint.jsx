@@ -220,7 +220,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
       </div>
 
       {/* ── Backdrop + scroll wrapper ── */}
-      <div style={{
+      <div id="invoice-print-backdrop" style={{
         position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.65)',
         overflowY:'auto', paddingTop:60, paddingBottom:40,
         display:'flex', justifyContent:'center',
@@ -547,9 +547,37 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
             size: ${paperSize} portrait;
             margin: ${isA5 ? '8mm' : '10mm'};
           }
+
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+          }
+
           body * { visibility: hidden !important; }
           #invoice-print-root,
           #invoice-print-root * { visibility: visible !important; }
+
+          /* Critical fix: the on-screen preview wrapper is
+             position:fixed with inset:0 and overflow-y:auto, so it is
+             viewport-sized. Because the invoice root is absolutely
+             positioned INSIDE that wrapper, the fixed/scroll container
+             was clipping everything past one page's height when
+             printing -- that's why long bills (lots of medicines) got
+             squashed onto a single page instead of flowing onto page
+             2, 3, etc. Neutralising the wrapper for print lets the
+             invoice flow naturally across pages. */
+          #invoice-print-backdrop {
+            position: static !important;
+            inset: auto !important;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            background: none !important;
+          }
+
           #invoice-print-root {
             /* absolute (not fixed) so overflow continues on next pages */
             position: absolute !important;
@@ -570,10 +598,15 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
           }
           #invoice-print-root table { page-break-inside: auto !important; }
           #invoice-print-root thead { display: table-header-group !important; }
-          #invoice-print-root tbody tr { page-break-inside: avoid !important; page-break-after: auto !important; }
+          #invoice-print-root tbody tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            page-break-after: auto !important;
+          }
           #invoice-print-root .inv-print-totals,
           #invoice-print-root .inv-print-footer {
             page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>

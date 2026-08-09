@@ -1,28 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const labController = require('../controllers/labController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizePermissions } = require('../middleware/auth');
 
 router.use(authenticateUser);
 
-const LAB_VIEW = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Lab Technician', 'Receptionist'];
-const LAB_CREATE = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Lab Technician', 'Receptionist'];
-const LAB_PROCESS = ['Super Admin', 'Admin', 'Lab Technician'];
-
-router.get('/dashboard', authorizeRoles('Super Admin', 'Admin', 'Lab Technician'), labController.getLabDashboard);
+// Permission-driven access — controlled per-user via Users & Access checkboxes.
+router.get('/dashboard', authorizePermissions('VIEW_LAB'), labController.getLabDashboard);
 router.get('/types', labController.getLabTypes);
-router.get('/ip-medicines', authorizeRoles(...LAB_VIEW), labController.getIPMedicinesByTime);
+router.get('/ip-medicines', authorizePermissions('VIEW_LAB'), labController.getIPMedicinesByTime);
 
 router.route('/')
-  .get(authorizeRoles(...LAB_VIEW), labController.getLabTests)
-  .post(authorizeRoles(...LAB_CREATE), labController.createLabTest);
+  .get(authorizePermissions('VIEW_LAB'), labController.getLabTests)
+  .post(authorizePermissions('CREATE_LAB_ORDER'), labController.createLabTest);
 
-router.put('/:id/add-tests', authorizeRoles(...LAB_CREATE), labController.addTestsToLabOrder);
+router.put('/:id/add-tests', authorizePermissions('CREATE_LAB_ORDER'), labController.addTestsToLabOrder);
 router.route('/:id')
   .get(labController.getLabTest);
 
-router.put('/:id/status', authorizeRoles(...LAB_PROCESS), labController.updateLabStatus);
-router.put('/:id/results', authorizeRoles(...LAB_PROCESS), labController.enterResults);
+router.put('/:id/status', authorizePermissions('UPDATE_LAB_ORDER'), labController.updateLabStatus);
+router.put('/:id/results', authorizePermissions('UPDATE_LAB_REPORT'), labController.enterResults);
 router.get('/:id/print', labController.printLabReport);
 
 module.exports = router;

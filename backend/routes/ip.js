@@ -21,20 +21,17 @@ const {
   addMedication,
   deleteMedication,
 } = require('../controllers/ipController');
-const { protect, authorizeRoles } = require('../middleware/auth');
+const { protect, authorizeRoles, authorizePermissions } = require('../middleware/auth');
 const advancedResults = require('../middleware/advancedResults');
 const IPAdmission = require('../models/IPAdmission');
 
 router.use(protect);
 
-const IP_VIEW = ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Nurse', 'Pharmacist'];
-const IP_ADMIT = ['Super Admin', 'Admin', 'Receptionist'];
-const IP_DISCHARGE_SUMMARY = ['Super Admin', 'Admin', 'Doctor', 'Receptionist'];
-const IP_DISCHARGE = ['Super Admin', 'Admin', 'Receptionist', 'Doctor'];
-const NURSE_STATION = ['Super Admin', 'Admin', 'Doctor', 'Nurse'];
-
+// Permission-driven access: Super Admin controls these per-user via the
+// Users & Access "Feature permissions" checkboxes (IP Admission group).
+// Users without a custom permission list fall back to their role defaults.
 router.route('/').get(
-  authorizeRoles(...IP_VIEW),
+  authorizePermissions('VIEW_IP_ADMISSION'),
   advancedResults(IPAdmission, [
     { path: 'patient', select: 'patientId name age gender' },
     { path: 'doctor', select: 'name' },
@@ -43,26 +40,26 @@ router.route('/').get(
     { path: 'ward', select: 'name' },
   ]),
   getAdmissions,
-).post(authorizeRoles(...IP_ADMIT), createAdmission);
+).post(authorizePermissions('CREATE_IP_ADMISSION'), createAdmission);
 
 // Must be before /:id so "nurse-station" is not treated as an id
-router.get('/nurse-station', authorizeRoles(...NURSE_STATION), getNurseStationBoard);
+router.get('/nurse-station', authorizePermissions('VIEW_NURSE_STATION'), getNurseStationBoard);
 
-router.get('/:id/discharge-print', authorizeRoles(...IP_VIEW), printDischargeSummary);
-router.route('/:id').get(authorizeRoles(...IP_VIEW), getAdmission);
-router.post('/:id/nursing-note', authorizeRoles('Super Admin', 'Admin', 'Nurse'), addNursingNote);
-router.post('/:id/vitals', authorizeRoles('Super Admin', 'Admin', 'Nurse', 'Doctor'), addVitalRecord);
-router.post('/:id/shift-handover', authorizeRoles('Super Admin', 'Admin', 'Nurse'), addShiftHandover);
-router.post('/:id/doctor-order', authorizeRoles('Super Admin', 'Admin', 'Doctor'), addDoctorOrder);
-router.put('/:id/doctor-order/:orderId', authorizeRoles('Super Admin', 'Admin', 'Doctor', 'Nurse'), updateDoctorOrder);
-router.post('/:id/doctor-round', authorizeRoles('Super Admin', 'Doctor'), addDoctorRound);
-router.post('/:id/service-usage', authorizeRoles('Super Admin', 'Nurse', 'Doctor'), addServiceUsage);
-router.put('/:id/service-usage/:usageId', authorizeRoles('Super Admin', 'Nurse', 'Doctor'), updateServiceUsage);
+router.get('/:id/discharge-print', authorizePermissions('VIEW_IP_ADMISSION'), printDischargeSummary);
+router.route('/:id').get(authorizePermissions('VIEW_IP_ADMISSION'), getAdmission);
+router.post('/:id/nursing-note', authorizePermissions('CREATE_NURSING_NOTE'), addNursingNote);
+router.post('/:id/vitals', authorizePermissions('RECORD_VITALS'), addVitalRecord);
+router.post('/:id/shift-handover', authorizePermissions('SHIFT_HANDOVER'), addShiftHandover);
+router.post('/:id/doctor-order', authorizePermissions('MANAGE_DOCTOR_ORDERS'), addDoctorOrder);
+router.put('/:id/doctor-order/:orderId', authorizePermissions('MANAGE_DOCTOR_ORDERS'), updateDoctorOrder);
+router.post('/:id/doctor-round', authorizePermissions('CREATE_DOCTOR_ROUND'), addDoctorRound);
+router.post('/:id/service-usage', authorizePermissions('CREATE_SERVICE_USAGE'), addServiceUsage);
+router.put('/:id/service-usage/:usageId', authorizePermissions('CREATE_SERVICE_USAGE'), updateServiceUsage);
 router.delete('/:id/service-usage/:usageId', authorizeRoles('Super Admin'), deleteServiceUsage);
-router.post('/:id/medication', authorizeRoles('Super Admin', 'Nurse', 'Pharmacist', 'Doctor'), addMedication);
-router.delete('/:id/medication/:medId', authorizeRoles('Super Admin', 'Pharmacist'), deleteMedication);
-router.put('/:id/discharge-summary', authorizeRoles(...IP_DISCHARGE_SUMMARY), saveDischargeSummary);
-router.put('/:id/discharge', authorizeRoles(...IP_DISCHARGE), dischargePatient);
-router.put('/:id/transfer-bed', authorizeRoles('Super Admin', 'Admin'), transferBed);
+router.post('/:id/medication', authorizePermissions('MANAGE_IP_MEDICATION'), addMedication);
+router.delete('/:id/medication/:medId', authorizePermissions('MANAGE_IP_MEDICATION'), deleteMedication);
+router.put('/:id/discharge-summary', authorizePermissions('CREATE_DISCHARGE_SUMMARY'), saveDischargeSummary);
+router.put('/:id/discharge', authorizePermissions('PROCESS_DISCHARGE'), dischargePatient);
+router.put('/:id/transfer-bed', authorizePermissions('UPDATE_IP_ADMISSION'), transferBed);
 
 module.exports = router;

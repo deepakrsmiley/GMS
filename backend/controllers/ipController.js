@@ -2,8 +2,6 @@ const asyncHandler = require('../utils/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const IPAdmission = require('../models/IPAdmission');
 const { generateDischargeSummaryPDF } = require('../utils/pdfGenerator');
-const { normalizeRole } = require('../utils/roles');
-
 const DISCHARGE_REQUIRED_FIELDS = [
   'diagnosis',
   'chiefComplaints',
@@ -560,11 +558,8 @@ exports.saveDischargeSummary = asyncHandler(async (req, res, next) => {
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
   if (admission.status === 'discharged') return next(new ErrorResponse('Patient already discharged', 400));
 
-  const role = normalizeRole(req.user.role);
-  if (!['Super Admin', 'Admin', 'Doctor', 'Receptionist'].includes(role)) {
-    return next(new ErrorResponse('Only doctors and receptionists can create discharge summaries', 403));
-  }
-
+  // Authorization is handled by the CREATE_DISCHARGE_SUMMARY permission on the
+  // route — Super Admin controls who can do this via Users & Access checkboxes.
   const details = { ...req.body, completedAt: new Date(), completedBy: req.user._id };
   admission.dischargeDetails = { ...admission.dischargeDetails?.toObject?.() || admission.dischargeDetails || {}, ...details };
   admission.finalDiagnosis = details.diagnosis || admission.finalDiagnosis;
