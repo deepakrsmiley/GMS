@@ -47,7 +47,7 @@ const permissions = {
     'VIEW_APPOINTMENT', 'CREATE_APPOINTMENT', 'UPDATE_APPOINTMENT', 'CANCEL_APPOINTMENT',
     'CREATE_CONSULTATION', 'CREATE_PRESCRIPTION', 'VIEW_PRESCRIPTION', 'CREATE_SERVICE_USAGE',
     'VIEW_IP_ADMISSION', 'CREATE_IP_ADMISSION', 'PROCESS_DISCHARGE',
-    'VIEW_BILLING', 'CREATE_BILLING', 'PAY_BILL', 'VIEW_PENDING_DISCHARGE',
+    'VIEW_BILLING', 'CREATE_BILLING', 'UPDATE_BILLING', 'PAY_BILL', 'VIEW_PENDING_DISCHARGE',
     'VIEW_LAB', 'CREATE_LAB_ORDER',
     'VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT',
     'CREATE_CHANGE_REQUEST', 'VIEW_CHANGE_REQUESTS',
@@ -55,10 +55,11 @@ const permissions = {
   ],
   'Pharmacist': [
     'VIEW_DASHBOARD',
+    'VIEW_PATIENT',
     'VIEW_PRESCRIPTION', 'DISPENSE_PRESCRIPTION',
     'VIEW_PHARMACY', 'MANAGE_PHARMACY', 'CREATE_MEDICINE', 'EDIT_MEDICINE',
     'ADD_PHARMACY_STOCK', 'ADJUST_PHARMACY_STOCK', 'EDIT_PHARMACY_BATCH', 'MANAGE_SUPPLIERS', 'VIEW_EXPIRY_REPORT',
-    'VIEW_BILLING', 'CREATE_BILLING', 'PAY_BILL', 'VIEW_BILLING_REPORTS',
+    'VIEW_BILLING', 'CREATE_BILLING', 'UPDATE_BILLING', 'PAY_BILL', 'VIEW_BILLING_REPORTS',
     'VIEW_IP_ADMISSION',
     'VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT',
     'CREATE_CHANGE_REQUEST', 'VIEW_CHANGE_REQUESTS',
@@ -66,13 +67,14 @@ const permissions = {
   ],
   'Lab Technician': [
     'VIEW_DASHBOARD',
-    'VIEW_LAB', 'CREATE_LAB_ORDER', 'UPDATE_LAB_ORDER', 'UPDATE_LAB_REPORT', 'PRINT_LAB_REPORT',
+    'VIEW_LAB', 'CREATE_LAB_ORDER', 'UPDATE_LAB_ORDER', 'UPDATE_LAB_REPORT', 'PRINT_LAB_REPORT', 'MANAGE_LAB_TESTS',
     'VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT',
     'CREATE_CHANGE_REQUEST', 'VIEW_CHANGE_REQUESTS',
     'VIEW_CHAT', 'VIEW_NOTIFICATIONS',
   ],
   'Accountant': [
     'VIEW_DASHBOARD',
+    'VIEW_PATIENT',
     'VIEW_BILLING', 'CREATE_BILLING', 'UPDATE_BILLING', 'PAY_BILL', 'CANCEL_BILL',
     'VIEW_BILLING_REPORTS', 'VIEW_PENDING_DISCHARGE', 'VIEW_REPORTS',
     'CREATE_CHANGE_REQUEST', 'VIEW_CHANGE_REQUESTS',
@@ -172,6 +174,99 @@ const PERMISSION_GROUPS = {
 
 const ALL_PERMISSIONS = Object.values(PERMISSION_GROUPS).flat();
 
+/**
+ * Granting a module (e.g. Nurse Station) must also unlock the supporting
+ * actions / lookups that module needs, otherwise Super Admin ticks a box
+ * and the page still 403s or hides buttons.
+ */
+const IMPLIED_PERMISSIONS = {
+  VIEW_NURSE_STATION: [
+    'VIEW_IP_ADMISSION',
+    'VIEW_PATIENT',
+    'VIEW_PATIENT_PROFILE',
+    'RECORD_VITALS',
+    'CREATE_NURSING_NOTE',
+    'SHIFT_HANDOVER',
+    'MANAGE_IP_MEDICATION',
+    'MANAGE_DOCTOR_ORDERS',
+    'CREATE_SERVICE_USAGE',
+    'CREATE_LAB_ORDER',
+    'VIEW_LAB',
+    'VIEW_BEDS',
+  ],
+  VIEW_IP_ADMISSION: ['VIEW_PATIENT'],
+  VIEW_BILLING: ['VIEW_PATIENT'],
+  VIEW_PENDING_DISCHARGE: ['VIEW_BILLING', 'VIEW_PATIENT'],
+  VIEW_PHARMACY: ['VIEW_PATIENT'],
+  MANAGE_PHARMACY: ['VIEW_PHARMACY', 'VIEW_PATIENT'],
+  VIEW_PRESCRIPTION: ['VIEW_PATIENT'],
+  DISPENSE_PRESCRIPTION: ['VIEW_PATIENT', 'VIEW_PRESCRIPTION'],
+  VIEW_APPOINTMENT: ['VIEW_PATIENT'],
+  VIEW_OP_QUEUE: ['VIEW_PATIENT'],
+  CREATE_OP_QUEUE: ['VIEW_PATIENT'],
+  CREATE_CONSULTATION: ['VIEW_PATIENT'],
+  CREATE_LAB_ORDER: ['VIEW_LAB'],
+  MANAGE_IP_MEDICATION: ['VIEW_IP_ADMISSION', 'VIEW_PATIENT'],
+  UPDATE_BILLING: ['VIEW_BILLING'],
+  CREATE_BILLING: ['VIEW_BILLING'],
+  PAY_BILL: ['VIEW_BILLING'],
+  MANAGE_STAFF: ['VIEW_STAFF', 'CREATE_STAFF', 'UPDATE_STAFF', 'DELETE_STAFF'],
+  MANAGE_LAB_TESTS: ['VIEW_LAB'],
+  MANAGE_BRANDING: ['MANAGE_SETTINGS'],
+  CREATE_PRESCRIPTION: ['VIEW_PRESCRIPTION', 'VIEW_PATIENT'],
+};
+
+const NURSE_STATION_BUNDLE = [
+  'VIEW_NURSE_STATION',
+  ...IMPLIED_PERMISSIONS.VIEW_NURSE_STATION,
+];
+
+const expandEffectivePermissions = (perms) => {
+  if (!Array.isArray(perms) || perms.length === 0) return [];
+  if (perms.includes('*')) return ['*'];
+  const set = new Set(perms);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const code of [...set]) {
+      const extra = IMPLIED_PERMISSIONS[code];
+      if (!extra) continue;
+      extra.forEach((implied) => {
+        if (!set.has(implied)) {
+          set.add(implied);
+          changed = true;
+        }
+      });
+    }
+  }
+  return [...set];
+};
+
+const looksLikeFullChecklist = (custom, rolePerms = []) =>
+  custom.includes('VIEW_DASHBOARD') ||
+  custom.length >= Math.max(10, Math.ceil((rolePerms.length || 10) * 0.5));
+
+/**
+ * Resolve what a user can actually do.
+ * - Empty custom list → role defaults.
+ * - A short extra list (e.g. only Nurse Station) → union with role defaults
+ *   so Super Admin grants actually work and pharmacy/billing are not dropped.
+ * - A full Staff checklist (has VIEW_DASHBOARD or is large) → use that list
+ *   so boxes Super Admin unchecked stay locked.
+ */
+const resolveEffectivePermissions = (role, stored) => {
+  if (role === 'Super Admin') return ['*'];
+  const rolePerms = permissions[role] || [];
+  const custom = Array.isArray(stored) ? stored.filter(Boolean) : [];
+  if (custom.includes('*')) return ['*'];
+  if (!custom.length) return expandEffectivePermissions(rolePerms);
+
+  const merged = looksLikeFullChecklist(custom, rolePerms)
+    ? custom
+    : [...new Set([...rolePerms, ...custom])];
+  return expandEffectivePermissions(merged);
+};
+
 /** Keep only recognized permission codes (or the '*' wildcard) coming from a request body. */
 const sanitizePermissions = (input) => {
   if (!Array.isArray(input)) return undefined;
@@ -182,4 +277,9 @@ const sanitizePermissions = (input) => {
 module.exports = permissions;
 module.exports.PERMISSION_GROUPS = PERMISSION_GROUPS;
 module.exports.ALL_PERMISSIONS = ALL_PERMISSIONS;
+module.exports.IMPLIED_PERMISSIONS = IMPLIED_PERMISSIONS;
+module.exports.NURSE_STATION_BUNDLE = NURSE_STATION_BUNDLE;
+module.exports.expandEffectivePermissions = expandEffectivePermissions;
+module.exports.resolveEffectivePermissions = resolveEffectivePermissions;
+module.exports.looksLikeFullChecklist = looksLikeFullChecklist;
 module.exports.sanitizePermissions = sanitizePermissions;

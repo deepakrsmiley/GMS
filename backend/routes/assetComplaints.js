@@ -7,21 +7,22 @@ const {
   updateComplaint,
   getComplaintDashboard,
 } = require('../controllers/assetComplaintController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(authenticateUser);
 
-const ALL_STAFF = ['Super Admin', 'Admin', 'Biomedical Engineer', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'];
-const ADMIN_ROLES = ['Super Admin', 'Admin', 'Biomedical Engineer'];
+const VIEW = authorizeAnyPermission('VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT', 'MANAGE_ASSET_COMPLAINTS');
+const CREATE = authorizeAnyPermission('CREATE_ASSET_COMPLAINT', 'MANAGE_ASSET_COMPLAINTS');
+const MANAGE = authorizeAnyPermission('UPDATE_ASSET_COMPLAINT', 'MANAGE_ASSET_COMPLAINTS');
 
-router.get('/dashboard', authorizeRoles(...ALL_STAFF), getComplaintDashboard);
+router.get('/dashboard', VIEW, getComplaintDashboard);
 
 router.route('/')
-  .get(authorizeRoles(...ALL_STAFF), getComplaints)
-  .post(authorizeRoles(...ALL_STAFF), createComplaint);
+  .get(VIEW, getComplaints)
+  .post(CREATE, createComplaint);
 
 router.route('/:id')
-  .get(authorizeRoles(...ALL_STAFF), getComplaint)
-  .put(authorizeRoles(...ADMIN_ROLES), updateComplaint);
+  .get(VIEW, getComplaint)
+  .put(MANAGE, updateComplaint);
 
 module.exports = router;

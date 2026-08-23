@@ -1,19 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const { getServices, createService, updateService, deleteService } = require('../controllers/serviceMasterController');
-const { protect, authorizeRoles } = require('../middleware/auth');
+const { protect, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(protect);
 
-const VIEW_ROLES = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accountant', 'Pharmacist'];
-const MANAGE_ROLES = ['Super Admin', 'Admin'];
+const VIEW_SERVICES = authorizeAnyPermission(
+  'MANAGE_SERVICES',
+  'CREATE_SERVICE_USAGE',
+  'VIEW_NURSE_STATION',
+  'CREATE_BILLING',
+  'VIEW_BILLING',
+  'CREATE_CONSULTATION',
+  'VIEW_IP_ADMISSION',
+);
+const MANAGE_SERVICES = authorizeAnyPermission('MANAGE_SERVICES', 'MANAGE_MASTERS');
 
 router.route('/')
-  .get(authorizeRoles(...VIEW_ROLES), getServices)
-  .post(authorizeRoles(...MANAGE_ROLES), createService);
+  .get(VIEW_SERVICES, getServices)
+  .post(MANAGE_SERVICES, createService);
 
 router.route('/:id')
-  .put(authorizeRoles(...MANAGE_ROLES), updateService)
-  .delete(authorizeRoles(...MANAGE_ROLES), deleteService);
+  .put(MANAGE_SERVICES, updateService)
+  .delete(MANAGE_SERVICES, deleteService);
 
 module.exports = router;

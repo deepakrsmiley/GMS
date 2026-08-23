@@ -108,25 +108,42 @@ const deductMedicineStock = async (items, userId = null) => {
   return deducted;
 };
 
-const restoreMedicineStock = async (deducted = []) => {
+const restoreMedicineStock = async (deducted = [], meta = {}) => {
+  const { userId, remarks, referenceId, referenceModel } = meta;
   for (const entry of deducted) {
     const medicine = await Medicine.findById(entry.medicine);
     if (!medicine) continue;
 
-    medicine.currentStock += entry.quantity;
+    const qtyBefore = medicine.currentStock;
     restoreToBatch(medicine, entry.batch, entry.quantity);
+    syncCurrentStock(medicine);
     medicine.markModified('batches');
     await medicine.save({ validateBeforeSave: true });
+
+    if (userId) {
+      await logStockMovement({
+        medicine,
+        batchNumber: entry.batch,
+        type: 'stock_adjustment_increase',
+        quantityBefore: qtyBefore,
+        quantityAfter: medicine.currentStock,
+        quantityChanged: Number(entry.quantity || 0),
+        userId,
+        referenceId,
+        referenceModel: referenceModel || 'Bill',
+        remarks: remarks || 'Stock restored from bill',
+      });
+    }
   }
 };
 
-const restoreBillItemsStock = async (items = []) => {
+const restoreBillItemsStock = async (items = [], meta = {}) => {
   const entries = getMedicineItems(items).map((item) => ({
     medicine: item.medicine,
     quantity: Number(item.quantity || 0),
-    batch: item.batch,
+    batch: item.batch || item.batchNumber,
   }));
-  await restoreMedicineStock(entries);
+  await restoreMedicineStock(entries, meta);
 };
 
 module.exports = {

@@ -2,7 +2,8 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import LoadingSpinner from './common/LoadingSpinner';
-import permissions from '../constants/permissions';
+import { hasPermission } from '../constants/permissions';
+import { hasRole, normalizeRole } from '../utils/roles';
 
 export default function ProtectedRoute({ children, allowedRoles, requiredPermission }) {
   const { user, loading } = useSelector((s) => s.auth);
@@ -18,23 +19,20 @@ export default function ProtectedRoute({ children, allowedRoles, requiredPermiss
   }
 
   // Super Admin has full bypass
-  if (user.role === 'Super Admin') {
+  if (normalizeRole(user.role) === 'Super Admin') {
     return children;
   }
 
-  // 1. Role-based check if allowedRoles is specified
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/unauthorized" replace />;
-  }
-
-  // 2. Permission-based check if requiredPermission is specified
+  // Permission grants from Super Admin take priority over hardcoded roles
   if (requiredPermission) {
-    const userPermissions = permissions[user.role] || [];
-    const hasPermission = userPermissions.includes(requiredPermission) || userPermissions.includes('*');
-    
-    if (!hasPermission) {
+    if (!hasPermission(user, requiredPermission)) {
       return <Navigate to="/unauthorized" replace />;
     }
+    return children;
+  }
+
+  if (allowedRoles && !hasRole(user.role, allowedRoles)) {
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return children;

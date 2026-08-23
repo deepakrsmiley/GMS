@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { getBranding, updateBranding } = require('../controllers/brandingController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 
 router.get('/', getBranding);
-router.put('/', authenticateUser, authorizeRoles('Super Admin'), updateBranding);
+router.put('/', authenticateUser, authorizeAnyPermission('MANAGE_BRANDING', 'MANAGE_SETTINGS'), updateBranding);
 
 module.exports = router;

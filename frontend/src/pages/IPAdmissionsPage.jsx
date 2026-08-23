@@ -13,7 +13,7 @@ import ServiceUsageModal from '../components/ip/ServiceUsageModal';
 import MedicationLogModal from '../components/ip/MedicationLogModal';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
 import { useBranding } from '../hooks/useBranding';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 
 const ROOM_TYPES = [
   { value: '', label: 'All Types' },
@@ -58,8 +58,9 @@ export default function IPAdmissionsPage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
-  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
-  const viewOnly = hasRole(user?.role, ['Doctor', 'Pharmacist']) && !canAdmit;
+  const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
+  const canSeeDischargeTab = hasPermission(user, 'CREATE_DISCHARGE_SUMMARY') || hasPermission(user, 'PROCESS_DISCHARGE');
+  const viewOnly = hasPermission(user, 'VIEW_IP_ADMISSION') && !canAdmit;
 
   const [tab, setTab] = useState(searchParams.get('tab') === 'discharge' ? 'discharge' : 'admitted');
   const [page, setPage] = useState(1);
@@ -360,7 +361,7 @@ export default function IPAdmissionsPage() {
       <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
         {[
           { id: 'admitted', label: canAdmit ? 'Admissions' : 'IP Patients' },
-          { id: 'discharge', label: 'Discharge Summary' },
+          ...(canSeeDischargeTab ? [{ id: 'discharge', label: 'Discharge Summary' }] : []),
         ].map(({ id, label }) => (
           <button key={id} type="button" onClick={() => setTab(id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`}>

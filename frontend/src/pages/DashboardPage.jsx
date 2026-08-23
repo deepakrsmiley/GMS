@@ -18,13 +18,12 @@ import KpiCard from '../components/common/KpiCard';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { getSocket } from '../services/socket';
 import { format } from 'date-fns';
+import { hasPermission } from '../constants/permissions';
 
 const fetchDashboard = () => api.get('/dashboard/stats').then((r) => r.data.data);
 const fetchDeptAnalytics = () => api.get('/dashboard/department-analytics').then((r) => r.data.data);
 const fetchRecentBills = () => api.get('/billing?limit=5&sort=-createdAt').then((r) => r.data.data);
 const fetchDepartments = () => api.get('/departments').then((r) => r.data.data);
-
-const BILL_VIEW_ROLES = ['Super Admin', 'Admin', 'Receptionist', 'Pharmacist', 'Accountant'];
 
 const BILL_STATUS_BADGE = {
   paid: 'badge-green',
@@ -65,7 +64,7 @@ export default function DashboardPage() {
   const { data, isLoading, refetch } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboard, refetchInterval: 30000 });
   const { data: deptAnalytics } = useQuery({ queryKey: ['deptAnalytics'], queryFn: fetchDeptAnalytics });
   const { data: departments } = useQuery({ queryKey: ['allDepartments'], queryFn: fetchDepartments });
-  const canViewBills = BILL_VIEW_ROLES.includes(user?.role);
+  const canViewBills = hasPermission(user, 'VIEW_BILLING');
   const { data: recentBills } = useQuery({ queryKey: ['recentBills'], queryFn: fetchRecentBills, enabled: canViewBills });
 
   useEffect(() => {

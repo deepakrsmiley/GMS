@@ -19,7 +19,7 @@ import { getSocket } from '../services/socket';
 import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
 import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 
 const statusConfig = {
   waiting: { label: 'Waiting', color: 'badge-yellow', icon: Clock },
@@ -49,8 +49,8 @@ export default function OPQueuePage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
-  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
-  const canLogServices = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Nurse', 'Lab Technician']);
+  const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
+  const canLogServices = hasPermission(user, 'CREATE_SERVICE_USAGE');
   const [showAdd, setShowAdd] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');

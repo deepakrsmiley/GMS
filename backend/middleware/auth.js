@@ -2,7 +2,7 @@ const jwt = require("jsonwebtoken");
 const asyncHandler = require("../utils/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 const User = require("../models/User");
-const permissions = require("../config/permissions");
+const { resolveEffectivePermissions } = require("../config/permissions");
 const { normalizeRole, rolesMatch, isSuperAdmin } = require("../utils/roles");
 
 // Authenticate user middleware
@@ -76,13 +76,8 @@ const authorizeRoles =
     next();
   };
 
-const resolveUserPermissions = (user) => {
-  const roleKey = normalizeRole(user.role);
-  if (Array.isArray(user.permissions) && user.permissions.length > 0) {
-    return user.permissions;
-  }
-  return permissions[roleKey] || [];
-};
+const resolveUserPermissions = (user) =>
+  resolveEffectivePermissions(normalizeRole(user.role), user.permissions);
 
 // Authorize permissions middleware (ALL listed codes required)
 const authorizePermissions =
@@ -145,6 +140,7 @@ module.exports = {
   authorizeRoles,
   authorizePermissions,
   authorizeAnyPermission,
+  resolveUserPermissions,
   protect,
   authorize,
 };

@@ -32,7 +32,6 @@ const {
 } = require('../controllers/medicineExpiryController');
 const {
   authenticateUser,
-  authorizeRoles,
   authorizeAnyPermission,
 } = require('../middleware/auth');
 const advancedResults = require('../middleware/advancedResults');
@@ -59,10 +58,19 @@ const ADD_STOCK = authorizeAnyPermission('ADD_PHARMACY_STOCK');
 const ADJUST_STOCK = authorizeAnyPermission('ADJUST_PHARMACY_STOCK');
 const DELETE_MED = authorizeAnyPermission('DELETE_MEDICINE');
 
-// Search used by billing / OP / doctors — keep role gate + pharmacy viewers
+// Search used by billing / OP / Nurse Station / doctors — permission-driven
 router.get(
   '/search',
-  authorizeRoles('Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist'),
+  authorizeAnyPermission(
+    'VIEW_PHARMACY',
+    'MANAGE_PHARMACY',
+    'MANAGE_IP_MEDICATION',
+    'VIEW_NURSE_STATION',
+    'DISPENSE_PRESCRIPTION',
+    'CREATE_PRESCRIPTION',
+    'CREATE_BILLING',
+    'VIEW_BILLING',
+  ),
   searchMedicines,
 );
 
@@ -85,7 +93,13 @@ router.route('/')
 
 router.get(
   '/prescriptions/:id/print',
-  authorizeRoles('Super Admin', 'Admin', 'Doctor', 'Pharmacist', 'Patient'),
+  authorizeAnyPermission(
+    'VIEW_PRESCRIPTION',
+    'VIEW_PHARMACY',
+    'DISPENSE_PRESCRIPTION',
+    'CREATE_PRESCRIPTION',
+    'VIEW_OWN_PRESCRIPTIONS',
+  ),
   printPrescription,
 );
 router.post('/prescriptions/:id/dispense', DISPENSE, dispensePrescription);

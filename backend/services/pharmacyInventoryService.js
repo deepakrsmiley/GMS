@@ -1,6 +1,7 @@
 const Medicine = require('../models/Medicine');
 const StockMovement = require('../models/StockMovement');
 const Prescription = require('../models/Prescription');
+const Bill = require('../models/Bill');
 const { getAvailableStock, getExpiredBatches } = require('../utils/pharmacyStockHelper');
 
 const startOfDay = (d = new Date()) => {
@@ -303,7 +304,16 @@ exports.getStockMovements = async (filters = {}) => {
   return StockMovement.find(query).sort('-transactionDate').limit(filters.limit || 100).populate('addedBy', 'name').lean();
 };
 
-exports.getReportData = async (reportType) => {
+const dayRange = (dateStr) => {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  const start = new Date(d);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(d);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
+exports.getReportData = async (reportType, options = {}) => {
   switch (reportType) {
     case 'low-stock': return { title: 'Low Stock Report', rows: await exports.getLowStockList() };
     case 'out-of-stock': return { title: 'Out Of Stock Report', rows: await exports.getOutOfStockList() };
@@ -331,6 +341,63 @@ exports.getReportData = async (reportType) => {
     case 'stock-movement': {
       const rows = await exports.getStockMovements({ limit: 500 });
       return { title: 'Stock Movement Report', rows };
+    }
+    case 'today-stock-in': {
+      const { start, end } = dayRange(options.date);
+      const rows = await StockMovement.find({
+        type: 'stock_in',
+        transactionDate: { $gte: start, $lte: end },
+      }).sort('-transactionDate').populate('supplier', 'name').populate('addedBy', 'name').lean();
+      return { title: `Today Stock Added (${start.toLocaleDateString('en-IN')})`, rows };
+    }
+    case 'today-dispensing': {
+      const { start, end } = dayRange(options.date);
+      const rows = await StockMovement.find({
+        type: { $in: ['dispense', 'bill_deduct', 'sale'] },
+        transactionDate: { $gte: start, $lte: end },
+      }).sort('-transactionDate').populate('addedBy', 'name').lean();
+      return { title: `Daily Dispensed Medicines (${start.toLocaleDateString('en-IN')})`, rows };
+    }
+    case 'stock-vs-bill': {
+      const { start, end } = dayRange(options.date);
+      const bills = await Bill.find({
+        createdAt: { $gte: start, $lte: end },
+        status: { $ne: 'cancelled' },
+      }).select('items billNumber').lean();
+      const billed = {};
+      bills.forEach((bill) => {
+        (bill.items || []).forEach((item) => {
+          if (item.type !== 'medicine' || !item.medicine) return;
+          const key = String(item.medicine);
+          if (!billed[key]) billed[key] = { medicineName: item.description || item.name || 'Medicine', billedQty: 0 };
+          billed[key].billedQty += Number(item.quantity || 0);
+        });
+      });
+      const movements = await StockMovement.find({
+        type: { $in: ['bill_deduct', 'sale', 'dispense'] },
+        transactionDate: { $gte: start, $lte: end },
+      }).lean();
+      const stocked = {};
+      movements.forEach((m) => {
+        const key = String(m.medicine);
+        if (!stocked[key]) stocked[key] = { medicineName: m.medicineName, stockQty: 0 };
+        stocked[key].stockQty += Math.abs(Number(m.quantityChanged || 0));
+      });
+      const keys = new Set([...Object.keys(billed), ...Object.keys(stocked)]);
+      const rows = [...keys].map((key) => {
+        const b = billed[key] || { medicineName: stocked[key]?.medicineName, billedQty: 0 };
+        const s = stocked[key] || { medicineName: b.medicineName, stockQty: 0 };
+        const billedQty = Number(b.billedQty || 0);
+        const stockQty = Number(s.stockQty || 0);
+        return {
+          medicineName: b.medicineName || s.medicineName,
+          billedQty,
+          stockQty,
+          difference: stockQty - billedQty,
+          matched: billedQty === stockQty,
+        };
+      }).sort((a, b) => Number(a.matched) - Number(b.matched) || a.medicineName.localeCompare(b.medicineName));
+      return { title: `Stock vs Bill Audit (${start.toLocaleDateString('en-IN')})`, rows };
     }
     default: return null;
   }

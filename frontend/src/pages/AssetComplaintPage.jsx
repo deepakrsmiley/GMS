@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Wrench, Pencil } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
+import { useSelector } from 'react-redux';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
+import { hasPermission } from '../constants/permissions';
 import '../styles/assetMaster.css';
 
 const ALL_STATUSES = [
@@ -70,6 +72,9 @@ const inr = (n) =>
     : `₹${Number(n).toLocaleString('en-IN')}`;
 
 export default function AssetComplaintPage() {
+  const { user } = useSelector((s) => s.auth);
+  const canRaise = hasPermission(user, 'CREATE_ASSET_COMPLAINT');
+  const canUpdate = hasPermission(user, 'UPDATE_ASSET_COMPLAINT') || hasPermission(user, 'MANAGE_ASSET_COMPLAINTS');
   const [showAdd, setShowAdd] = useState(false);
   const [updateComplaint, setUpdateComplaint] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
@@ -92,8 +97,13 @@ export default function AssetComplaintPage() {
   });
 
   const { data: assets } = useQuery({
-    queryKey: ['assets'],
-    queryFn: () => api.get('/assets').then((r) => r.data.data),
+    queryKey: ['assets', 'complaint-picker'],
+    queryFn: () => api.get('/assets', {
+      params: { limit: 500 },
+      skipErrorToast: true,
+    }).then((r) => r.data.data),
+    // Only needed when raising a complaint (asset dropdown)
+    enabled: showAdd,
   });
 
   const { register, handleSubmit, reset } = useForm();
@@ -176,9 +186,11 @@ export default function AssetComplaintPage() {
             Equipment issues, technician assignment, and repair tracking
           </p>
         </div>
-        <button type="button" onClick={openCreate} className="am-btn am-btn--primary">
-          <Plus size={14} /> Raise complaint
-        </button>
+        {canRaise && (
+          <button type="button" onClick={openCreate} className="am-btn am-btn--primary">
+            <Plus size={14} /> Raise complaint
+          </button>
+        )}
       </div>
 
       <div className="am-kpi">
@@ -271,16 +283,18 @@ export default function AssetComplaintPage() {
                     <td>{formatDate(c.complaintDate)}</td>
                     <td>{inr(c.repairCost)}</td>
                     <td>
-                      <div className="am-row-actions">
-                        <button
-                          type="button"
-                          className="am-icon-btn"
-                          title="Update status"
-                          onClick={() => openUpdate(c)}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      </div>
+                      {canUpdate && (
+                        <div className="am-row-actions">
+                          <button
+                            type="button"
+                            className="am-icon-btn"
+                            title="Update status"
+                            onClick={() => openUpdate(c)}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

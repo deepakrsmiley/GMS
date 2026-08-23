@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const asyncHandler = require("../utils/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 const Bill = require("../models/Bill");
@@ -96,6 +97,108 @@ const calculateItemAmounts = (items = []) =>
     const gstAmount = lineTotal * ((Number(normalized.gstPercent) || 0) / 100);
     return { ...normalized, gstAmount, totalAmount: lineTotal + gstAmount };
   });
+
+const VALID_CATEGORIES = [
+  "Consultation", "Pharmacy", "Laboratory", "Admission", "Room",
+  "ICU", "Procedure", "Nursing", "Miscellaneous",
+];
+const VALID_TYPES = [
+  "consultation", "procedure", "medicine", "lab", "room", "nursing", "admission", "other",
+];
+const VALID_REF_MODELS = [
+  "OPRegistration", "IPAdmission", "LabTest", "Prescription", "Patient", "Medicine",
+];
+
+const asObjectId = (value) => {
+  if (!value) return undefined;
+  const raw = value._id || value;
+  const str = String(raw);
+  if (!mongoose.Types.ObjectId.isValid(str)) return undefined;
+  const id = new mongoose.Types.ObjectId(str);
+  return String(id) === str ? id : undefined;
+};
+
+const asDate = (value) => {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+};
+
+const sanitizeBillItems = (items = []) =>
+  calculateItemAmounts(
+    items.map((raw) => {
+      const category = VALID_CATEGORIES.includes(raw.category)
+        ? raw.category
+        : "Miscellaneous";
+      const type = VALID_TYPES.includes(raw.type)
+        ? raw.type
+        : CATEGORY_TYPE_MAP[category] || "other";
+      const keepId = asObjectId(raw._id);
+      return {
+        ...(keepId ? { _id: keepId } : {}),
+        category,
+        type,
+        description: String(raw.description || raw.name || "Charge").trim() || "Charge",
+        name: raw.name || raw.description,
+        quantity: Number(raw.quantity || 0),
+        unitPrice: Number(raw.unitPrice || 0),
+        gstPercent: Number(raw.gstPercent || 0),
+        medicine: asObjectId(raw.medicine),
+        batch: raw.batch || raw.batchNumber || undefined,
+        batchNumber: raw.batchNumber || raw.batch || undefined,
+        genericName: raw.genericName || undefined,
+        mrp: raw.mrp != null ? Number(raw.mrp) : undefined,
+        hsnCode: raw.hsnCode || undefined,
+        unitOfMeasure: raw.unitOfMeasure || "Nos",
+        expiryDate: asDate(raw.expiryDate),
+        mfgDate: asDate(raw.mfgDate),
+        discountPercent: Number(raw.discountPercent || 0),
+        discountAmount: Number(raw.discountAmount || 0),
+        referenceId: asObjectId(raw.referenceId),
+        referenceModel: VALID_REF_MODELS.includes(raw.referenceModel)
+          ? raw.referenceModel
+          : undefined,
+      };
+    }),
+  );
+
+const stockableMedicineItems = (items = []) =>
+  getMedicineItems(items).filter((item) => item.referenceModel !== "Prescription");
+
+const stockFingerprint = (items = []) =>
+  stockableMedicineItems(items)
+    .map((item) =>
+      [
+        String(item.medicine?._id || item.medicine || ""),
+        String(item.batch || item.batchNumber || ""),
+        Number(item.quantity || 0),
+      ].join(":"),
+    )
+    .sort()
+    .join("|");
+
+const safeStockRollback = async (fn) => {
+  try {
+    await fn();
+  } catch (_) { /* never hide the original save/update error */ }
+};
+
+const toBillError = (error) => {
+  if (error instanceof ErrorResponse) return error;
+  if (error.name === "ValidationError") {
+    return new ErrorResponse(
+      Object.values(error.errors || {}).map((e) => e.message).join(", ") || "Invalid bill data",
+      400,
+    );
+  }
+  if (error.name === "CastError") {
+    return new ErrorResponse("Invalid bill data. Please refresh and try again.", 400);
+  }
+  if (error.code === 11000) {
+    return new ErrorResponse("This bill could not be saved because a value already exists. Please refresh and try again.", 400);
+  }
+  return new ErrorResponse(error.message || "Could not save bill", error.statusCode || 400);
+};
 
 const toPlain = (value) => JSON.parse(JSON.stringify(value || null));
 
@@ -351,8 +454,7 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   req.body.createdBy = req.user._id;
   if (!req.body.billType) req.body.billType = "unified";
 
-  req.body.items = await enrichMedicineItems(req.body.items);
-  req.body.items = calculateItemAmounts(req.body.items);
+  req.body.items = sanitizeBillItems(await enrichMedicineItems(req.body.items));
 
   if (requirePharmacistBillScope(req, req.body, next)) return;
 
@@ -391,7 +493,11 @@ exports.createBill = asyncHandler(async (req, res, next) => {
     bill = await Bill.create(req.body);
     await markSourcesAsBilled(req.body.items, bill._id);
   } catch (error) {
-    await restoreMedicineStock(deductedStock);
+    await restoreMedicineStock(deductedStock, {
+      userId: req.user._id,
+      remarks: 'Stock restored — bill create failed',
+      referenceModel: 'Bill',
+    });
     throw error;
   }
 
@@ -448,57 +554,69 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
   delete update.reason;
   delete update.auditReason;
 
-  // Gate stock handling on whether medicines are actually present in the
-  // old/new item sets, rather than on the whole bill's category. This lets
-  // mixed IP bills (Room + Consultation + Pharmacy items together) have their
-  // medicine lines correctly adjusted in stock even though the bill itself
-  // isn't a "pure pharmacy" bill.
-  const oldHasMedicine = getMedicineItems(oldBill.items || []).length > 0;
+  let stockAdjusted = false;
+  let sanitizedItems = null;
 
   if (update.items) {
-    update.items = await enrichMedicineItems(update.items);
-    update.items = calculateItemAmounts(update.items);
-    const newHasMedicine = getMedicineItems(update.items).length > 0;
+    sanitizedItems = sanitizeBillItems(await enrichMedicineItems(update.items));
+    const oldStockable = stockableMedicineItems(oldBill.items || []);
+    const newStockable = stockableMedicineItems(sanitizedItems);
+    const stockChanged = stockFingerprint(oldBill.items) !== stockFingerprint(sanitizedItems);
 
-    if (oldHasMedicine || newHasMedicine) {
+    if (stockChanged && (oldStockable.length || newStockable.length)) {
       try {
-        await restoreBillItemsStock(bill.items);
-        await validateMedicineStock(update.items);
-        await deductMedicineStock(getMedicineItems(update.items), req.user._id);
+        await restoreBillItemsStock(oldStockable, {
+          userId: req.user._id,
+          remarks: `Stock restored before bill edit: ${reason}`,
+          referenceId: bill._id,
+          referenceModel: 'Bill',
+        });
+        await validateMedicineStock(newStockable);
+        await deductMedicineStock(newStockable, req.user._id);
+        stockAdjusted = true;
       } catch (error) {
-        await deductMedicineStock(
-          getMedicineItems(oldBill.items),
-          req.user._id,
-        );
-        throw error;
+        await safeStockRollback(() => deductMedicineStock(oldStockable, req.user._id));
+        return next(toBillError(error));
       }
     }
+
+    bill.items = sanitizedItems;
+    bill.markModified("items");
   }
 
-  Object.assign(bill, update);
+  if (update.discount != null) {
+    bill.discount = Number(update.discount) || 0;
+  }
+
   const auditEntries = buildBillEditEntries(
     oldBill,
     {
       ...toPlain(bill.toObject()),
-      ...toPlain(update),
+      items: sanitizedItems || oldBill.items,
+      discount: bill.discount,
       billNumber: bill.billNumber,
     },
     req,
     reason,
   );
+  if (!Array.isArray(bill.editHistory)) bill.editHistory = [];
   if (auditEntries.length) bill.editHistory.push(...auditEntries);
 
   try {
     await bill.save();
   } catch (error) {
-    if (update.items) {
-      const newHasMedicine = getMedicineItems(update.items).length > 0;
-      if (newHasMedicine) await restoreBillItemsStock(update.items);
-      if (oldHasMedicine || newHasMedicine) {
-        await deductMedicineStock(getMedicineItems(oldBill.items), req.user._id);
-      }
+    if (stockAdjusted && sanitizedItems) {
+      await safeStockRollback(async () => {
+        await restoreBillItemsStock(stockableMedicineItems(sanitizedItems), {
+          userId: req.user._id,
+          remarks: 'Stock restored — bill save failed',
+          referenceId: bill._id,
+          referenceModel: 'Bill',
+        });
+        await deductMedicineStock(stockableMedicineItems(oldBill.items), req.user._id);
+      });
     }
-    throw error;
+    return next(toBillError(error));
   }
 
   bill = await Bill.findById(req.params.id)
@@ -516,19 +634,38 @@ exports.cancelBill = asyncHandler(async (req, res, next) => {
   if (bill.status === "cancelled")
     return next(new ErrorResponse("Bill is already cancelled", 400));
 
+  const reason = (req.body.reason || req.body.auditReason || "").trim();
+  if (!reason) {
+    return next(new ErrorResponse("Please enter a reason to cancel this bill", 400));
+  }
+
   const medicineItems = getMedicineItems(bill.items).filter(
     (i) => i.referenceModel !== "Prescription",
   );
   if (medicineItems.length > 0) {
-    await restoreBillItemsStock(bill.items);
+    await restoreBillItemsStock(bill.items, {
+      userId: req.user._id,
+      remarks: `Bill cancelled: ${reason}`,
+      referenceId: bill._id,
+      referenceModel: 'Bill',
+    });
   }
 
   await unmarkSourcesAsBilled(bill.items, bill._id);
 
   bill.status = "cancelled";
-  bill.notes = req.body.reason
-    ? `${bill.notes ? `${bill.notes} | ` : ""}Cancelled: ${req.body.reason}`
-    : bill.notes;
+  bill.notes = `${bill.notes ? `${bill.notes} | ` : ""}Cancelled: ${reason}`;
+  if (!Array.isArray(bill.editHistory)) bill.editHistory = [];
+  bill.editHistory.push({
+    billNumber: bill.billNumber,
+    user: req.user._id,
+    userName: req.user.name,
+    actionType: "cancel",
+    field: "status",
+    previousValue: bill.status,
+    newValue: "cancelled",
+    reason,
+  });
   await bill.save();
 
   const populated = await Bill.findById(bill._id)

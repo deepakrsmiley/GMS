@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useSelector } from 'react-redux';
 import api from '../../services/api';
 import Modal from '../common/Modal';
-import { hasRole } from '../../utils/roles';
+import { hasPermission } from '../../constants/permissions';
 
 const FREQUENCIES = ['OD', 'BD', 'TD', 'QD', 'SOS', 'HS', 'AC', 'PC', 'STAT'];
 const ROUTES = ['oral', 'IV', 'IM', 'SC', 'topical', 'inhalation', 'sublingual'];
@@ -53,7 +53,7 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
   const [searching, setSearching] = useState(false);
 
   const isDischarged = admission?.status === 'discharged';
-  const canDelete = hasRole(user?.role, ['Super Admin', 'Pharmacist']);
+  const canDelete = hasPermission(user, 'MANAGE_IP_MEDICATION');
 
   useEffect(() => {
     if (isOpen) {

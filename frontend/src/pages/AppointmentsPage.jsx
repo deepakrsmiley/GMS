@@ -8,7 +8,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 
 const STATUS_STYLES = {
   scheduled: 'badge-blue',
@@ -42,7 +42,7 @@ const EMPTY_FORM = {
 
 export default function AppointmentsPage() {
   const { user } = useSelector((s) => s.auth);
-  const canBook = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist']);
+  const canBook = hasPermission(user, 'CREATE_APPOINTMENT');
   const qc = useQueryClient();
 
   const [dateFilter, setDateFilter] = useState(todayStr());

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { useBranding } from '../hooks/useBranding';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 import MedicationLogModal from '../components/ip/MedicationLogModal';
 import ServiceUsageModal from '../components/ip/ServiceUsageModal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -81,9 +81,15 @@ export default function NurseStationPage() {
   const [showMedModal, setShowMedModal] = useState(false);
   const [showProcModal, setShowProcModal] = useState(false);
 
-  const canNurseWrite = hasRole(user?.role, ['Super Admin', 'Admin', 'Nurse']);
-  const canDoctorOrder = hasRole(user?.role, ['Super Admin', 'Admin', 'Doctor']);
-  const canAckOrder = hasRole(user?.role, ['Super Admin', 'Admin', 'Doctor', 'Nurse']);
+  const hasNurseStation = hasPermission(user, 'VIEW_NURSE_STATION');
+  const canRecordVitals = hasNurseStation || hasPermission(user, 'RECORD_VITALS');
+  const canAddNotes = hasNurseStation || hasPermission(user, 'CREATE_NURSING_NOTE');
+  const canHandover = hasNurseStation || hasPermission(user, 'SHIFT_HANDOVER');
+  const canAddMeds = hasNurseStation || hasPermission(user, 'MANAGE_IP_MEDICATION');
+  const canAddProcedures = hasNurseStation || hasPermission(user, 'CREATE_SERVICE_USAGE');
+  const canAddLab = hasNurseStation || hasPermission(user, 'CREATE_LAB_ORDER');
+  const canDoctorOrder = hasNurseStation || hasPermission(user, 'MANAGE_DOCTOR_ORDERS');
+  const canAckOrder = hasNurseStation || hasPermission(user, 'MANAGE_DOCTOR_ORDERS');
 
   const boardQ = useQuery({
     queryKey: ['nurse-station', wardFilter],
@@ -420,7 +426,7 @@ export default function NurseStationPage() {
 
                 {tab === 'vitals' && (
                   <>
-                    {canNurseWrite && (
+                    {canRecordVitals && (
                       <form
                         className="ns-form"
                         onSubmit={(e) => {
@@ -530,7 +536,7 @@ export default function NurseStationPage() {
 
                 {tab === 'notes' && (
                   <>
-                    {canNurseWrite && (
+                    {(canAddNotes || canHandover) && (
                       <>
                         <form
                           className="ns-form"
@@ -654,7 +660,7 @@ export default function NurseStationPage() {
                 {tab === 'meds' && (
                   <>
                     <div className="ns-actions" style={{ marginBottom: '0.85rem' }}>
-                      {canNurseWrite && (
+                      {canAddMeds && (
                         <button type="button" className="ns-btn primary" onClick={() => setShowMedModal(true)}>
                           <Pill size={14} /> Give / chart medicine
                         </button>
@@ -696,7 +702,7 @@ export default function NurseStationPage() {
                 {tab === 'procedures' && (
                   <>
                     <div className="ns-actions" style={{ marginBottom: '0.85rem' }}>
-                      {canNurseWrite && (
+                      {canAddProcedures && (
                         <button type="button" className="ns-btn primary" onClick={() => setShowProcModal(true)}>
                           <Stethoscope size={14} /> Log procedure / machine
                         </button>
@@ -733,7 +739,7 @@ export default function NurseStationPage() {
 
                 {tab === 'lab' && (
                   <>
-                    {canNurseWrite && (
+                    {canAddLab && (
                       <form
                         className="ns-form"
                         onSubmit={(e) => {

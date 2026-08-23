@@ -38,13 +38,17 @@ const toAvatarDataUri = (user) => {
 
 /**
  * Public JSON shape for user responses — includes `avatar` data URI, omits raw Buffer.
+ * `permissions` is the effective set (role defaults ∪ Super Admin grants).
  */
 const serializeUser = (userDoc) => {
   if (!userDoc) return null;
+  const { resolveEffectivePermissions } = require('../config/permissions');
+  const { normalizeRole } = require('./roles');
   const u = typeof userDoc.toObject === 'function'
     ? userDoc.toObject({ flattenMaps: true })
     : { ...userDoc };
   u.avatar = toAvatarDataUri(userDoc);
+  u.permissions = resolveEffectivePermissions(normalizeRole(u.role), u.permissions);
   delete u.profilePhoto;
   delete u.password;
   delete u.resetPasswordOTP;

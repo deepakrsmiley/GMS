@@ -33,7 +33,7 @@ router.use(authenticateUser);
 // because these routes were gated by a hardcoded role list instead).
 const VIEW_BILLING = authorizeAnyPermission('VIEW_BILLING', 'CREATE_BILLING', 'UPDATE_BILLING', 'PAY_BILL');
 const CREATE_BILLING = authorizeAnyPermission('CREATE_BILLING');
-const UPDATE_BILLING = authorizeAnyPermission('UPDATE_BILLING');
+const UPDATE_BILLING = authorizeAnyPermission('UPDATE_BILLING', 'CREATE_BILLING');
 const PAY_BILL = authorizeAnyPermission('PAY_BILL');
 const CANCEL_BILL = authorizeAnyPermission('CANCEL_BILL');
 const VIEW_BILLING_REPORTS = authorizeAnyPermission('VIEW_BILLING_REPORTS', 'VIEW_BILLING');

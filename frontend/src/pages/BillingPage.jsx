@@ -8,6 +8,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   } from 'lucide-react';
   import toast from 'react-hot-toast';
   import api from '../services/api';
+  import { hasPermission } from '../constants/permissions';
   import Modal from '../components/common/Modal';
   import DataTable from '../components/common/DataTable';
   import InvoicePrint from '../components/billing/InvoicePrint';
@@ -394,10 +395,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     // bill — mirrors the backend's requirePharmacistBillScope check.
     const canEditBill = (bill) => {
       if (!bill || bill.status === 'cancelled') return false;
-      if (user?.role === 'Pharmacist') {
-        return bill.billType === 'pharmacy' || bill.billType === 'ip';
+      if (hasPermission(user, 'UPDATE_BILLING')) return true;
+      if (hasPermission(user, 'CREATE_BILLING') && (bill.billType === 'pharmacy' || bill.billType === 'ip')) {
+        return hasPermission(user, 'VIEW_PHARMACY') || hasPermission(user, 'DISPENSE_PRESCRIPTION');
       }
-      return ['Super Admin', 'Admin', 'Receptionist', 'Accountant'].includes(user?.role);
+      return false;
     };
 
     const openEditBill = (bill) => {

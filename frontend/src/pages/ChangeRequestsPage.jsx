@@ -13,7 +13,7 @@ import {
 import api from '../services/api';
 import Modal from '../components/common/Modal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 import '../styles/changeRequests.css';
 
 const CATEGORIES = [
@@ -65,7 +65,7 @@ const categoryLabel = (value) =>
 export default function ChangeRequestsPage() {
   const qc = useQueryClient();
   const { user } = useSelector((s) => s.auth);
-  const canReview = hasRole(user?.role, ['Super Admin', 'Admin']);
+  const canReview = hasPermission(user, 'REVIEW_CHANGE_REQUESTS');
 
   const [tab, setTab] = useState(canReview ? 'inbox' : 'mine');
   const [showCreate, setShowCreate] = useState(false);

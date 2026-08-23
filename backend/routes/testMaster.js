@@ -1,23 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const { getTests, lookupTest, createTest, updateTest, deleteTest } = require('../controllers/testMasterController');
-const { protect, authorizeRoles } = require('../middleware/auth');
+const { protect, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(protect);
 
-// Everyone on staff can view test prices (lab technician, doctor, nurse, receptionist, pharmacist, admin...)
-const VIEW_ROLES = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Pharmacist', 'Lab Technician'];
-// Only these roles can add/edit/deactivate prices in the master
-const MANAGE_ROLES = ['Super Admin', 'Admin', 'Lab Technician'];
+const VIEW_TESTS = authorizeAnyPermission(
+  'VIEW_LAB',
+  'CREATE_LAB_ORDER',
+  'MANAGE_LAB_TESTS',
+  'VIEW_NURSE_STATION',
+  'CREATE_CONSULTATION',
+);
+const MANAGE_TESTS = authorizeAnyPermission('MANAGE_LAB_TESTS', 'MANAGE_MASTERS', 'UPDATE_LAB_REPORT');
 
-router.get('/lookup', authorizeRoles(...VIEW_ROLES), lookupTest);
+router.get('/lookup', VIEW_TESTS, lookupTest);
 
 router.route('/')
-  .get(authorizeRoles(...VIEW_ROLES), getTests)
-  .post(authorizeRoles(...MANAGE_ROLES), createTest);
+  .get(VIEW_TESTS, getTests)
+  .post(MANAGE_TESTS, createTest);
 
 router.route('/:id')
-  .put(authorizeRoles(...MANAGE_ROLES), updateTest)
-  .delete(authorizeRoles(...MANAGE_ROLES), deleteTest);
+  .put(MANAGE_TESTS, updateTest)
+  .delete(MANAGE_TESTS, deleteTest);
 
 module.exports = router;

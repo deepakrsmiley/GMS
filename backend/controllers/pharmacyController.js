@@ -79,6 +79,24 @@ exports.createMedicine = asyncHandler(async (req, res, next) => {
   const medicine = await Medicine.create(data);
   syncCurrentStock(medicine);
   await medicine.save();
+
+  const initialQty = Number(medicine.currentStock || 0);
+  if (initialQty > 0) {
+    const firstBatch = (medicine.batches || [])[0];
+    await logStockMovement({
+      medicine,
+      batchNumber: firstBatch?.batchNumber,
+      type: 'stock_in',
+      quantityBefore: 0,
+      quantityAfter: medicine.currentStock,
+      quantityChanged: initialQty,
+      unitPrice: firstBatch?.purchasePrice || medicine.purchasePrice,
+      supplier: medicine.supplier,
+      userId: req.user._id,
+      remarks: 'Initial stock on new medicine',
+    });
+  }
+
   await logActivity(req, {
     action: 'Medicine Created',
     module: 'Pharmacy',
@@ -661,10 +679,13 @@ exports.sendInventoryNotification = asyncHandler(async (req, res) => {
 });
 
 exports.exportReport = asyncHandler(async (req, res, next) => {
-  const reportData = await inventoryService.getReportData(req.params.type);
+  const reportData = await inventoryService.getReportData(req.params.type, {
+    date: req.query.date,
+  });
   if (!reportData) return next(new ErrorResponse('Invalid report type', 400));
 
   const format = (req.query.format || 'pdf').toLowerCase();
+  if (format === 'json') return res.status(200).json({ success: true, ...reportData });
   if (format === 'excel' || format === 'xlsx') return exportExcel(req.params.type, reportData, res);
   return exportPdf(req.params.type, reportData, res);
 });

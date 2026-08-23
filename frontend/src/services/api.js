@@ -23,6 +23,9 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let lastToastKey = '';
+let lastToastAt = 0;
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -35,12 +38,17 @@ api.interceptors.response.use(
       localStorage.removeItem('hms_token');
 
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+        window.location.href = '/login?reason=session_expired';
       }
-    } else {
-      // Always show the error now — 404s were being hidden before,
-      // which made failed requests look like "nothing happened".
-      toast.error(message);
+    } else if (!error.config?.skipErrorToast) {
+      // Avoid double toasts (React Strict Mode / parallel 403s)
+      const key = `${error.response?.status || ''}:${message}`;
+      const now = Date.now();
+      if (key !== lastToastKey || now - lastToastAt > 2500) {
+        lastToastKey = key;
+        lastToastAt = now;
+        toast.error(message);
+      }
     }
 
     return Promise.reject(error);

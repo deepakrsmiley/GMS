@@ -26,7 +26,6 @@ import { useSearchParams, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { hasPermission, hasPharmacyPermission } from "../constants/permissions";
-import { hasRole } from "../utils/roles";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import api from "../services/api";
@@ -1111,7 +1110,7 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
     return lock;
   };
 
-  const canBypassEditLock = hasRole(user?.role, ["Super Admin", "Admin"]);
+  const canBypassEditLock = hasPermission(user, "REVIEW_CHANGE_REQUESTS");
 
   // Apply the in/low/out-of-stock quick filter on the current page of results
   const filteredMedicines = useMemo(() => {

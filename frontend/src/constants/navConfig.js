@@ -18,8 +18,7 @@ export const NAV_ITEMS = [
   { id: 'billing',          to: '/billing',                 label: 'Billing',            icon: 'Receipt',         permission: 'VIEW_BILLING',           roles: ['Super Admin', 'Admin', 'Pharmacist'] },
   { id: 'prescriptions',    to: '/pharmacy?tab=prescriptions', label: 'Prescriptions',  icon: 'ClipboardList',   permission: 'VIEW_PRESCRIPTION',      roles: ['Super Admin', 'Doctor', 'Pharmacist', 'Receptionist'] },
   { id: 'pharmacy',         to: '/pharmacy?tab=prescriptions', label: 'Pharmacy',        icon: 'Pill',            permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-  { id: 'pharmacy-billing', to: '/pharmacy-billing',        label: 'Pharmacy Reports',   icon: 'FileBarChart2',   permission: 'VIEW_BILLING',           roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-  { id: 'expiry-report',    to: '/pharmacy/expiry-report',  label: 'Medicine Expiry Report', icon: 'AlertTriangle', permission: 'VIEW_PHARMACY',       roles: ['Super Admin', 'Admin', 'Pharmacist'] },
+  { id: 'pharmacy-reports', to: '/pharmacy-reports',        label: 'Pharmacy Reports',   icon: 'FileBarChart2',   permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
   { id: 'lab-orders',       to: '/lab',                     label: 'Lab Orders',         icon: 'FlaskConical',    permission: 'VIEW_LAB',               roles: ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist'] },
   { id: 'lab-reports',      to: '/lab?tab=reports',         label: 'Lab Reports',        icon: 'FileBarChart',    permission: 'VIEW_LAB',               roles: ['Super Admin', 'Admin', 'Lab Technician'] },
   { id: 'biomedical',       to: '/biomedical',              label: 'Biomedical',         icon: 'Wrench',          permission: 'VIEW_BEMS',              roles: ['Super Admin', 'Admin', 'Biomedical Engineer'] },
@@ -38,8 +37,9 @@ export const ROUTE_ACCESS = {
   consultation:      ['Super Admin', 'Doctor', 'Receptionist'],
   'ip-admissions':   ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Pharmacist', 'Nurse'],
   'nurse-station':   ['Super Admin', 'Admin', 'Doctor', 'Nurse'],
-  billing:           ['Super Admin', 'Admin', 'Pharmacist'],
+  billing:           ['Super Admin', 'Admin', 'Pharmacist', 'Accountant', 'Receptionist'],
   'pharmacy-billing':['Super Admin', 'Admin', 'Pharmacist'],
+  'pharmacy-reports':['Super Admin', 'Admin', 'Pharmacist'],
   pharmacy:          ['Super Admin', 'Admin', 'Doctor', 'Pharmacist', 'Receptionist'],
   lab:               ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist'],
   biomedical:        ['Super Admin', 'Admin', 'Biomedical Engineer'],
@@ -66,6 +66,7 @@ export const ROUTE_PERMISSIONS = {
   'nurse-station': 'VIEW_NURSE_STATION',
   billing: 'VIEW_BILLING',
   'pharmacy-billing': 'VIEW_BILLING',
+  'pharmacy-reports': 'VIEW_PHARMACY',
   pharmacy: 'VIEW_PHARMACY',
   lab: 'VIEW_LAB',
   biomedical: 'VIEW_BEMS',
@@ -80,6 +81,7 @@ export const ROUTE_PERMISSIONS = {
   reports: 'VIEW_REPORTS',
   settings: 'MANAGE_SETTINGS',
   'queue-display': 'VIEW_OP_QUEUE',
+  'expiry-report': 'VIEW_EXPIRY_REPORT',
 };
 
 const MASTER_ACCESS_PERMISSIONS = [
@@ -123,6 +125,7 @@ const PHARMACY_ROUTE_PERMS = [
   'ADJUST_PHARMACY_STOCK',
   'DELETE_MEDICINE',
   'DISPENSE_PRESCRIPTION',
+  'VIEW_EXPIRY_REPORT',
 ];
 
 export const canAccessRoute = (userOrRole, path) => {
@@ -133,20 +136,13 @@ export const canAccessRoute = (userOrRole, path) => {
 
   if (segment === 'masters') return hasMastersAccess(user);
 
-  if (segment === 'pharmacy') {
-    return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code));
+  if (segment === 'pharmacy' || segment === 'expiry-report' || segment === 'pharmacy-reports' || segment === 'pharmacy-billing') {
+    return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code)) || hasPermission(user, 'VIEW_BILLING');
   }
 
   const permCode = ROUTE_PERMISSIONS[segment];
-  const customPermissions = Array.isArray(user.permissions) && user.permissions.length > 0 ? user.permissions : null;
+  if (permCode) return hasPermission(user, permCode);
 
-  // A user with custom permissions assigned is gated purely by those permissions.
-  if (customPermissions) {
-    if (!permCode) return true;
-    return customPermissions.includes('*') || customPermissions.includes(permCode);
-  }
-
-  // Otherwise fall back to the original role-based access list.
   const allowed = ROUTE_ACCESS[segment];
   if (!allowed) return true;
   return hasRole(user.role, allowed);
@@ -157,17 +153,12 @@ export const filterNavForUser = (user) => {
   if (!user) return [];
   if (normalizeRole(user.role) === 'Super Admin') return NAV_ITEMS;
 
-  const customPermissions = Array.isArray(user.permissions) && user.permissions.length > 0 ? user.permissions : null;
-
   return NAV_ITEMS.filter((item) => {
     if (item.id === 'masters') return hasMastersAccess(user);
-    if (item.id === 'pharmacy' || item.id === 'expiry-report') {
-      return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code));
+    if (item.id === 'pharmacy' || item.id === 'pharmacy-reports' || item.id === 'expiry-report') {
+      return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code)) || hasPermission(user, 'VIEW_BILLING');
     }
-    if (customPermissions) {
-      return customPermissions.includes('*') || customPermissions.includes(item.permission);
-    }
-    return hasRole(user.role, item.roles);
+    return hasPermission(user, item.permission);
   });
 };
 

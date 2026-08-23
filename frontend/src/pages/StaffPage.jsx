@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, UserCog, Edit2, Trash2, ShieldCheck, RotateCcw, CheckSquare, Square, Search } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import api from '../services/api';
+import { checkAuth } from '../redux/slices/authSlice';
 import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
 import { STAFF_ROLES } from '../utils/roles';
-import { PERMISSION_GROUPS, ALL_PERMISSIONS, getDefaultPermissionsForRole, PHARMACY_FULL_CONTROL_PERMISSIONS } from '../constants/permissions';
+import { PERMISSION_GROUPS, ALL_PERMISSIONS, getDefaultPermissionsForRole, PHARMACY_FULL_CONTROL_PERMISSIONS, NURSE_STATION_BUNDLE, looksLikeFullChecklist } from '../constants/permissions';
 import '../styles/staffManagement.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -30,7 +31,27 @@ const expandPermissions = (perms) => {
   if (next.includes('MANAGE_PHARMACY')) {
     next = [...new Set([...next, 'VIEW_PHARMACY', ...PHARMACY_FULL_CONTROL_PERMISSIONS])];
   }
+  if (next.includes('VIEW_NURSE_STATION')) {
+    next = [...new Set([...next, ...NURSE_STATION_BUNDLE])];
+  }
   return syncPharmacyManageFlag(next);
+};
+
+const sameSet = (a = [], b = []) => {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort().join('|');
+  const sb = [...b].sort().join('|');
+  return sa === sb;
+};
+
+/** Role defaults + extra ticks. A previously saved full checklist keeps Super Admin unchecks. */
+const checklistForStaff = (role, stored) => {
+  const defaults = getDefaultPermissionsForRole(role);
+  const custom = Array.isArray(stored) ? stored.filter(Boolean) : [];
+  if (custom.includes('*')) return expandPermissions(['*']);
+  if (!custom.length) return expandPermissions(defaults);
+  if (looksLikeFullChecklist(custom, defaults)) return expandPermissions(custom);
+  return expandPermissions([...new Set([...defaults, ...custom])]);
 };
 
 export default function StaffPage() {
@@ -42,6 +63,7 @@ export default function StaffPage() {
   const [isActiveChecked, setIsActiveChecked] = useState(true);
   const [permSearch, setPermSearch] = useState('');
   const qc = useQueryClient();
+  const dispatch = useDispatch();
   const currentUser = useSelector((s) => s.auth?.user);
 
   const editStaffRef = useRef(null);
@@ -66,8 +88,13 @@ export default function StaffPage() {
   const isDoctor = selectedRole === 'Doctor';
 
   useEffect(() => {
-    if (!editStaff && selectedRole) {
+    if (!selectedRole) return;
+    if (!editStaff) {
       setSelectedPermissions(getDefaultPermissionsForRole(selectedRole));
+      return;
+    }
+    if (selectedRole !== editStaff.role) {
+      setSelectedPermissions(expandPermissions(getDefaultPermissionsForRole(selectedRole)));
     }
   }, [selectedRole, editStaff]);
 
@@ -85,6 +112,10 @@ export default function StaffPage() {
         // Checking Full control → enable every inventory action below it
         if (code === 'MANAGE_PHARMACY') {
           next = [...new Set([...next, 'VIEW_PHARMACY', ...PHARMACY_FULL_CONTROL_PERMISSIONS])];
+        }
+        // Checking Nurse Station → enable every action that page needs
+        if (code === 'VIEW_NURSE_STATION') {
+          next = [...new Set([...next, ...NURSE_STATION_BUNDLE])];
         }
       }
       // Unchecking Edit medicine / batch / etc. automatically clears Full control
@@ -120,10 +151,7 @@ export default function StaffPage() {
     });
     setValue('password', '');
     setIsActiveChecked(staff.isActive !== false);
-    const raw = staff.permissions && staff.permissions.length > 0
-      ? staff.permissions
-      : getDefaultPermissionsForRole(staff.role);
-    setSelectedPermissions(expandPermissions(raw));
+    setSelectedPermissions(checklistForStaff(staff.role, staff.permissions));
     setShowAdd(true);
   };
 
@@ -141,10 +169,16 @@ export default function StaffPage() {
       const allSelected =
         selectedPermissions.length === ALL_PERMISSIONS.length
         || selectedPermissions.includes('*');
+      const roleDefaults = expandPermissions(getDefaultPermissionsForRole(selectedRole));
+      const keepRoleDefaults = sameSet(selectedPermissions, roleDefaults);
       const payload = {
         ...d,
         isActive: isActiveChecked,
-        permissions: allSelected && selectedRole === 'Super Admin' ? ['*'] : selectedPermissions,
+        permissions: allSelected && selectedRole === 'Super Admin'
+          ? ['*']
+          : keepRoleDefaults
+            ? []
+            : selectedPermissions,
       };
       // Unchecked day checkboxes submit `false`, which the backend's enum
       // validation rejects — keep only real day names.
@@ -160,13 +194,18 @@ export default function StaffPage() {
         : api.post('/staff', payload);
     },
     onSuccess: () => {
+      const selfId = currentUser?._id || currentUser?.id;
+      const editedSelf = editStaff && selfId && String(editStaff._id) === String(selfId);
       toast.success(
         editStaff
-          ? 'Staff updated. If their permissions changed, they must sign in again.'
+          ? (editedSelf
+            ? 'Staff updated. Your access is applied now.'
+            : 'Staff updated. Their new access applies within 30 seconds, or when they refresh.')
           : 'Staff added',
       );
       qc.invalidateQueries(['staff']);
       closeForm();
+      if (editedSelf) dispatch(checkAuth());
     },
     onError: (err) => {
       toast.error(err.response?.data?.message || 'Failed to save staff member');

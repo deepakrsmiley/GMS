@@ -78,8 +78,6 @@ exports.updateStaff = asyncHandler(async (req, res, next) => {
 
   if (permissionsChanged) {
     req.body.permissions = sanitizePermissions(req.body.permissions) || [];
-    // Force re-login so UI picks up locked/unlocked pharmacy edit options immediately
-    req.body.tokenVersion = (existingStaff.tokenVersion || 0) + 1;
   }
 
   const staff = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate('department');

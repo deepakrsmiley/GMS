@@ -209,6 +209,13 @@ const ipAdmissionSchema = new mongoose.Schema({
     toBed: { type: mongoose.Schema.Types.ObjectId, ref: 'Bed' },
     transferDate: Date,
     reason: String,
+    transferredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  }],
+  dischargeEditHistory: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    userName: String,
+    editedAt: { type: Date, default: Date.now },
+    reason: String,
   }],
   admittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   estimatedStay: Number,

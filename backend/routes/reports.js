@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { getReportsSummary, getDetailedReport } = require('../controllers/reportsController');
 const { getAuditExecutive, getAuditSection } = require('../controllers/auditReportsController');
-const { protect, authorizeRoles } = require('../middleware/auth');
+const { protect, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(protect);
-router.use(authorizeRoles('Super Admin', 'Admin'));
+router.use(authorizeAnyPermission('VIEW_REPORTS', 'VIEW_ACTIVITY'));
 
 router.get('/summary', getReportsSummary);
 router.get('/detailed', getDetailedReport);

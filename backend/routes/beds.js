@@ -12,26 +12,32 @@ const {
   updateWard,     // NEW
   deleteWard,     // NEW
 } = require('../controllers/bedController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(authenticateUser);
+
+const MANAGE_WARDS = authorizeAnyPermission('MANAGE_WARDS', 'MANAGE_BEDS');
+const CREATE_BED = authorizeAnyPermission('CREATE_BED', 'MANAGE_BEDS');
+const UPDATE_BED = authorizeAnyPermission('UPDATE_BED', 'MANAGE_BEDS');
+const DELETE_BED = authorizeAnyPermission('DELETE_BED', 'MANAGE_BEDS');
+const UPDATE_STATUS = authorizeAnyPermission('UPDATE_BED_STATUS', 'MANAGE_BEDS', 'VIEW_NURSE_STATION');
 
 router.get('/occupancy', getBedOccupancy);
 
 // ===== WARD ROUTES =====
 router.get('/wards', getWards);
-router.post('/wards', authorizeRoles('Super Admin', 'Admin'), createWard);           // NEW: Create ward
-router.put('/wards/:id', authorizeRoles('Super Admin', 'Admin'), updateWard);        // NEW: Update ward
-router.delete('/wards/:id', authorizeRoles('Super Admin', 'Admin'), deleteWard);     // NEW: Delete ward
+router.post('/wards', MANAGE_WARDS, createWard);
+router.put('/wards/:id', MANAGE_WARDS, updateWard);
+router.delete('/wards/:id', MANAGE_WARDS, deleteWard);
 
 // ===== BED ROUTES =====
 router.route('/')
   .get(getBeds)
-  .post(authorizeRoles('Super Admin', 'Admin', 'Nurse'), createBed);
+  .post(CREATE_BED, createBed);
 
-router.put('/:id/status', authorizeRoles('Super Admin', 'Admin', 'Nurse', 'Doctor'), updateBedStatus);
+router.put('/:id/status', UPDATE_STATUS, updateBedStatus);
 router.route('/:id')
-  .put(authorizeRoles('Super Admin', 'Admin'), updateBed)
-  .delete(authorizeRoles('Super Admin', 'Admin'), deleteBed);
+  .put(UPDATE_BED, updateBed)
+  .delete(DELETE_BED, deleteBed);
 
 module.exports = router;

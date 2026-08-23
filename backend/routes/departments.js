@@ -8,21 +8,21 @@ const {
   toggleDepartmentStatus,
   deleteDepartment,
 } = require('../controllers/departmentController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(authenticateUser);
 
-const ADMIN_ROLES = ['Super Admin', 'Admin'];
+const MANAGE_DEPT = authorizeAnyPermission('MANAGE_DEPARTMENTS');
 
 router.route('/')
   .get(getDepartments)
-  .post(authorizeRoles(...ADMIN_ROLES), createDepartment);
+  .post(MANAGE_DEPT, createDepartment);
 
 router.route('/:id')
   .get(getDepartment)
-  .put(authorizeRoles(...ADMIN_ROLES), updateDepartment)
-  .delete(authorizeRoles(...ADMIN_ROLES), deleteDepartment);
+  .put(MANAGE_DEPT, updateDepartment)
+  .delete(MANAGE_DEPT, deleteDepartment);
 
-router.put('/:id/toggle', authorizeRoles(...ADMIN_ROLES), toggleDepartmentStatus);
+router.put('/:id/toggle', MANAGE_DEPT, toggleDepartmentStatus);
 
 module.exports = router;

@@ -1,4 +1,6 @@
 const { toAvatarDataUri } = require('./userAvatar');
+const { resolveEffectivePermissions } = require('../config/permissions');
+const { normalizeRole } = require('./roles');
 
 const sendTokenResponse = (user, statusCode, res) => {
   const token = user.getSignedJwtToken();
@@ -27,7 +29,7 @@ const sendTokenResponse = (user, statusCode, res) => {
         role: user.role,
         department: user.department,
         avatar: toAvatarDataUri(user),
-        permissions: user.permissions || [],
+        permissions: resolveEffectivePermissions(normalizeRole(user.role), user.permissions),
       },
     });
 };

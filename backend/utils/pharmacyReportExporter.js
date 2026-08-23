@@ -2,6 +2,7 @@ const PDFDocument = require('pdfkit');
 const XLSX = require('xlsx');
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-IN') : 'N/A');
+const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-IN') : 'N/A');
 const fmtCurrency = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
 const rowToCells = (row, reportType) => {
@@ -22,6 +23,12 @@ const rowToCells = (row, reportType) => {
       return [fmtDate(row.transactionDate), row.medicineName, Math.abs(row.quantityChanged), fmtCurrency(row.totalValue), row.addedBy?.name || ''];
     case 'stock-movement':
       return [fmtDate(row.transactionDate), row.medicineName, row.type, row.quantityBefore, row.quantityAfter, row.quantityChanged, row.addedBy?.name || '', row.remarks || ''];
+    case 'today-stock-in':
+      return [fmtDateTime(row.transactionDate), row.medicineName, row.batchNumber || '', row.quantityChanged, fmtCurrency(row.totalValue), row.supplier?.name || '—', row.addedBy?.name || '', row.remarks || ''];
+    case 'today-dispensing':
+      return [fmtDateTime(row.transactionDate), row.medicineName, row.batchNumber || '', Math.abs(row.quantityChanged), fmtCurrency(row.totalValue), row.addedBy?.name || '', row.remarks || ''];
+    case 'stock-vs-bill':
+      return [row.medicineName, row.billedQty, row.stockQty, row.difference, row.matched ? 'Matched' : 'Check'];
     default:
       return Object.values(row).map(String);
   }
@@ -37,6 +44,9 @@ const getHeaders = (reportType) => {
     'supplier-purchase': ['Date', 'Medicine', 'Batch', 'Qty', 'Value', 'Supplier', 'Added By'],
     dispensing: ['Date', 'Medicine', 'Qty Dispensed', 'Value', 'By'],
     'stock-movement': ['Date', 'Medicine', 'Type', 'Qty Before', 'Qty After', 'Change', 'By', 'Remarks'],
+    'today-stock-in': ['Date / Time', 'Medicine', 'Batch', 'Qty Added', 'Value', 'Supplier', 'Added By', 'Remarks'],
+    'today-dispensing': ['Date / Time', 'Medicine', 'Batch', 'Qty Dispensed', 'Value', 'By', 'Remarks'],
+    'stock-vs-bill': ['Medicine', 'Billed Qty', 'Stock Deducted', 'Difference', 'Status'],
   };
   return headers[reportType] || ['Data'];
 };

@@ -58,7 +58,7 @@ export const PERMISSION_GROUPS = [
       { code: 'CREATE_NURSING_NOTE', label: 'Add nursing notes' },
       { code: 'CREATE_DOCTOR_ROUND', label: 'Add doctor rounds' },
       { code: 'MANAGE_IP_MEDICATION', label: 'IP medications' },
-      { code: 'VIEW_NURSE_STATION', label: 'View Nurse Station board' },
+      { code: 'VIEW_NURSE_STATION', label: 'Nurse Station (board, vitals, medicines, notes, lab)' },
       { code: 'RECORD_VITALS', label: 'Record patient vitals' },
       { code: 'SHIFT_HANDOVER', label: 'Shift handover notes' },
       { code: 'MANAGE_DOCTOR_ORDERS', label: 'Doctor orders / treatment sheet' },
@@ -243,8 +243,8 @@ export const ROLE_PERMISSIONS = {
     'VIEW_OP_QUEUE', 'CREATE_OP_QUEUE', 'UPDATE_OP_QUEUE', 'VIEW_QUEUE_DISPLAY',
     'VIEW_APPOINTMENT', 'CREATE_APPOINTMENT', 'UPDATE_APPOINTMENT', 'CANCEL_APPOINTMENT',
     'CREATE_CONSULTATION', 'CREATE_PRESCRIPTION', 'VIEW_PRESCRIPTION', 'CREATE_SERVICE_USAGE',
-    'VIEW_IP_ADMISSION', 'CREATE_IP_ADMISSION', 'PROCESS_DISCHARGE', 'CREATE_DISCHARGE_SUMMARY',
-    'VIEW_BILLING', 'CREATE_BILLING', 'PAY_BILL', 'VIEW_PENDING_DISCHARGE',
+    'VIEW_IP_ADMISSION', 'CREATE_IP_ADMISSION', 'PROCESS_DISCHARGE',
+    'VIEW_BILLING', 'CREATE_BILLING', 'UPDATE_BILLING', 'PAY_BILL', 'VIEW_PENDING_DISCHARGE',
     'VIEW_LAB', 'CREATE_LAB_ORDER',
     'VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT',
     'CREATE_CHANGE_REQUEST', 'VIEW_CHANGE_REQUESTS',
@@ -256,7 +256,7 @@ export const ROLE_PERMISSIONS = {
     'VIEW_PRESCRIPTION', 'DISPENSE_PRESCRIPTION',
     'VIEW_PHARMACY', 'MANAGE_PHARMACY', 'CREATE_MEDICINE', 'EDIT_MEDICINE',
     'ADD_PHARMACY_STOCK', 'ADJUST_PHARMACY_STOCK', 'EDIT_PHARMACY_BATCH', 'MANAGE_SUPPLIERS', 'VIEW_EXPIRY_REPORT',
-    'VIEW_BILLING', 'CREATE_BILLING', 'PAY_BILL', 'VIEW_BILLING_REPORTS',
+    'VIEW_BILLING', 'CREATE_BILLING', 'UPDATE_BILLING', 'PAY_BILL', 'VIEW_BILLING_REPORTS',
     'VIEW_IP_ADMISSION',
     'VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT',
     'CREATE_CHANGE_REQUEST', 'VIEW_CHANGE_REQUESTS',
@@ -264,7 +264,7 @@ export const ROLE_PERMISSIONS = {
   ],
   'Lab Technician': [
     'VIEW_DASHBOARD',
-    'VIEW_LAB', 'CREATE_LAB_ORDER', 'UPDATE_LAB_ORDER', 'UPDATE_LAB_REPORT', 'PRINT_LAB_REPORT',
+    'VIEW_LAB', 'CREATE_LAB_ORDER', 'UPDATE_LAB_ORDER', 'UPDATE_LAB_REPORT', 'PRINT_LAB_REPORT', 'MANAGE_LAB_TESTS',
     'VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT',
     'CREATE_CHANGE_REQUEST', 'VIEW_CHANGE_REQUESTS',
     'VIEW_CHAT', 'VIEW_NOTIFICATIONS',
@@ -279,7 +279,7 @@ export const ROLE_PERMISSIONS = {
   ],
   'Nurse': [
     'VIEW_DASHBOARD',
-    'VIEW_PATIENT', 'CREATE_PATIENT', 'UPDATE_PATIENT', 'VIEW_PATIENT_PROFILE',
+    'VIEW_PATIENT', 'VIEW_PATIENT_PROFILE',
     'VIEW_IP_ADMISSION', 'CREATE_NURSING_NOTE', 'CREATE_SERVICE_USAGE', 'MANAGE_IP_MEDICATION',
     'VIEW_NURSE_STATION', 'RECORD_VITALS', 'SHIFT_HANDOVER', 'MANAGE_DOCTOR_ORDERS',
     'UPDATE_BED_STATUS', 'VIEW_BEDS',
@@ -313,21 +313,109 @@ export const getDefaultPermissionsForRole = (role) => {
 };
 
 /**
+ * Granting a module (e.g. Nurse Station) also unlocks the supporting
+ * actions that module needs, so Super Admin ticks work without 403s.
+ */
+export const IMPLIED_PERMISSIONS = {
+  VIEW_NURSE_STATION: [
+    'VIEW_IP_ADMISSION',
+    'VIEW_PATIENT',
+    'VIEW_PATIENT_PROFILE',
+    'RECORD_VITALS',
+    'CREATE_NURSING_NOTE',
+    'SHIFT_HANDOVER',
+    'MANAGE_IP_MEDICATION',
+    'MANAGE_DOCTOR_ORDERS',
+    'CREATE_SERVICE_USAGE',
+    'CREATE_LAB_ORDER',
+    'VIEW_LAB',
+    'VIEW_BEDS',
+  ],
+  VIEW_IP_ADMISSION: ['VIEW_PATIENT'],
+  VIEW_BILLING: ['VIEW_PATIENT'],
+  VIEW_PENDING_DISCHARGE: ['VIEW_BILLING', 'VIEW_PATIENT'],
+  VIEW_PHARMACY: ['VIEW_PATIENT'],
+  MANAGE_PHARMACY: ['VIEW_PHARMACY', 'VIEW_PATIENT'],
+  VIEW_PRESCRIPTION: ['VIEW_PATIENT'],
+  DISPENSE_PRESCRIPTION: ['VIEW_PATIENT', 'VIEW_PRESCRIPTION'],
+  VIEW_APPOINTMENT: ['VIEW_PATIENT'],
+  VIEW_OP_QUEUE: ['VIEW_PATIENT'],
+  CREATE_OP_QUEUE: ['VIEW_PATIENT'],
+  CREATE_CONSULTATION: ['VIEW_PATIENT'],
+  CREATE_LAB_ORDER: ['VIEW_LAB'],
+  MANAGE_IP_MEDICATION: ['VIEW_IP_ADMISSION', 'VIEW_PATIENT'],
+  UPDATE_BILLING: ['VIEW_BILLING'],
+  CREATE_BILLING: ['VIEW_BILLING'],
+  PAY_BILL: ['VIEW_BILLING'],
+  MANAGE_STAFF: ['VIEW_STAFF', 'CREATE_STAFF', 'UPDATE_STAFF', 'DELETE_STAFF'],
+  MANAGE_LAB_TESTS: ['VIEW_LAB'],
+  MANAGE_BRANDING: ['MANAGE_SETTINGS'],
+  CREATE_PRESCRIPTION: ['VIEW_PRESCRIPTION', 'VIEW_PATIENT'],
+};
+
+export const NURSE_STATION_BUNDLE = [
+  'VIEW_NURSE_STATION',
+  ...IMPLIED_PERMISSIONS.VIEW_NURSE_STATION,
+];
+
+export const expandEffectivePermissions = (perms) => {
+  if (!Array.isArray(perms) || perms.length === 0) return [];
+  if (perms.includes('*')) return ['*'];
+  const set = new Set(perms);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const code of [...set]) {
+      const extra = IMPLIED_PERMISSIONS[code];
+      if (!extra) continue;
+      extra.forEach((implied) => {
+        if (!set.has(implied)) {
+          set.add(implied);
+          changed = true;
+        }
+      });
+    }
+  }
+  return [...set];
+};
+
+export const looksLikeFullChecklist = (custom, rolePerms = []) =>
+  custom.includes('VIEW_DASHBOARD') ||
+  custom.length >= Math.max(10, Math.ceil((rolePerms.length || 10) * 0.5));
+
+/**
+ * Same merge rules as the backend: short extra grants union with the role;
+ * a full Staff checklist (VIEW_DASHBOARD or a large list) is used as-is
+ * so Super Admin unchecks stay locked.
+ */
+export const resolveEffectivePermissions = (role, stored) => {
+  const roleKey = normalizeRole(role);
+  if (roleKey === 'Super Admin') return ['*'];
+  const rolePerms = ROLE_PERMISSIONS[roleKey] || ROLE_PERMISSIONS[role] || [];
+  const custom = Array.isArray(stored) ? stored.filter(Boolean) : [];
+  if (custom.includes('*')) return ['*'];
+  if (!custom.length) return expandEffectivePermissions(rolePerms);
+
+  const merged = looksLikeFullChecklist(custom, rolePerms)
+    ? custom
+    : [...new Set([...rolePerms, ...custom])];
+  return expandEffectivePermissions(merged);
+};
+
+/**
  * Checks whether a user can access a given permission code.
- * `user` should be `{ role, permissions }`. If the user has a custom
- * `permissions` array assigned (by Super Admin), that array is the source
- * of truth. Otherwise it falls back to the role's default permission set.
  */
 export const hasPermission = (user, code) => {
   if (!user) return false;
   const role = normalizeRole(user.role);
   if (role === 'Super Admin') return true;
 
-  const custom = Array.isArray(user.permissions) && user.permissions.length > 0 ? user.permissions : null;
-  const perms = custom || ROLE_PERMISSIONS[role] || [];
-
+  const perms = resolveEffectivePermissions(role, user.permissions);
   return perms.includes('*') || perms.includes(code);
 };
+
+export const hasAnyPermission = (user, codes = []) =>
+  codes.some((code) => hasPermission(user, code));
 
 /**
  * Pharmacy inventory actions controlled by Staff → Feature permissions.

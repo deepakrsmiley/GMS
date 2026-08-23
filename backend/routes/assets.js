@@ -8,22 +8,33 @@ const {
   deleteAsset,
   getAssetDashboard,
 } = require('../controllers/assetController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(authenticateUser);
 
-const ASSET_ROLES = ['Super Admin', 'Admin', 'Biomedical Engineer'];
-const ASSET_VIEW_ROLES = ['Super Admin', 'Admin', 'Biomedical Engineer', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist'];
+// Full asset master (dashboard / edit) stays VIEW_ASSETS.
+// Staff who only raise complaints still need a read-only asset list to pick equipment.
+const VIEW_ASSETS = authorizeAnyPermission('VIEW_ASSETS', 'MANAGE_ASSETS', 'VIEW_BEMS');
+const LIST_ASSETS_FOR_COMPLAINTS = authorizeAnyPermission(
+  'VIEW_ASSETS',
+  'MANAGE_ASSETS',
+  'VIEW_BEMS',
+  'VIEW_ASSET_COMPLAINTS',
+  'CREATE_ASSET_COMPLAINT',
+  'MANAGE_ASSET_COMPLAINTS',
+);
+const MANAGE_ASSETS = authorizeAnyPermission('MANAGE_ASSETS', 'CREATE_ASSET', 'UPDATE_ASSET');
+const DELETE_ASSETS = authorizeAnyPermission('DELETE_ASSET', 'MANAGE_ASSETS');
 
-router.get('/dashboard', authorizeRoles(...ASSET_VIEW_ROLES), getAssetDashboard);
+router.get('/dashboard', VIEW_ASSETS, getAssetDashboard);
 
 router.route('/')
-  .get(authorizeRoles(...ASSET_VIEW_ROLES), getAssets)
-  .post(authorizeRoles(...ASSET_ROLES), createAsset);
+  .get(LIST_ASSETS_FOR_COMPLAINTS, getAssets)
+  .post(MANAGE_ASSETS, createAsset);
 
 router.route('/:id')
-  .get(authorizeRoles(...ASSET_VIEW_ROLES), getAsset)
-  .put(authorizeRoles(...ASSET_ROLES), updateAsset)
-  .delete(authorizeRoles(...ASSET_ROLES), deleteAsset);
+  .get(VIEW_ASSETS, getAsset)
+  .put(MANAGE_ASSETS, updateAsset)
+  .delete(DELETE_ASSETS, deleteAsset);
 
 module.exports = router;

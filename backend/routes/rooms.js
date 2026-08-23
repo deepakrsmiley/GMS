@@ -8,19 +8,21 @@ const {
   updateRoom,
   deleteRoom,
 } = require('../controllers/roomController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(authenticateUser);
+
+const MANAGE_ROOMS = authorizeAnyPermission('MANAGE_ROOMS', 'MANAGE_BEDS');
 
 router.get('/dashboard', getRoomDashboard);
 router.get('/available', getAvailableRooms);
 
 router.route('/')
   .get(getRooms)
-  .post(authorizeRoles('Super Admin', 'Admin'), createRoom);
+  .post(MANAGE_ROOMS, createRoom);
 
 router.route('/:id')
-  .put(authorizeRoles('Super Admin', 'Admin'), updateRoom)
-  .delete(authorizeRoles('Super Admin', 'Admin'), deleteRoom);
+  .put(MANAGE_ROOMS, updateRoom)
+  .delete(MANAGE_ROOMS, deleteRoom);
 
 module.exports = router;

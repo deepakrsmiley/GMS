@@ -7,7 +7,7 @@ import {
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 
 export default function DoctorConsultationPage() {
@@ -15,9 +15,9 @@ export default function DoctorConsultationPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useSelector((s) => s.auth);
-  const isReceptionist = hasRole(user?.role, ['Receptionist']);
-  const canAdmit = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist', 'Doctor']);
-  const canLogServices = hasRole(user?.role, ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Nurse']);
+  const canOrderLab = hasPermission(user, 'CREATE_LAB_ORDER');
+  const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
+  const canLogServices = hasPermission(user, 'CREATE_SERVICE_USAGE');
 
   const [diagnosis, setDiagnosis] = useState('');
   const [notes, setNotes] = useState('');
@@ -178,7 +178,7 @@ export default function DoctorConsultationPage() {
             <button type="button" onClick={() => saveMut.mutate()} disabled={saveMut.isPending} className="btn-primary">
               <Save size={16} /> {saveMut.isPending ? 'Saving...' : 'Save Consultation'}
             </button>
-            {!isReceptionist && (
+            {canOrderLab && (
               <button type="button" onClick={() => orderLabMut.mutate()} className="btn-secondary"><FlaskConical size={16} /> Order Lab</button>
             )}
             {canLogServices && (

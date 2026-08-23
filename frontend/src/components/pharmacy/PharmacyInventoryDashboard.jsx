@@ -136,6 +136,8 @@ const FINANCIAL_OPS = [
 ];
 
 const REPORT_TYPES = [
+  { id: 'today-stock-in', label: "Today's Stock Added", desc: 'Batches received today' },
+  { id: 'today-dispensing', label: 'Daily Dispensed', desc: "Medicines issued today" },
   { id: 'low-stock', label: 'Low Stock', desc: 'Below reorder level' },
   { id: 'out-of-stock', label: 'Out Of Stock', desc: 'Zero balance SKUs' },
   { id: 'expiry', label: 'Near Expiry', desc: 'Next 30 days' },
@@ -353,7 +355,13 @@ export default function PharmacyInventoryDashboard({ children }) {
           Valuation & Daily Operations
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-          {FINANCIAL_OPS.map(({ key, label, icon: Icon, format, tone }) => (
+          {FINANCIAL_OPS.map(({ key, label, icon: Icon, format, tone }) => {
+            const dailyReport = key === 'todayStockAdded'
+              ? 'today-stock-in'
+              : key === 'todayDispensed'
+                ? 'today-dispensing'
+                : null;
+            return (
             <div
               key={key}
               className="rounded-lg bg-slate-50 dark:bg-gray-900/50 border border-slate-100 dark:border-gray-700 px-4 py-3"
@@ -367,8 +375,29 @@ export default function PharmacyInventoryDashboard({ children }) {
               <p className={`text-lg font-bold tabular-nums ${tone} dark:text-white`}>
                 {format(cards[key])}
               </p>
+              {dailyReport && (
+                <div className="flex gap-1.5 mt-2">
+                  <button
+                    type="button"
+                    disabled={downloading === `${dailyReport}-pdf`}
+                    onClick={() => downloadReport(dailyReport, 'pdf')}
+                    className="flex-1 inline-flex items-center justify-center gap-1 text-[10px] font-medium py-1 rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    <Download size={10} /> PDF
+                  </button>
+                  <button
+                    type="button"
+                    disabled={downloading === `${dailyReport}-excel`}
+                    onClick={() => downloadReport(dailyReport, 'excel')}
+                    className="flex-1 inline-flex items-center justify-center gap-1 text-[10px] font-medium py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <FileSpreadsheet size={10} /> Excel
+                  </button>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

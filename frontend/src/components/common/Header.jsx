@@ -8,7 +8,7 @@ import { toggleDarkMode, toggleSidebar } from '../../redux/slices/uiSlice';
 import { getSocket } from '../../services/socket';
 import api from '../../services/api';
 import { canAccessRoute } from '../../constants/navConfig';
-import { normalizeRole } from '../../utils/roles';
+import { hasAnyPermission } from '../../constants/permissions';
 import ChatPanel, { useChatUnread } from './ChatPanel';
 import NotificationPanel, { useNotificationUnread } from './NotificationPanel';
 
@@ -34,7 +34,19 @@ export default function Header() {
   const activityRef = useRef(null);
   const chatRef = useRef(null);
 
-  const canViewActivity = ['Super Admin', 'Admin'].includes(normalizeRole(user?.role));
+  const canViewActivity = hasAnyPermission(user, ['VIEW_ACTIVITY', 'VIEW_REPORTS']);
+  const canSearchPatients = hasAnyPermission(user, [
+    'VIEW_PATIENT',
+    'VIEW_NURSE_STATION',
+    'VIEW_IP_ADMISSION',
+    'VIEW_BILLING',
+    'VIEW_PHARMACY',
+    'VIEW_PRESCRIPTION',
+    'DISPENSE_PRESCRIPTION',
+    'VIEW_APPOINTMENT',
+    'VIEW_OP_QUEUE',
+    'CREATE_CONSULTATION',
+  ]);
   const { data: chatUnread, refetch: refetchChatUnread } = useChatUnread(!!user);
   const { data: notifUnread = 0, refetch: refetchNotifUnread } = useNotificationUnread(!!user);
 
@@ -74,7 +86,7 @@ export default function Header() {
   const { data: patientResults, isFetching: searchingPatients } = useQuery({
     queryKey: ['headerPatientSearch', debouncedQuery],
     queryFn: () => api.get(`/patients/search?q=${encodeURIComponent(debouncedQuery)}`).then((r) => r.data.data),
-    enabled: debouncedQuery.length >= 2,
+    enabled: canSearchPatients && debouncedQuery.length >= 2,
   });
 
   const { data: activityData, isFetching: activityLoading, refetch: refetchActivity } = useQuery({

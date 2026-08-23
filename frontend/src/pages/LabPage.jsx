@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { hasRole } from '../utils/roles';
+import { hasPermission } from '../constants/permissions';
 import { Plus, Printer, CheckCircle, Eye } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
@@ -102,10 +102,8 @@ const buildResultFields = (labOrder) => {
 export default function LabPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSelector((s) => s.auth);
-  const isLabTech = hasRole(user?.role, ['Super Admin', 'Admin', 'Lab Technician']);
-  const canCreateOrders = hasRole(user?.role, [
-    'Super Admin', 'Admin', 'Doctor', 'Nurse', 'Lab Technician', 'Receptionist',
-  ]);
+  const isLabTech = hasPermission(user, 'UPDATE_LAB_REPORT') || hasPermission(user, 'UPDATE_LAB_ORDER');
+  const canCreateOrders = hasPermission(user, 'CREATE_LAB_ORDER');
 
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
@@ -175,12 +173,7 @@ export default function LabPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const modalMode = hasRole(user?.role, ['Lab Technician', 'Super Admin', 'Admin'])
-    && !hasRole(user?.role, ['Receptionist', 'Nurse'])
-    ? 'full'
-    : hasRole(user?.role, ['Lab Technician'])
-      ? 'full'
-      : 'request';
+  const modalMode = hasPermission(user, 'UPDATE_LAB_REPORT') ? 'full' : 'request';
 
   const openNewOrder = () => {
     setAppendTo(null);

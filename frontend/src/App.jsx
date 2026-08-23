@@ -16,8 +16,7 @@ import NurseStationPage from './pages/NurseStationPage';
 import ChangeRequestsPage from './pages/ChangeRequestsPage';
 import BillingPage from './pages/BillingPage';
 import PharmacyPage from './pages/PharmacyPage';
-import PharmacyBillingPage from './pages/PharmacyBilling';
-import PharmacyExpiryReportPage from './pages/PharmacyExpiryReportPage';
+import PharmacyReportsPage from './pages/PharmacyReportsPage';
 import LabPage from './pages/LabPage';
 import AssetComplaintPage from './pages/AssetComplaintPage';
 import BiomedicalPage from './pages/BiomedicalPage';
@@ -47,6 +46,13 @@ export default function App() {
 
   useEffect(() => {
     dispatch(checkAuth());
+    const onFocus = () => dispatch(checkAuth());
+    window.addEventListener('focus', onFocus);
+    const timer = setInterval(() => dispatch(checkAuth()), 30000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(timer);
+    };
   }, [dispatch]);
 
   if (loading) return <LoadingSpinner fullScreen />;
@@ -77,11 +83,9 @@ export default function App() {
           <Route path="/billing" element={<ProtectedRoute routeKey="billing"><BillingPage /></ProtectedRoute>} />
           <Route path="/pharmacy" element={<ProtectedRoute routeKey="pharmacy"><PharmacyPage /></ProtectedRoute>} />
 
-          {/* ── NEW: Pharmacy Billing Reports ── */}
-          <Route path="/pharmacy-billing" element={<ProtectedRoute routeKey="billing"><PharmacyBillingPage /></ProtectedRoute>} />
-
-          {/* ── NEW: Medicine Expiry Report (Inventory → Pharmacy → Medicine Expiry Report) ── */}
-          <Route path="/pharmacy/expiry-report" element={<ProtectedRoute routeKey="expiry-report"><PharmacyExpiryReportPage /></ProtectedRoute>} />
+          <Route path="/pharmacy-reports" element={<ProtectedRoute routeKey="pharmacy-reports"><PharmacyReportsPage /></ProtectedRoute>} />
+          <Route path="/pharmacy-billing" element={<Navigate to="/pharmacy-reports" replace />} />
+          <Route path="/pharmacy/expiry-report" element={<Navigate to="/pharmacy-reports" replace />} />
 
           <Route path="/lab" element={<ProtectedRoute routeKey="lab"><LabPage /></ProtectedRoute>} />
           <Route path="/masters" element={<ProtectedRoute routeKey="masters"><MastersPage /></ProtectedRoute>} />

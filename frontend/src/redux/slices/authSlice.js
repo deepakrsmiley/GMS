@@ -12,15 +12,21 @@ export const login = createAsyncThunk('auth/login', async (credentials, { reject
   }
 });
 
-export const checkAuth = createAsyncThunk('auth/checkAuth', async (_, { rejectWithValue }) => {
+export const checkAuth = createAsyncThunk('auth/checkAuth', async (_, { rejectWithValue, getState }) => {
   const token = localStorage.getItem('hms_token');
-  if (!token) return rejectWithValue('No token');
+  if (!token) return rejectWithValue({ reason: 'no_token' });
   try {
     const { data } = await api.get('/auth/me');
     return data.data;
-  } catch {
-    localStorage.removeItem('hms_token');
-    return rejectWithValue('Auth failed');
+  } catch (err) {
+    const status = err.response?.status;
+    if (status === 401 || status === 403) {
+      localStorage.removeItem('hms_token');
+      return rejectWithValue({ reason: 'auth_failed' });
+    }
+    const hasUser = Boolean(getState()?.auth?.user);
+    if (hasUser) return rejectWithValue({ reason: 'network' });
+    return rejectWithValue({ reason: 'auth_failed' });
   }
 });
 
@@ -41,9 +47,13 @@ const authSlice = createSlice({
       .addCase(login.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(login.fulfilled, (state, action) => { state.loading = false; state.user = action.payload; toast.success(`Welcome, ${action.payload.name}!`); })
       .addCase(login.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(checkAuth.pending, (state) => { state.loading = true; })
+      .addCase(checkAuth.pending, (state) => { if (!state.user) state.loading = true; })
       .addCase(checkAuth.fulfilled, (state, action) => { state.loading = false; state.user = action.payload; })
-      .addCase(checkAuth.rejected, (state) => { state.loading = false; state.user = null; })
+      .addCase(checkAuth.rejected, (state, action) => {
+        state.loading = false;
+        if (action.payload?.reason === 'network' && state.user) return;
+        state.user = null;
+      })
       .addCase(logout.fulfilled, (state) => { state.user = null; state.loading = false; });
   },
 });

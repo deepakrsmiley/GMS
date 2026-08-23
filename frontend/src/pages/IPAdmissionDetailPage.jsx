@@ -13,6 +13,7 @@ import api from '../services/api';
 import Modal from '../components/common/Modal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useBranding } from '../hooks/useBranding';
+import { hasPermission } from '../constants/permissions';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
 import '../styles/dischargeSummary.css';
 
@@ -252,6 +253,8 @@ export default function IPAdmissionDetailPage() {
   const [showMore, setShowMore] = useState(false);
   const [showDischargeConfirm, setShowDischargeConfirm] = useState(false);
   const [printAdmission, setPrintAdmission] = useState(false);
+  const [editReason, setEditReason] = useState('');
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null);
 
   const { data: admission, isLoading } = useQuery({
     queryKey: ['admission', id],
@@ -301,10 +304,20 @@ export default function IPAdmissionDetailPage() {
 
   const saveDraftMut = useMutation({
     mutationFn: (payload) => api.put(`/ip/${id}/discharge-summary`, payload).then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Discharge summary saved');
       qc.invalidateQueries({ queryKey: ['admission', id] });
+      try {
+        const url = await fetchPdfBlobUrl();
+        setPdfPreviewUrl((prev) => {
+          if (prev) window.URL.revokeObjectURL(prev);
+          return url;
+        });
+      } catch {
+        /* PDF preview refreshes on next print */
+      }
     },
+    onError: (err) => toast.error(err?.response?.data?.message || 'Could not save discharge summary'),
   });
 
   const dischargeMut = useMutation({
@@ -377,8 +390,14 @@ export default function IPAdmissionDetailPage() {
   };
 
   const handleReset = () => setForm(buildFormFromAdmission(admission));
-  const handleSaveDraft = () => saveDraftMut.mutate(form);
-  const handleSaveAndPreview = () => saveDraftMut.mutate(form);
+  const handleSaveDraft = () => {
+    if (admission?.status === 'discharged' && !editReason.trim()) {
+      toast.error('Please enter a reason for changing the discharge summary');
+      return;
+    }
+    saveDraftMut.mutate({ ...form, reason: editReason.trim() || 'Draft save' });
+  };
+  const handleSaveAndPreview = () => handleSaveDraft();
 
   const handleConfirmDischarge = () => {
     dischargeMut.mutate({ dischargeDetails: form, dischargeType: computedDischargeType() });
@@ -441,6 +460,12 @@ export default function IPAdmissionDetailPage() {
 
   const patient = admission.patient || {};
   const isDischarged = admission.status === 'discharged';
+  const canWriteSummary = hasPermission(user, 'CREATE_DISCHARGE_SUMMARY');
+  const canDischarge = hasPermission(user, 'PROCESS_DISCHARGE');
+  const canEditDischargedSummary = isDischarged && canWriteSummary && (
+    hasPermission(user, 'MANAGE_STAFF') || hasPermission(user, 'MANAGE_SETTINGS')
+  );
+  const canEditSummary = (!isDischarged && canWriteSummary) || canEditDischargedSummary;
   const allergyLine = form.allergyAlert
     || ((patient.allergies || []).length
       ? `${(patient.allergies || []).join(', ').toUpperCase()} ALLERGY`
@@ -502,7 +527,7 @@ export default function IPAdmissionDetailPage() {
             <button type="button" onClick={() => setPrintAdmission(true)} className="btn-secondary">
               <Printer size={16} /> Print Admission Slip
             </button>
-            {!isDischarged && (
+            {!isDischarged && canDischarge && (
               <button type="button" onClick={() => setShowDischargeConfirm(true)} className="btn-primary">
                 <LogOut size={16} /> Discharge Patient
               </button>
@@ -695,6 +720,16 @@ export default function IPAdmissionDetailPage() {
                 <div>
                   <h3 className="text-base font-semibold text-slate-900 dark:text-white">Discharge Summary</h3>
                   <p className="text-xs text-slate-500">3 pages — same order as your printed discharge summary. Tamil → editable text box on page 3.</p>
+                  {isDischarged && canEditDischargedSummary && (
+                    <p className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Patient is discharged. Super Admin / Admin can still edit and save this summary.
+                    </p>
+                  )}
+                  {isDischarged && !canEditDischargedSummary && (
+                    <p className="mt-2 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      Patient is discharged. Only Super Admin or Admin can edit this summary.
+                    </p>
+                  )}
                 </div>
 
                 <div className="ds-page-banner">Page 1 of 3 <span>Header → Physical Examination</span></div>
@@ -984,10 +1019,20 @@ export default function IPAdmissionDetailPage() {
                   </div>
                 )}
 
+                {isDischarged && canEditSummary && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Reason for this change *</label>
+                    <input className="input-field" value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Why is the discharge summary being changed?" />
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-3 pt-2 sticky bottom-0 bg-white dark:bg-gray-800 py-2">
-                  <button type="button" onClick={handleReset} className="btn-secondary"><RotateCcw size={15} /> Reset</button>
-                  <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveDraft} className="btn-secondary"><Save size={15} /> Save Draft</button>
-                  <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveAndPreview} className="btn-primary flex-1 justify-center"><Eye size={15} /> Save &amp; Preview</button>
+                  <button type="button" onClick={handleReset} className="btn-secondary" disabled={!canEditSummary}><RotateCcw size={15} /> Reset</button>
+                  {canEditSummary && (
+                    <>
+                      <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveDraft} className="btn-secondary"><Save size={15} /> {isDischarged ? 'Save changes' : 'Save Draft'}</button>
+                      <button type="button" disabled={saveDraftMut.isPending} onClick={handleSaveAndPreview} className="btn-primary flex-1 justify-center"><Eye size={15} /> Save &amp; Preview</button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -996,7 +1041,7 @@ export default function IPAdmissionDetailPage() {
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-base font-semibold text-slate-900 dark:text-white">Discharge Summary Preview</h3>
-                    <p className="text-xs text-slate-500">Packed continuously — PDF pages only break when content fills the page</p>
+                    <p className="text-xs text-slate-500">Print and download use this same PDF template</p>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={handlePrint} className="btn-secondary text-xs py-1.5 px-3"><Printer size={13} /> Print</button>
@@ -1004,6 +1049,9 @@ export default function IPAdmissionDetailPage() {
                   </div>
                 </div>
 
+                {pdfPreviewUrl ? (
+                  <iframe title="Discharge summary PDF" src={pdfPreviewUrl} className="w-full h-[70vh] rounded-xl border border-slate-200" />
+                ) : (
                 <div className="max-h-[70vh] overflow-y-auto overflow-x-hidden ds-preview-stack">
                   <article className="ds-preview-sheet">
                     <span className="ds-preview-sheet__label">Live preview</span>
@@ -1120,6 +1168,7 @@ export default function IPAdmissionDetailPage() {
                     </div>
                   </article>
                 </div>
+                )}
               </div>
             </div>
           )}

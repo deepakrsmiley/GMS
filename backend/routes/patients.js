@@ -21,8 +21,25 @@ router.use(authenticateUser);
 const VIEW_PATIENT = authorizeAnyPermission('VIEW_PATIENT');
 const CREATE_PATIENT = authorizeAnyPermission('CREATE_PATIENT');
 const UPDATE_PATIENT = authorizeAnyPermission('UPDATE_PATIENT');
+const PATIENT_LOOKUP = authorizeAnyPermission(
+  'VIEW_PATIENT',
+  'VIEW_PATIENT_PROFILE',
+  'VIEW_NURSE_STATION',
+  'VIEW_IP_ADMISSION',
+  'VIEW_BILLING',
+  'VIEW_PHARMACY',
+  'VIEW_PRESCRIPTION',
+  'DISPENSE_PRESCRIPTION',
+  'VIEW_APPOINTMENT',
+  'VIEW_OP_QUEUE',
+  'CREATE_OP_QUEUE',
+  'CREATE_CONSULTATION',
+  'MANAGE_IP_MEDICATION',
+  'CREATE_LAB_ORDER',
+  'VIEW_LAB',
+);
 
-router.get('/search', VIEW_PATIENT, searchPatients);
+router.get('/search', PATIENT_LOOKUP, searchPatients);
 router.get('/stats', VIEW_PATIENT, getPatientStats);
 
 router.route('/')

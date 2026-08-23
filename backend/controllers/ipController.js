@@ -1,6 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const IPAdmission = require('../models/IPAdmission');
+const { canEditDischargeAfterDischarge } = require('../utils/clinicalAccess');
 const { generateDischargeSummaryPDF } = require('../utils/pdfGenerator');
 const DISCHARGE_REQUIRED_FIELDS = [
   'diagnosis',
@@ -556,14 +557,32 @@ exports.addDoctorRound = asyncHandler(async (req, res, next) => {
 exports.saveDischargeSummary = asyncHandler(async (req, res, next) => {
   const admission = await IPAdmission.findById(req.params.id);
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
-  if (admission.status === 'discharged') return next(new ErrorResponse('Patient already discharged', 400));
+  if (admission.status === 'discharged' && !canEditDischargeAfterDischarge(req.user)) {
+    return next(new ErrorResponse(
+      'Only Super Admin or Admin can edit the discharge summary after the patient is discharged',
+      403,
+    ));
+  }
+  const reason = (req.body.reason || req.body.auditReason || '').trim();
+  if (admission.status === 'discharged' && !reason) {
+    return next(new ErrorResponse('Please enter a reason for changing the discharge summary', 400));
+  }
 
   // Authorization is handled by the CREATE_DISCHARGE_SUMMARY permission on the
   // route — Super Admin controls who can do this via Users & Access checkboxes.
   const details = { ...req.body, completedAt: new Date(), completedBy: req.user._id };
+  delete details.reason;
+  delete details.auditReason;
   admission.dischargeDetails = { ...admission.dischargeDetails?.toObject?.() || admission.dischargeDetails || {}, ...details };
   admission.finalDiagnosis = details.diagnosis || admission.finalDiagnosis;
   admission.dischargeSummary = buildDischargeSummaryText(admission.dischargeDetails);
+  if (!Array.isArray(admission.dischargeEditHistory)) admission.dischargeEditHistory = [];
+  admission.dischargeEditHistory.push({
+    user: req.user._id,
+    userName: req.user.name,
+    editedAt: new Date(),
+    reason: reason || (admission.status === 'discharged' ? 'Post-discharge correction' : 'Draft save'),
+  });
   await admission.save();
 
   const populated = await IPAdmission.findById(admission._id)
@@ -647,6 +666,7 @@ exports.transferBed = asyncHandler(async (req, res, next) => {
     toBed: req.body.newBed,
     transferDate: new Date(),
     reason: req.body.reason,
+    transferredBy: req.user._id,
   });
   admission.bed = req.body.newBed;
   admission.room = newBed.room || null;

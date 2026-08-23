@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
-import { hasRole } from "../utils/roles";
+import { hasPermission } from "../constants/permissions";
 import KpiCard from "../components/common/KpiCard";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import { printSection } from "../utils/exportUtils";
@@ -111,7 +111,7 @@ const emptyFilters = {
 
 export default function PharmacyExpiryReportPage() {
   const { user } = useSelector((s) => s.auth);
-  const canDownload = hasRole(user?.role, ["Super Admin", "Admin", "Pharmacist"]);
+  const canDownload = hasPermission(user, "VIEW_EXPIRY_REPORT") || hasPermission(user, "VIEW_PHARMACY");
 
   const [preset, setPreset] = useState("next90");
   const [filters, setFilters] = useState({ ...emptyFilters, ...DATE_PRESETS.find((p) => p.id === "next90").build() });

@@ -7,17 +7,23 @@ const {
   getPatientPrescriptions, 
   cancelPrescription 
 } = require('../controllers/prescriptionController');
-const { authenticateUser, authorizeRoles } = require('../middleware/auth');
+const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
 
 router.use(authenticateUser);
 
 router.route('/')
-  .post(authorizeRoles('Super Admin', 'Admin', 'Doctor'), createPrescription)
-  .get(authorizeRoles('Super Admin', 'Admin', 'Doctor', 'Pharmacist', 'Patient'), getPrescriptions);
+  .post(authorizeAnyPermission('CREATE_PRESCRIPTION'), createPrescription)
+  .get(authorizeAnyPermission(
+    'VIEW_PRESCRIPTION',
+    'DISPENSE_PRESCRIPTION',
+    'VIEW_OWN_PRESCRIPTIONS',
+    'VIEW_PHARMACY',
+    'CREATE_PRESCRIPTION',
+  ), getPrescriptions);
 
 router.route('/:id')
   .get(getPrescription)
-  .delete(authorizeRoles('Super Admin', 'Admin', 'Doctor'), cancelPrescription);
+  .delete(authorizeAnyPermission('CREATE_PRESCRIPTION', 'UPDATE_CONSULTATION'), cancelPrescription);
 
 router.get('/patient/:patientId', getPatientPrescriptions);
 

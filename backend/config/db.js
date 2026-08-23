@@ -1,19 +1,30 @@
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
-/** Remove indexes left from older schemas (e.g. unique user on patients). */
+/** Remove leftover unique indexes on user/userId that reject legitimate inserts. */
+const STALE_UNIQUE_USER_FIELDS = ['user', 'userId', 'createdBy', 'addedBy'];
+const STALE_INDEX_COLLECTIONS = [
+  'patients', 'medicines', 'stockmovements', 'servicemasters',
+  'activitylogs', 'notifications', 'ipadmissions',
+];
+
 const cleanupStaleIndexes = async () => {
-  try {
-    const patients = mongoose.connection.db.collection('patients');
-    const indexes = await patients.indexes();
-    const stale = indexes.find((i) => i.name === 'user_1' || (i.key && Object.keys(i.key).length === 1 && i.key.user === 1));
-    if (stale) {
-      await patients.dropIndex(stale.name);
-      logger.info(`Dropped stale patients index: ${stale.name}`);
-    }
-  } catch (error) {
-    if (error.codeName !== 'IndexNotFound' && error.code !== 27) {
-      logger.warn(`Stale index cleanup skipped: ${error.message}`);
+  const db = mongoose.connection.db;
+  for (const name of STALE_INDEX_COLLECTIONS) {
+    try {
+      const indexes = await db.collection(name).indexes();
+      for (const idx of indexes) {
+        if (!idx.unique || !idx.key) continue;
+        const keys = Object.keys(idx.key);
+        if (keys.length === 1 && STALE_UNIQUE_USER_FIELDS.includes(keys[0])) {
+          await db.collection(name).dropIndex(idx.name);
+          logger.info(`Dropped stale unique index ${name}.${idx.name}`);
+        }
+      }
+    } catch (error) {
+      if (error.codeName !== 'IndexNotFound' && error.code !== 27 && error.codeName !== 'NamespaceNotFound') {
+        logger.warn(`Stale index cleanup skipped for ${name}: ${error.message}`);
+      }
     }
   }
 };
