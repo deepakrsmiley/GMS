@@ -859,17 +859,16 @@ exports.printThermal = asyncHandler(async (req, res, next) => {
 
 exports.getBillingStats = asyncHandler(async (req, res) => {
   const { orgFilter } = require("../middleware/tenant");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const month = new Date(today.getFullYear(), today.getMonth(), 1);
-  const todayWindow = { createdAt: { $gte: today, $lt: tomorrow } };
+  const { istToday, aggregateTodayRevenue } = require("../utils/todayRevenue");
+  const day = istToday();
+  const monthIso = `${new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 8)}01`;
+  const month = new Date(`${monthIso}T00:00:00.000+05:30`);
+  const todayWindow = { createdAt: { $gte: day.from, $lt: day.to } };
   const scoped = (extra) => orgFilter(req, extra);
 
   const [
     todayAgg,
-    todayPaidAgg,
+    todayRevenue,
     monthRevenue,
     pendingAgg,
     overdueAgg,
@@ -887,10 +886,7 @@ exports.getBillingStats = asyncHandler(async (req, res) => {
         },
       },
     ]),
-    Bill.aggregate([
-      { $match: scoped({ ...todayWindow, status: { $in: ["paid", "partial"] } }) },
-      { $group: { _id: null, total: { $sum: "$paidAmount" } } },
-    ]),
+    aggregateTodayRevenue(Bill, scoped({})),
     Bill.aggregate([
       {
         $match: scoped({
@@ -915,7 +911,7 @@ exports.getBillingStats = asyncHandler(async (req, res) => {
         $match: scoped({
           status: { $in: ["pending", "partial"] },
           dueAmount: { $gt: 0 },
-          createdAt: { $lt: today },
+          createdAt: { $lt: day.from },
         }),
       },
       {
@@ -957,13 +953,13 @@ exports.getBillingStats = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      todayRevenue: todayPaidAgg[0]?.total || todayAgg[0]?.collected || 0,
+      todayRevenue: todayRevenue || 0,
       monthRevenue: monthRevenue[0]?.total || 0,
       pendingBills: pendingAgg[0]?.count || 0,
       pendingAmount: pendingAgg[0]?.total || 0,
       totalBills: todayAgg[0]?.count || 0,
       todayBillsAmount: todayAgg[0]?.total || 0,
-      todayCollection: todayAgg[0]?.collected || 0,
+      todayCollection: todayRevenue || 0,
       overdueBills: overdueAgg[0]?.count || 0,
       overdueAmount: overdueAgg[0]?.total || 0,
       pendingDischarge: (pendingDischarge || []).length,

@@ -145,8 +145,8 @@ export default function OrganizationsPage() {
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">GMS Super Admin & client hospitals</h2>
           <p className="text-sm text-gray-500">
-            GMS is the Super Admin organization. Sri Sanjeevi Hospital and Srinivasa hospital are clients.
-            New hospitals are also clients. Each client keeps its own branding. Sri Sanjeevi live data stays in Sri Sanjeevi — nothing is deleted.
+            GMS Super Admin can add client hospitals here. Sri Sanjeevi Hospital and Srinivasa hospital are clients
+            and cannot add hospitals. Each client keeps its own data. Sri Sanjeevi live data stays in Sri Sanjeevi.
           </p>
         </div>
         <button

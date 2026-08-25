@@ -28,3 +28,17 @@ describe('istDay', () => {
     assert.equal(filter.tokenDate.$lt.toISOString(), '2026-08-26T18:30:00.000Z');
   });
 });
+
+describe('today revenue window', () => {
+  it('starts at 12:00 AM IST so yesterday is excluded', () => {
+    const { istToday } = require('../utils/todayRevenue');
+    const { from, to } = istToday();
+    const expected = istDayBounds(require('../utils/istDay').kolkataToday());
+    assert.equal(from.toISOString(), expected.from.toISOString());
+    assert.equal(to.toISOString(), expected.to.toISOString());
+    const beforeMidnight = new Date(from.getTime() - 1);
+    const afterMidnight = new Date(from.getTime() + 1);
+    assert.equal(beforeMidnight >= from && beforeMidnight < to, false);
+    assert.equal(afterMidnight >= from && afterMidnight < to, true);
+  });
+});

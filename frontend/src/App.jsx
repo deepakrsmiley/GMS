@@ -31,12 +31,17 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
 import BrandingSync from './components/branding/BrandingSync';
 import { canAccessRoute } from './constants/navConfig';
-import { homePathForUser } from './utils/homePath';
+import { homePathForUser, isGmsConsoleUser } from './utils/homePath';
+import { isSuperAdmin } from './utils/roles';
 
 const ProtectedRoute = ({ children, routeKey }) => {
   const { user, loading } = useSelector((s) => s.auth);
   if (loading) return <LoadingSpinner />;
   if (!user) return <Navigate to="/login" replace />;
+  if (routeKey === 'gms') {
+    if (!isSuperAdmin(user)) return <Navigate to="/unauthorized" replace />;
+    if (!isGmsConsoleUser(user)) return <Navigate to="/dashboard" replace />;
+  }
   if (routeKey && !canAccessRoute(user, `/${routeKey}`)) {
     return <Navigate to="/unauthorized" replace />;
   }

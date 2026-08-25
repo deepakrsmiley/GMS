@@ -976,7 +976,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
             <span>
               <p className="bl-kpi-label">Today&apos;s Collection</p>
               <p className="bl-kpi-value">{fmt(stats.todayCollection || stats.todayRevenue)}</p>
-              <p className="bl-kpi-sub">Received</p>
+              <p className="bl-kpi-sub">Resets 12:00 AM IST</p>
             </span>
           </button>
           <button type="button" className="bl-kpi" onClick={() => { openMainTab(mainTab === 'ip' ? 'ip' : 'op'); setDatePreset('30d'); setTableTab('today'); setStatusFilter('pending'); setShowMoreFilters(true); }}>

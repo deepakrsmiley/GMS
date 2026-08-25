@@ -211,7 +211,7 @@ export default function DashboardPage() {
         {hasMod('op') && <KpiCard title="OP Consultations" value={d.todayOP || 0} icon={Stethoscope} color="teal" subtitle="Today" />}
         {hasMod('ip') && <KpiCard title="IP Admissions" value={d.todayIP || 0} icon={UserPlus} color="purple" subtitle="New admissions today" />}
         {hasMod('ip') && <KpiCard title="Active IP Patients" value={d.totalIP || 0} icon={Bed} color="indigo" subtitle="Currently admitted" />}
-        {hasMod('billing') && <KpiCard title="Total Revenue (Today)" value={`₹${((d.todayRevenue || 0) / 1000).toFixed(1)}K`} icon={IndianRupee} color="green" subtitle="Collected today" />}
+        {hasMod('billing') && <KpiCard title="Total Revenue (Today)" value={`₹${((d.todayRevenue || 0) / 1000).toFixed(1)}K`} icon={IndianRupee} color="green" subtitle="Resets 12:00 AM IST" />}
       </div>
 
       {/* Secondary KPI Cards */}

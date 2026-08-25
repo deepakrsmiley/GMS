@@ -1,7 +1,7 @@
 import { hasRole, normalizeRole, isSuperAdmin } from '../utils/roles';
 import { hasPermission } from './permissions';
 import { isHospitalModuleEnabledForUser, ROUTE_TO_MODULE } from './hospitalModules';
-import { isClientOrg } from '../utils/hospitalA';
+import { isGmsConsoleUser } from '../utils/homePath';
 
 /**
  * Role-based navigation for the 6 main enterprise roles + Super Admin.
@@ -144,7 +144,7 @@ export const canAccessRoute = (userOrRole, path) => {
   const hospitalModule = ROUTE_TO_MODULE[segment];
   if (hospitalModule && !isHospitalModuleEnabledForUser(user, hospitalModule)) return false;
 
-  if (segment === 'gms') return isSuperAdmin(user);
+  if (segment === 'gms') return isGmsConsoleUser(user);
   if (normalizeRole(user.role) === 'Super Admin') return true;
 
   if (segment === 'masters') return hasMastersAccess(user);
@@ -163,16 +163,13 @@ export const canAccessRoute = (userOrRole, path) => {
 
 /** Filters the nav for a full user object, respecting custom per-user permissions when present. */
 export const filterGmsNavForUser = (user) => {
-  if (!isSuperAdmin(user)) return [];
-  if (!isClientOrg(user?.organization)) {
-    return GMS_NAV_ITEMS.filter((item) => item.id !== 'gms-reports');
-  }
-  return GMS_NAV_ITEMS;
+  if (!isGmsConsoleUser(user)) return [];
+  return GMS_NAV_ITEMS.filter((item) => item.id !== 'gms-reports');
 };
 
 export const filterNavForUser = (user) => {
   if (!user) return [];
-  if (isSuperAdmin(user) && !isClientOrg(user?.organization)) return [];
+  if (isGmsConsoleUser(user)) return [];
   const byPermission = normalizeRole(user.role) === 'Super Admin'
     ? NAV_ITEMS
     : NAV_ITEMS.filter((item) => {

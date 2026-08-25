@@ -8,6 +8,7 @@ import {
 import { hasPermission } from '../constants/permissions';
 import { normalizeRole } from '../utils/roles';
 import { isHospitalModuleEnabledForUser } from '../constants/hospitalModules';
+import { isGmsConsoleUser } from '../utils/homePath';
 import DepartmentPage from './DepartmentPage';
 import BedsPage from './BedsPage';
 import AssetPage from './AssetPage';
@@ -103,7 +104,7 @@ const MASTER_MODULES = [
   {
     id: 'organizations',
     label: 'Client hospitals',
-    description: 'GMS Super Admin creates client hospitals (Sri Sanjeevi, Srinivasa, later hospitals)',
+    description: 'GMS only — add client hospitals. Sri Sanjeevi and Srinivasa are clients and cannot add hospitals.',
     icon: Building,
     permission: 'MANAGE_ORGANIZATIONS',
     superAdminOnly: true,
@@ -121,7 +122,7 @@ const MASTER_MODULES = [
 
 function canSeeModule(user, module) {
   if (!user) return false;
-  if (module.superAdminOnly) return normalizeRole(user.role) === 'Super Admin';
+  if (module.superAdminOnly) return isGmsConsoleUser(user);
   if (module.hospitalModule && !isHospitalModuleEnabledForUser(user, module.hospitalModule)) {
     return false;
   }

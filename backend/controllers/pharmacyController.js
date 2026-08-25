@@ -17,6 +17,7 @@ const {
   findActiveBatch,
 } = require('../utils/pharmacyStockHelper');
 const inventoryService = require('../services/pharmacyInventoryService');
+const { istToday } = require('../utils/todayRevenue');
 const { exportExcel, exportPdf } = require('../utils/pharmacyReportExporter');
 const { logActivity } = require('../utils/activityLogger');
 
@@ -914,11 +915,10 @@ exports.getDirectSaleById = asyncHandler(async (req, res, next) => {
 });
 
 exports.getTodayPharmacySales = asyncHandler(async (req, res) => {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const { from, to } = istToday();
 
   const result = await DirectSale.aggregate([
-    { $match: { saleDate: { $gte: today, $lt: tomorrow } } },
+    { $match: { saleDate: { $gte: from, $lt: to } } },
     { $group: { _id: null, total: { $sum: '$grandTotal' }, count: { $sum: 1 } } },
   ]);
 

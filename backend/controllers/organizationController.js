@@ -11,6 +11,7 @@ const { sanitizeEnabledModules, ALL_MODULE_IDS } = require('../config/hospitalMo
 const { organizationSnapshot, isPlatformOrg, isClientOrg, KIND_CLIENT, PLATFORM_CODE } = require('../utils/hospitalA');
 const { runWithOrganizationContext } = require('../middleware/tenantContext');
 const { istDayBounds, kolkataToday } = require('../utils/istDay');
+const { aggregateTodayRevenue } = require('../utils/todayRevenue');
 
 const sanitizeCode = (code) => String(code || '').trim().toUpperCase();
 
@@ -68,25 +69,18 @@ exports.platformOverview = asyncHandler(async (req, res) => {
 
   const hospitals = [];
   for (const org of clients) {
-    const [patients, users, todayBills, revenueRows] = await Promise.all([
+    const [patients, users, todayBills, todayRevenue] = await Promise.all([
       countForOrg(Patient, org._id),
       User.countDocuments({ organizationId: org._id, role: { $ne: 'Super Admin' } }).setOptions(skipOrg),
       countForOrg(Bill, org._id, { createdAt: { $gte: day.from, $lt: day.to } }),
-      Bill.aggregate([
-        { $match: {
-          organizationId: org._id,
-          createdAt: { $gte: day.from, $lt: day.to },
-          status: { $in: ['paid', 'partial'] },
-        } },
-        { $group: { _id: null, total: { $sum: '$paidAmount' } } },
-      ]).option(skipOrg),
+      aggregateTodayRevenue(Bill, { organizationId: org._id }, { skipOrganizationFilter: true }),
     ]);
     hospitals.push({
       ...orgJson(org),
       patients,
       users,
       todayBills,
-      todayRevenue: revenueRows[0]?.total || 0,
+      todayRevenue,
     });
   }
 
