@@ -25,3 +25,6 @@ export const hasRole = (userRole, allowedRoles) =>
   allowedRoles.some((role) => normalizeRole(userRole) === normalizeRole(role));
 
 export const STAFF_ROLES = ['Super Admin', 'Admin', 'Receptionist', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Accountant', 'Biomedical Engineer'];
+
+export const isSuperAdmin = (roleOrUser) =>
+  normalizeRole(typeof roleOrUser === 'object' ? roleOrUser?.role : roleOrUser) === 'Super Admin';

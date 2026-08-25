@@ -8,6 +8,9 @@ const sendTokenResponse = require('../utils/sendToken');
 const logger = require('../utils/logger');
 const { serializeUser, parseDataUriPhoto } = require('../utils/userAvatar');
 const { sanitizeEnabledModules } = require('../config/hospitalModules');
+const { isSuperAdmin } = require('../utils/roles');
+const { resolveOrganizationContext } = require('../middleware/tenant');
+const { organizationSnapshot } = require('../utils/hospitalA');
 
 // Helper function to create audit logs (userId may be null for unknown-email failures)
 const createAuditLog = async (userId, action, description, req, metadata = undefined) => {
@@ -141,7 +144,23 @@ exports.login = asyncHandler(async (req, res, next) => {
   }
 
   logger.info(`LOGIN successful for ${normalizedEmail} (${user.role})`);
-  sendTokenResponse(user, 200, res);
+
+  const context = await resolveOrganizationContext(user, {
+    activeOrganizationId: user.lastActiveOrganizationId,
+  });
+  if (isSuperAdmin(user.role) && context.organizationId) {
+    user.lastActiveOrganizationId = context.organizationId;
+    await user.save({ validateBeforeSave: false });
+  }
+
+  sendTokenResponse(user, 200, res, {
+    activeOrganizationId: context.isSuperAdmin ? context.organizationId : undefined,
+    organization: organizationSnapshot(context.organization),
+    req: {
+      organization: context.organization,
+      organizationId: context.organizationId,
+    },
+  });
 });
 
 // @desc    Logout user / clear cookie

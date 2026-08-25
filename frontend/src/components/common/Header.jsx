@@ -11,6 +11,7 @@ import { canAccessRoute } from '../../constants/navConfig';
 import { hasAnyPermission } from '../../constants/permissions';
 import ChatPanel, { useChatUnread } from './ChatPanel';
 import NotificationPanel, { useNotificationUnread } from './NotificationPanel';
+import HospitalSwitcher from './HospitalSwitcher';
 
 const fetchDoctors = () => api.get('/staff/doctors').then((r) => r.data.data).catch(() => []);
 
@@ -259,6 +260,7 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+        <HospitalSwitcher />
         <button
           type="button"
           onClick={() => dispatch(toggleDarkMode())}

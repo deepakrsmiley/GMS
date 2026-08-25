@@ -10,6 +10,7 @@ const {
   getContextOrganizationId,
 } = require('./tenantContext');
 const { legacyMissingOrgFilter, legacyOrOrgFilter } = require('../plugins/organizationScope');
+const { pickHospitalA, isHospitalA, HOSPITAL_A_CODE } = require('../utils/hospitalA');
 
 const toIdString = (value) => {
   if (!value) return null;
@@ -18,7 +19,9 @@ const toIdString = (value) => {
 };
 
 const untaggedRowsBelongToOrg = (org, oldestOrg) => {
-  if (!org || !oldestOrg) return false;
+  if (!org) return false;
+  if (isHospitalA(org)) return true;
+  if (!oldestOrg) return false;
   return String(org._id) === String(oldestOrg._id);
 };
 
@@ -58,7 +61,8 @@ const resolveOrganizationContext = async (user, decoded = {}) => {
         organization: org,
         organizationCode: org.code,
         isSuperAdmin: false,
-        legacyUnscoped: false,
+        // Sri Sanjeevi staff must still see leftover untagged live rows.
+        legacyUnscoped: isHospitalA(org),
         mustSelectOrganization: false,
       };
     }
@@ -75,7 +79,7 @@ const resolveOrganizationContext = async (user, decoded = {}) => {
   const selectedId = decoded.activeOrganizationId || null;
   const orgs = await Organization.find().sort({ createdAt: 1 }).lean();
   const orgCount = orgs.length;
-  const oldestOrg = orgs[0] || null;
+  const hospitalA = pickHospitalA(orgs);
 
   if (selectedId && mongoose.Types.ObjectId.isValid(selectedId)) {
     const org = orgs.find((item) => String(item._id) === String(selectedId))
@@ -86,8 +90,7 @@ const resolveOrganizationContext = async (user, decoded = {}) => {
         organization: org,
         organizationCode: org.code,
         isSuperAdmin: true,
-        // Untagged Sri Sanjeevi rows belong to the first hospital until migration tags them.
-        legacyUnscoped: untaggedRowsBelongToOrg(org, oldestOrg),
+        legacyUnscoped: isHospitalA(org, orgs),
         mustSelectOrganization: false,
       };
     }
@@ -103,25 +106,16 @@ const resolveOrganizationContext = async (user, decoded = {}) => {
       mustSelectOrganization: false,
     };
   }
-  if (orgCount === 1) {
-    const org = oldestOrg;
-    return {
-      organizationId: org._id,
-      organization: org,
-      organizationCode: org.code,
-      isSuperAdmin: true,
-      legacyUnscoped: true,
-      mustSelectOrganization: false,
-    };
-  }
 
+  // With two+ hospitals, still open Sri Sanjeevi by default so live data is not blank.
+  const org = hospitalA || orgs[0];
   return {
-    organizationId: null,
-    organization: null,
-    organizationCode: null,
+    organizationId: org._id,
+    organization: org,
+    organizationCode: org.code,
     isSuperAdmin: true,
-    legacyUnscoped: false,
-    mustSelectOrganization: true,
+    legacyUnscoped: isHospitalA(org, orgs),
+    mustSelectOrganization: false,
   };
 };
 
@@ -204,7 +198,7 @@ const orgById = (req, id, extra = {}) => {
 };
 
 const uploadsFolder = (req, suffix = 'files') => {
-  const code = req.organizationCode || 'HOSP001';
+  const code = req.organizationCode || HOSPITAL_A_CODE;
   return `hms/${code}/${suffix}`;
 };
 

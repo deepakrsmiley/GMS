@@ -167,6 +167,12 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await connectDB();
+    try {
+      const { attachUntaggedHospitalAData } = require('./utils/attachHospitalAData');
+      await attachUntaggedHospitalAData();
+    } catch (e) {
+      logger.warn(`Hospital A leftover attach skipped: ${e.message}`);
+    }
 
     server.listen(PORT, () => {
       logger.info(

@@ -61,6 +61,16 @@ describe('org filters', () => {
     assert.equal(filter._id, null);
   });
 
+  it('Hospital A scoped requests include untagged plus tagged rows', () => {
+    const orgId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    const filter = orgFilter({
+      organizationId: orgId,
+      tenant: { organizationId: orgId, legacyUnscoped: true },
+    });
+    assert.ok(filter.$or);
+    assert.equal(filter.$or.length, 3);
+  });
+
   it('orgById requires both _id and organizationId', () => {
     const req = { organizationId: 'aaaaaaaaaaaaaaaaaaaaaaaa', tenant: { organizationId: 'aaaaaaaaaaaaaaaaaaaaaaaa' } };
     const q = orgById(req, 'bbbbbbbbbbbbbbbbbbbbbbbb');
@@ -94,13 +104,20 @@ describe('mongoose plugin scope builder', () => {
     assert.equal(fromReq.$or.length, 3);
   });
 
-  it('untagged rows belong only to the oldest organization', () => {
+  it('untagged rows belong to Hospital A (HOSP001 / Sri Sanjeevi), not Hospital B', () => {
     const { untaggedRowsBelongToOrg } = require('../middleware/tenant');
+    const { pickHospitalA, isHospitalA } = require('../utils/hospitalA');
     const oldest = { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa' };
     const newer = { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb' };
     assert.equal(untaggedRowsBelongToOrg(oldest, oldest), true);
     assert.equal(untaggedRowsBelongToOrg(newer, oldest), false);
     assert.equal(untaggedRowsBelongToOrg(null, oldest), false);
+
+    const hospA = { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa', code: 'HOSP001', name: 'Sri Sanjeevi Hospital' };
+    const hospB = { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb', code: 'HOSP002', name: 'Srinivasa hospital' };
+    assert.equal(isHospitalA(hospA, [hospA, hospB]), true);
+    assert.equal(isHospitalA(hospB, [hospA, hospB]), false);
+    assert.equal(pickHospitalA([hospB, hospA]).code, 'HOSP001');
   });
 
   it('matches nothing when Super Admin has not selected an org', () => {

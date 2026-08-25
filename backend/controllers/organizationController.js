@@ -5,6 +5,7 @@ const User = require('../models/User');
 const sendTokenResponse = require('../utils/sendToken');
 const { isSuperAdmin } = require('../utils/roles');
 const { sanitizeEnabledModules, ALL_MODULE_IDS } = require('../config/hospitalModules');
+const { organizationSnapshot } = require('../utils/hospitalA');
 
 const sanitizeCode = (code) => String(code || '').trim().toUpperCase();
 
@@ -200,9 +201,14 @@ exports.selectOrganization = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Cannot select a deactivated organization', 400));
   }
 
+  if (isSuperAdmin(req.user.role)) {
+    req.user.lastActiveOrganizationId = org._id;
+    await req.user.save({ validateBeforeSave: false });
+  }
+
   sendTokenResponse(req.user, 200, res, {
     activeOrganizationId: org._id,
-    organization: orgJson(org),
+    organization: organizationSnapshot(org),
     req,
   });
 });

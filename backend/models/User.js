@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, match: [/^\S+@\S+\.\S+$/, 'Invalid email'] },
   password: { type: String, required: [true, 'Password is required'], minlength: 6, select: false },
   organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
+  lastActiveOrganizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
   role: { type: String, enum: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Accountant', 'Nurse', 'Biomedical Engineer', 'Patient'], default: 'Patient' },
   department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
   specialization: String,

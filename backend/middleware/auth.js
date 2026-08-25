@@ -83,7 +83,7 @@ const authenticateUser = asyncHandler(async (req, res, next) => {
     role: decoded.role,
     tokenVersion: decoded.tokenVersion,
     activeOrganizationId: isSuperAdmin(user.role)
-      ? decoded.activeOrganizationId
+      ? (decoded.activeOrganizationId || user.lastActiveOrganizationId)
       : undefined,
   };
   req.user = user;

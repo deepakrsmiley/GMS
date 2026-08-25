@@ -5,8 +5,8 @@ import toast from 'react-hot-toast';
 import { Building2, Plus, Power, UserPlus, LogIn, ListChecks } from 'lucide-react';
 import api from '../services/api';
 import { setUser } from '../redux/slices/authSlice';
-import { disconnectSocket, initSocket } from '../services/socket';
 import { HOSPITAL_MODULES, ALL_MODULE_IDS } from '../constants/hospitalModules';
+import { applyHospitalSession } from '../utils/applyHospitalSession';
 
 const fetchOrgs = () => api.get('/organizations').then((r) => r.data.data);
 
@@ -116,11 +116,8 @@ export default function OrganizationsPage() {
 
   const selectMut = useMutation({
     mutationFn: (id) => api.post(`/organizations/${id}/select`).then((r) => r.data),
-    onSuccess: (data) => {
-      if (data.token) localStorage.setItem('hms_token', data.token);
-      dispatch(setUser(data.data));
-      disconnectSocket();
-      if (data.data?._id) initSocket(data.data._id, data.data.role);
+    onSuccess: async (data) => {
+      await applyHospitalSession(data, dispatch, qc);
       toast.success(`Working in ${data.data?.organization?.name || 'selected hospital'}`);
     },
   });
@@ -140,8 +137,8 @@ export default function OrganizationsPage() {
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Organizations</h2>
           <p className="text-sm text-gray-500">
-            After you create a hospital, tick the modules it should use (OP, IP, Lab, and so on).
-            Only ticked items appear in that hospital&apos;s menu.
+            Super Admin: Sri Sanjeevi (HOSP001) keeps all existing live data.
+            New hospitals such as Srinivasa (HOSP002) start empty and never copy Sri Sanjeevi records.
           </p>
         </div>
         <button
