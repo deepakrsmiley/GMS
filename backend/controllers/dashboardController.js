@@ -9,10 +9,12 @@ const User = require('../models/User');
 const Department = require('../models/Department');
 const Asset = require('../models/Asset');
 const DirectSale = require('../models/DirectSale');
+const { istDayBounds, kolkataToday } = require('../utils/istDay');
 
 exports.getDashboardStats = asyncHandler(async (req, res) => {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const opDay = istDayBounds(kolkataToday());
   const month = new Date(today.getFullYear(), today.getMonth(), 1);
 
   const [
@@ -20,7 +22,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     bedStats, revenue, pendingBills, labToday,
     recentPatients, opQueue,
   ] = await Promise.all([
-    OPRegistration.countDocuments({ tokenDate: { $gte: today, $lt: tomorrow } }),
+    OPRegistration.countDocuments({ tokenDate: { $gte: opDay.from, $lt: opDay.to } }),
     IPAdmission.countDocuments({ createdAt: { $gte: today } }),
     Patient.countDocuments(),
     IPAdmission.countDocuments({ status: 'admitted' }),
@@ -29,7 +31,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     Bill.countDocuments({ status: { $in: ['pending', 'partial'] } }),
     LabTest.countDocuments({ createdAt: { $gte: today } }),
     Patient.find().sort('-createdAt').limit(5).select('patientId name age gender phone createdAt'),
-    OPRegistration.find({ tokenDate: { $gte: today, $lt: tomorrow }, status: { $in: ['waiting', 'in_consultation'] } })
+    OPRegistration.find({ tokenDate: { $gte: opDay.from, $lt: opDay.to }, status: { $in: ['waiting', 'in_consultation'] } })
       .populate('patient', 'name age').populate('doctor', 'name').populate('department', 'name').sort('tokenNumber').limit(10),
   ]);
 
@@ -44,7 +46,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
   ]);
 
   const opStats = await OPRegistration.aggregate([
-    { $match: { tokenDate: { $gte: today, $lt: tomorrow } } },
+    { $match: { tokenDate: { $gte: opDay.from, $lt: opDay.to } } },
     { $group: { _id: '$status', count: { $sum: 1 } } },
   ]);
   const opStat = opStats.reduce((acc, s) => { acc[s._id] = s.count; return acc; }, {});

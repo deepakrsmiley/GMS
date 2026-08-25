@@ -9,8 +9,9 @@ const Bill = require('../models/Bill');
 const User = require('../models/User');
 const Department = require('../models/Department');
 const logger = require('../utils/logger');
-const { generateTokenNo, allocateBillNumber } = require('../utils/generateId');
+const { allocateDailyOpToken, allocateBillNumber } = require('../utils/generateId');
 const { withOrganization } = require('../middleware/tenant');
+const { istDayBounds, kolkataToday } = require('../utils/istDay');
 const { markSourcesAsBilled } = require('../services/billingService');
 const {
   EMERGENCY_SURCHARGE,
@@ -241,17 +242,9 @@ exports.getOPRegistration = asyncHandler(async (req, res, next) => {
 });
 
 exports.getTodaysQueue = asyncHandler(async (req, res) => {
-  const today = new Date();
-  if (req.query.date) {
-    const parsed = new Date(`${req.query.date}T00:00:00`);
-    if (!Number.isNaN(parsed.getTime())) {
-      today.setTime(parsed.getTime());
-    }
-  }
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const { from, to } = istDayBounds(req.query.date || kolkataToday());
 
-  const filter = { tokenDate: { $gte: today, $lt: tomorrow } };
+  const filter = { tokenDate: { $gte: from, $lt: to } };
   if (req.query.department) filter.department = req.query.department;
   if (req.query.doctor) filter.doctor = req.query.doctor;
   if (req.user.role === 'Doctor' && !req.query.doctor) filter.doctor = req.user._id;
@@ -290,12 +283,11 @@ exports.getPendingPharmacy = asyncHandler(async (req, res) => {
 });
 
 exports.getDoctorQueue = asyncHandler(async (req, res) => {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const { from, to } = istDayBounds(req.query.date || kolkataToday());
   const doctorId = req.query.doctor || req.user._id;
 
   const queue = await OPRegistration.find({
-    tokenDate: { $gte: today, $lt: tomorrow },
+    tokenDate: { $gte: from, $lt: to },
     doctor: doctorId,
     status: { $nin: ['cancelled', 'no_show', 'discharged'] },
   })
@@ -359,25 +351,28 @@ exports.createOPRegistration = asyncHandler(async (req, res) => {
   delete req.body.paymentPurpose;
   delete req.body.consultationFee;
 
-  // Allow backdating OP visits via visitDate / scheduledTime from the registration form
+  // Allow backdating OP visits via visitDate / scheduledTime from the registration form.
+  // "Today" is the India calendar day and resets at 12:00 AM IST.
   let tokenDate = new Date();
   if (req.body.scheduledTime) {
     const scheduled = new Date(req.body.scheduledTime);
     if (!Number.isNaN(scheduled.getTime())) tokenDate = scheduled;
   } else if (req.body.visitDate) {
-    const visit = new Date(`${req.body.visitDate}T${req.body.visitTime || '00:00'}`);
-    if (!Number.isNaN(visit.getTime())) tokenDate = visit;
+    const visitIso = String(req.body.visitDate).slice(0, 10);
+    const visitTime = String(req.body.visitTime || '').slice(0, 5);
+    const utcIso = new Date().toISOString().slice(0, 10);
+    if (
+      /^\d{4}-\d{2}-\d{2}$/.test(visitIso)
+      && visitIso !== kolkataToday()
+      && visitIso !== utcIso
+    ) {
+      const hhmm = /^\d{2}:\d{2}$/.test(visitTime) ? visitTime : '09:00';
+      const parsed = new Date(`${visitIso}T${hhmm}:00.000+05:30`);
+      if (!Number.isNaN(parsed.getTime())) tokenDate = parsed;
+    }
   }
 
-  const dayStart = new Date(tokenDate);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-
-  const countThatDay = await OPRegistration.countDocuments({
-    tokenDate: { $gte: dayStart, $lt: dayEnd },
-  });
-  req.body.tokenNumber = generateTokenNo(countThatDay + 1);
+  req.body.tokenNumber = await allocateDailyOpToken(tokenDate, req.organizationId);
   req.body.tokenDate = tokenDate;
   req.body.registeredBy = req.user._id;
   delete req.body.visitDate;
@@ -550,9 +545,9 @@ exports.deleteServiceUsage = asyncHandler(async (req, res, next) => {
 });
 
 exports.getDepartmentStats = asyncHandler(async (req, res) => {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const { from, to } = istDayBounds(kolkataToday());
   const stats = await OPRegistration.aggregate([
-    { $match: { tokenDate: { $gte: today } } },
+    { $match: { tokenDate: { $gte: from, $lt: to } } },
     { $group: { _id: '$department', count: { $sum: 1 }, waiting: { $sum: { $cond: [{ $eq: ['$status', 'waiting'] }, 1, 0] } }, completed: { $sum: { $cond: [{ $in: ['$status', ['completed', 'consultation_completed', 'sent_to_pharmacy', 'pharmacy_completed']] }, 1, 0] } } } },
     { $lookup: { from: 'departments', localField: '_id', foreignField: '_id', as: 'dept' } },
     { $unwind: '$dept' },

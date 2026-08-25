@@ -23,6 +23,7 @@ import OPConsultationReceipt from '../components/op/OPConsultationReceipt';
 import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 import { hasPermission } from '../constants/permissions';
 import { SYSTEM_NAME } from '../constants/branding';
+import { istCalendarDate } from '../utils/istDate';
 import '../styles/opQueue.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -142,7 +143,8 @@ export default function OPQueuePage() {
   const [deptFilter, setDeptFilter] = useState('');
   const [doctorFilter, setDoctorFilter] = useState(user?.role === 'Doctor' ? user?.id : '');
   const [typeFilter, setTypeFilter] = useState('');
-  const [queueDate, setQueueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [queueDate, setQueueDate] = useState(() => istCalendarDate());
+  const [followLiveDay, setFollowLiveDay] = useState(true);
   const [activeTab, setActiveTab] = useState('waiting');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -171,11 +173,22 @@ export default function OPQueuePage() {
   }, [refetch]);
 
   useEffect(() => {
+    if (!followLiveDay) return undefined;
+    const syncToday = () => {
+      const today = istCalendarDate();
+      setQueueDate((prev) => (prev === today ? prev : today));
+    };
+    syncToday();
+    const id = setInterval(syncToday, 15000);
+    return () => clearInterval(id);
+  }, [followLiveDay]);
+
+  useEffect(() => {
     api.get('/departments').then(r => setDepartments(r.data.data || [])).catch(() => {});
     api.get('/staff/doctors').then(r => setDoctors(r.data.data || [])).catch(() => {});
   }, []);
 
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => istCalendarDate();
   const nowStr = () => new Date().toTimeString().slice(0, 5);
 
   const defaultRegForm = {
@@ -513,7 +526,11 @@ export default function OPQueuePage() {
           type="date"
           className="opq-date"
           value={queueDate}
-          onChange={(e) => setQueueDate(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setQueueDate(next);
+            setFollowLiveDay(next === istCalendarDate());
+          }}
         />
         <div className="opq-toolbar-actions">
           <button type="button" className="opq-btn-export" onClick={exportQueue}>

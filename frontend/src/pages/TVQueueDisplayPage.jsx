@@ -8,6 +8,7 @@ import { useSelector } from 'react-redux';
 import api from '../services/api';
 import { useBranding } from '../hooks/useBranding';
 import { initSocket } from '../services/socket';
+import { istCalendarDate } from '../utils/istDate';
 import '../styles/tvQueueDisplay.css';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -15,9 +16,10 @@ import '../styles/tvQueueDisplay.css';
 // ────────────────────────────────────────────────────────────────────────────
 
 function useOpQueue() {
+  const date = istCalendarDate();
   return useQuery({
-    queryKey: ['tv-op-queue'],
-    queryFn: () => api.get('/op/queue').then((r) => r.data),
+    queryKey: ['tv-op-queue', date],
+    queryFn: () => api.get('/op/queue', { params: { date } }).then((r) => r.data),
     refetchInterval: 20000,
   });
 }
