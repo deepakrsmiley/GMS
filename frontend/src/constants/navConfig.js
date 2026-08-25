@@ -1,6 +1,7 @@
-import { hasRole, normalizeRole } from '../utils/roles';
+import { hasRole, normalizeRole, isSuperAdmin } from '../utils/roles';
 import { hasPermission } from './permissions';
 import { isHospitalModuleEnabledForUser, ROUTE_TO_MODULE } from './hospitalModules';
+import { isClientOrg } from '../utils/hospitalA';
 
 /**
  * Role-based navigation for the 6 main enterprise roles + Super Admin.
@@ -30,6 +31,13 @@ export const NAV_ITEMS = [
   { id: 'queue-display',    to: '/queue-display',           label: 'TV Queue Display',   icon: 'MonitorPlay',     permission: 'VIEW_OP_QUEUE',          module: 'op', roles: ['Super Admin', 'Admin', 'Receptionist'] },
 ];
 
+/** GMS Global Super Admin console (shown even when no hospital is selected). */
+export const GMS_NAV_ITEMS = [
+  { id: 'gms-admin', to: '/gms', label: 'GMS Dashboard', icon: 'ShieldCheck' },
+  { id: 'gms-hospitals', to: '/gms/hospitals', label: 'Hospitals', icon: 'Building2' },
+  { id: 'gms-reports', to: '/reports', label: 'System Reports', icon: 'BarChart3' },
+];
+
 /** Route-level access for App.jsx ProtectedRoute (role-based fallback) */
 export const ROUTE_ACCESS = {
   dashboard:         ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Biomedical Engineer'],
@@ -55,6 +63,7 @@ export const ROUTE_ACCESS = {
   reports:           ['Super Admin', 'Admin'],
   settings:          ['Super Admin', 'Admin'],
   'queue-display':   ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse'],
+  gms:               ['Super Admin'],
 };
 
 /** Route segment -> permission code (used when a user has custom permissions assigned) */
@@ -135,6 +144,7 @@ export const canAccessRoute = (userOrRole, path) => {
   const hospitalModule = ROUTE_TO_MODULE[segment];
   if (hospitalModule && !isHospitalModuleEnabledForUser(user, hospitalModule)) return false;
 
+  if (segment === 'gms') return isSuperAdmin(user);
   if (normalizeRole(user.role) === 'Super Admin') return true;
 
   if (segment === 'masters') return hasMastersAccess(user);
@@ -152,8 +162,17 @@ export const canAccessRoute = (userOrRole, path) => {
 };
 
 /** Filters the nav for a full user object, respecting custom per-user permissions when present. */
+export const filterGmsNavForUser = (user) => {
+  if (!isSuperAdmin(user)) return [];
+  if (!isClientOrg(user?.organization)) {
+    return GMS_NAV_ITEMS.filter((item) => item.id !== 'gms-reports');
+  }
+  return GMS_NAV_ITEMS;
+};
+
 export const filterNavForUser = (user) => {
   if (!user) return [];
+  if (isSuperAdmin(user) && !isClientOrg(user?.organization)) return [];
   const byPermission = normalizeRole(user.role) === 'Super Admin'
     ? NAV_ITEMS
     : NAV_ITEMS.filter((item) => {

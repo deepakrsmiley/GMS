@@ -1,6 +1,7 @@
 import React from 'react';
 import { Printer, X } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
+import { GmsDevelopedPrintLine } from '../branding/GmsDevelopedBar';
 
 const fmt2 = (n) => Number(n || 0).toFixed(2);
 const fmtINR = (n) => `₹ ${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -123,6 +124,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                 </div>
               )}
               <div>
+                <GmsDevelopedPrintLine />
                 <div style={{fontSize:26,fontWeight:900,color:'#1a6b3c',lineHeight:1.1}}>
                   {branding.hospitalName || 'MediCare'}
                 </div>

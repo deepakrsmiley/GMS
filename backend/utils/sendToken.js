@@ -41,6 +41,12 @@ const sendTokenResponse = (user, statusCode, res, extras = {}) => {
 
   const org = organizationSnapshot(user, extras.req);
   const superAdmin = isSuperAdmin(user.role);
+  const selectedOrg = extras.organization !== undefined ? extras.organization : org.organization;
+  const selectedOrgId = superAdmin
+    ? (extras.activeOrganizationId !== undefined
+      ? extras.activeOrganizationId
+      : (selectedOrg?._id || null))
+    : org.organizationId;
 
   res
     .status(statusCode)
@@ -58,8 +64,8 @@ const sendTokenResponse = (user, statusCode, res, extras = {}) => {
         department: user.department,
         avatar: toAvatarDataUri(user),
         permissions: resolveEffectivePermissions(normalizeRole(user.role), user.permissions),
-        organizationId: superAdmin ? (extras.activeOrganizationId || org.organizationId) : org.organizationId,
-        organization: extras.organization || org.organization,
+        organizationId: selectedOrgId || null,
+        organization: selectedOrg || null,
       },
     });
 };

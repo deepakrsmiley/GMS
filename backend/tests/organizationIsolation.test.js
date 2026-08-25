@@ -106,18 +106,24 @@ describe('mongoose plugin scope builder', () => {
 
   it('untagged rows belong to Hospital A (HOSP001 / Sri Sanjeevi), not Hospital B', () => {
     const { untaggedRowsBelongToOrg } = require('../middleware/tenant');
-    const { pickHospitalA, isHospitalA } = require('../utils/hospitalA');
+    const { pickHospitalA, isHospitalA, isPlatformOrg, isClientOrg } = require('../utils/hospitalA');
     const oldest = { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa' };
     const newer = { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb' };
     assert.equal(untaggedRowsBelongToOrg(oldest, oldest), true);
     assert.equal(untaggedRowsBelongToOrg(newer, oldest), false);
     assert.equal(untaggedRowsBelongToOrg(null, oldest), false);
 
-    const hospA = { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa', code: 'HOSP001', name: 'Sri Sanjeevi Hospital' };
-    const hospB = { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb', code: 'HOSP002', name: 'Srinivasa hospital' };
-    assert.equal(isHospitalA(hospA, [hospA, hospB]), true);
-    assert.equal(isHospitalA(hospB, [hospA, hospB]), false);
-    assert.equal(pickHospitalA([hospB, hospA]).code, 'HOSP001');
+    const hospA = { _id: 'aaaaaaaaaaaaaaaaaaaaaaaa', code: 'HOSP001', name: 'Sri Sanjeevi Hospital', kind: 'client' };
+    const hospB = { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb', code: 'HOSP002', name: 'Srinivasa hospital', kind: 'client' };
+    const gms = { _id: 'cccccccccccccccccccccccc', code: 'GMS', name: 'Galactic Medical Systems', kind: 'platform' };
+    assert.equal(isPlatformOrg(gms), true);
+    assert.equal(isClientOrg(hospA), true);
+    assert.equal(isClientOrg(gms), false);
+    assert.equal(isHospitalA(hospA, [gms, hospA, hospB]), true);
+    assert.equal(isHospitalA(hospB, [gms, hospA, hospB]), false);
+    assert.equal(isHospitalA(gms, [gms, hospA, hospB]), false);
+    assert.equal(pickHospitalA([gms, hospB, hospA]).code, 'HOSP001');
+    assert.equal(pickHospitalA([gms]), null);
   });
 
   it('matches nothing when Super Admin has not selected an org', () => {
@@ -136,10 +142,13 @@ describe('public branding must not expose Hospital A', () => {
     const pub = brandingService.getPublicBranding();
     assert.equal(pub.isPublic, true);
     assert.equal(pub.systemName, 'GALACTIC MEDICAL SYSTEMS');
+    assert.equal(pub.hospitalName, 'GALACTIC MEDICAL SYSTEMS');
+    assert.equal(brandingService.SYSTEM_SHORT_NAME, 'GMS');
     assert.equal(pub.gstNumber, undefined);
     assert.equal(pub.address, undefined);
     assert.equal(pub.bankAccount, undefined);
     assert.equal(pub.logo, '');
+    assert.equal(pub.developedByLabel, 'GMS developed');
   });
 });
 
@@ -199,9 +208,28 @@ describe('User JWT payload helper', () => {
       password: 'Password1!',
       role: 'Super Admin',
     });
-    const saToken = jwt.decode(sa.getSignedJwtToken());
-    assert.equal(saToken.organizationId, undefined);
+    const saBound = new User({
+      name: 'SA2',
+      email: 'sa2@test.com',
+      password: 'Password1!',
+      role: 'Super Admin',
+      organizationId: 'cccccccccccccccccccccccc',
+    });
+    const saBoundToken = jwt.decode(saBound.getSignedJwtToken());
+    assert.equal(saBoundToken.organizationId, undefined);
     const selected = jwt.decode(sa.getSignedJwtToken({ activeOrganizationId: 'bbbbbbbbbbbbbbbbbbbbbbbb' }));
     assert.equal(String(selected.activeOrganizationId), 'bbbbbbbbbbbbbbbbbbbbbbbb');
+  });
+});
+
+describe('GMS role aliases', () => {
+  it('maps GMS_SUPER_ADMIN and HOSPITAL_ADMIN without changing stored role names', () => {
+    const { isSuperAdmin, normalizeRole } = require('../utils/roles');
+    assert.equal(isSuperAdmin('GMS_SUPER_ADMIN'), true);
+    assert.equal(isSuperAdmin('gms super admin'), true);
+    assert.equal(isSuperAdmin('Admin'), false);
+    assert.equal(normalizeRole('HOSPITAL_ADMIN'), 'Admin');
+    assert.equal(normalizeRole('hospital-admin'), 'Admin');
+    assert.equal(normalizeRole('Super Admin'), 'Super Admin');
   });
 });

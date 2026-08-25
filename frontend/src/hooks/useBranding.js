@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSelector } from 'react-redux';
 import { getBranding, updateBranding } from '../services/brandingApi';
 import { DEFAULT_BRANDING } from '../constants/branding';
 import { getSocket } from '../services/socket';
@@ -8,8 +9,9 @@ import toast from 'react-hot-toast';
 export const BRANDING_QUERY_KEY = ['branding'];
 
 export function useBranding() {
+  const organizationId = useSelector((s) => s.auth?.user?.organizationId || s.auth?.user?.organization?._id);
   const query = useQuery({
-    queryKey: BRANDING_QUERY_KEY,
+    queryKey: [...BRANDING_QUERY_KEY, organizationId || 'none'],
     queryFn: getBranding,
     staleTime: 0,
     placeholderData: DEFAULT_BRANDING,
@@ -31,7 +33,6 @@ export function useBrandingMutation() {
   return useMutation({
     mutationFn: updateBranding,
     onSuccess: (data) => {
-      qc.setQueryData(BRANDING_QUERY_KEY, data);
       qc.invalidateQueries({ queryKey: BRANDING_QUERY_KEY });
       toast.success('Hospital branding updated successfully');
     },
@@ -49,7 +50,7 @@ export function useBrandingSocketSync() {
     if (!socket) return;
 
     const handler = (data) => {
-      qc.setQueryData(BRANDING_QUERY_KEY, data);
+      qc.invalidateQueries({ queryKey: BRANDING_QUERY_KEY });
     };
 
     socket.on('branding:updated', handler);

@@ -231,18 +231,19 @@ export default function LoginPage() {
               </p>
 
               <p className="mt-5 text-gray-600 leading-relaxed">
-                Enterprise-grade healthcare platform designed for hospitals,
-                clinics, pharmacies and laboratories with secure patient
-                management, billing, reporting and workflow automation.
+                GMS is the Super Admin organization. Sri Sanjeevi Hospital and
+                Srinivasa hospital are client hospitals. Each client keeps its own
+                branding, with GMS developed shown at the top. Sri Sanjeevi live
+                data stays in Sri Sanjeevi.
               </p>
             </div>
           </div>
 
           <div className="space-y-4">
             {[
-              { icon: Stethoscope, text: "Integrated patient care workflows" },
-              { icon: ShieldCheck, text: "HIPAA-compliant secure access" },
-              { icon: Activity, text: "Real-time clinical operations" },
+              { icon: ShieldCheck, text: "GMS is the Super Admin organization" },
+              { icon: Stethoscope, text: "Sri Sanjeevi and Srinivasa are client hospitals" },
+              { icon: Activity, text: "Sri Sanjeevi live data stays in Sri Sanjeevi" },
             ].map(({ icon: Icon, text }, i) => (
               <motion.div
                 key={text}
@@ -297,6 +298,9 @@ export default function LoginPage() {
               </motion.div>
               <p className="text-[15px] text-gray-500 font-medium">
                 {SYSTEM_TAGLINE}
+              </p>
+              <p className="mt-2 text-xs text-gray-400">
+                GMS Super Admin · client hospitals keep their own branding
               </p>
 
               {/* Secure badge */}

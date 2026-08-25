@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, Navigate } from 'react-router-dom';
 import {
   Users, Activity, Bed, IndianRupee, FlaskConical, UserPlus, AlertTriangle,
   CheckCircle, Pill, Stethoscope, Building2, Package, Wrench, ChevronDown,
@@ -20,6 +20,9 @@ import { getSocket } from '../services/socket';
 import { format } from 'date-fns';
 import { hasPermission } from '../constants/permissions';
 import { isHospitalModuleEnabledForUser } from '../constants/hospitalModules';
+import { isSuperAdmin } from '../utils/roles';
+import { SYSTEM_SHORT_NAME } from '../constants/branding';
+import { isClientOrg } from '../utils/hospitalA';
 
 const fetchDashboard = () => api.get('/dashboard/stats').then((r) => r.data.data);
 const fetchDeptAnalytics = () => api.get('/dashboard/department-analytics').then((r) => r.data.data);
@@ -88,6 +91,10 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
+  if (isSuperAdmin(user) && !isClientOrg(user?.organization)) {
+    return <Navigate to="/gms" replace />;
+  }
+
   if (isLoading) return <LoadingSpinner />;
 
   const d = data || {};
@@ -117,13 +124,21 @@ export default function DashboardPage() {
     ? (deptAnalytics || []).filter((dept) => dept._id === selectedDept._id)
     : topDepts;
 
+  const clientHospital = isClientOrg(user?.organization);
+
   return (
     <div className="space-y-6">
       {/* Welcome row */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Welcome back, {user?.name?.split(' ')[0] || 'Doctor'}! 👋</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Here's what's happening with your hospital today.</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+            {isSuperAdmin(user)
+              ? (clientHospital
+                ? `${SYSTEM_SHORT_NAME} Super Admin · ${user.organization.name}`
+                : `${SYSTEM_SHORT_NAME} Super Admin · GMS has no hospital data. Select Sri Sanjeevi or Srinivasa from the header.`)
+              : `${user?.organization?.name || 'Your hospital'}. Here's today's work.`}
+          </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -183,6 +198,12 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {isSuperAdmin(user) && !clientHospital && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+          GMS is empty. Open a client hospital from the header — Sri Sanjeevi and Srinivasa each keep their own data and branding.
+        </div>
+      )}
 
       {/* Primary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">

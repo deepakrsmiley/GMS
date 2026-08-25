@@ -3,8 +3,11 @@ import { Outlet } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import Sidebar from '../components/common/Sidebar';
 import Header from '../components/common/Header';
+import GmsDevelopedBar from '../components/branding/GmsDevelopedBar';
 import { toggleDarkMode } from '../redux/slices/uiSlice';
 import { initSocket } from '../services/socket';
+import { isSuperAdmin } from '../utils/roles';
+import { isClientOrg } from '../utils/hospitalA';
 
 export default function MainLayout() {
   const { sidebarOpen, darkMode } = useSelector((s) => s.ui);
@@ -20,7 +23,11 @@ export default function MainLayout() {
   }, [user]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950 pt-7">
+      <GmsDevelopedBar
+        superAdmin={isSuperAdmin(user)}
+        clientHospital={isClientOrg(user?.organization)}
+      />
       <Sidebar />
       <div className={`flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
         <Header />

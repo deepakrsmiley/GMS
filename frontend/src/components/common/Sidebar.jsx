@@ -12,7 +12,11 @@ import {
 } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
 import { logout } from '../../redux/slices/authSlice';
-import { filterNavForUser } from '../../constants/navConfig';
+import { filterNavForUser, filterGmsNavForUser } from '../../constants/navConfig';
+import { isSuperAdmin } from '../../utils/roles';
+import { SYSTEM_SHORT_NAME, SYSTEM_NAME, SOFTWARE_LOGO } from '../../constants/branding';
+import { GmsDevelopedMark } from '../branding/GmsDevelopedBar';
+import { isClientOrg } from '../../utils/hospitalA';
 import ProfileSettingsModal from './ProfileSettingsModal';
 
 const ICON_MAP = {
@@ -20,6 +24,7 @@ const ICON_MAP = {
   BarChart3, Building2, UserCog, Activity, Settings, Stethoscope,
   FileText, ClipboardList, Package, FileBarChart, Clock, FileBarChart2,
   AlertTriangle, MonitorPlay, Database, HeartPulse, ClipboardCheck, Wrench,
+  ShieldCheck,
 };
 
 const byLabelAz = (a, b) =>
@@ -38,7 +43,14 @@ export default function Sidebar() {
     navigate('/login');
   };
 
+  const gmsNavItems = filterGmsNavForUser(user);
   const navItems = [...filterNavForUser(user)].sort(byLabelAz);
+  const gmsAdmin = isSuperAdmin(user);
+  const clientHospital = isClientOrg(user?.organization);
+  const hospitalName = user?.organization?.name || branding.hospitalName || 'Hospital';
+  const hospitalLogo = branding.logo || user?.organization?.logo || '';
+  const showHospitalBrand = clientHospital || !gmsAdmin;
+  const brandTitle = showHospitalBrand ? hospitalName : SYSTEM_SHORT_NAME;
 
   const renderLink = (item) => {
     const Icon = ICON_MAP[item.icon] || LayoutDashboard;
@@ -69,22 +81,26 @@ export default function Sidebar() {
   return (
     <motion.div
       animate={{ width: sidebarOpen ? 256 : 64 }}
-      className="fixed left-0 top-0 h-screen max-h-screen bg-white dark:bg-gray-900 text-gray-700 z-40 flex flex-col border-r border-gray-100 dark:border-gray-800 overflow-hidden"
+      className="fixed left-0 top-7 h-[calc(100vh-1.75rem)] max-h-[calc(100vh-1.75rem)] bg-white dark:bg-gray-900 text-gray-700 z-40 flex flex-col border-r border-gray-100 dark:border-gray-800 overflow-hidden"
     >
-      {/* Brand */}
+      {/* Brand — selected client hospital logo and name (Sanjeevi, Srinivasa, later hospitals) */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-        {branding.logo ? (
-          <img src={branding.logo} alt="" className="w-9 h-9 rounded-xl object-contain flex-shrink-0" />
-        ) : (
+        {showHospitalBrand && hospitalLogo ? (
+          <img src={hospitalLogo} alt="" className="w-9 h-9 rounded-xl object-contain flex-shrink-0" />
+        ) : showHospitalBrand ? (
           <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
             <ShieldCheck size={20} className="text-white" />
           </div>
+        ) : (
+          <img src={SOFTWARE_LOGO} alt={SYSTEM_NAME} className="w-9 h-9 rounded-xl object-contain flex-shrink-0 bg-white" />
         )}
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="overflow-hidden min-w-0">
-              <p className="font-bold text-gray-900 dark:text-white text-sm leading-tight truncate">{branding.hospitalName || 'Hospital'}</p>
-              {branding.tagline && <p className="text-gray-400 text-xs truncate">{branding.tagline}</p>}
+              {showHospitalBrand && <GmsDevelopedMark className="mb-0.5" />}
+              <p className="font-bold text-gray-900 dark:text-white text-sm leading-tight truncate" title={brandTitle}>
+                {brandTitle}
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -93,9 +109,17 @@ export default function Sidebar() {
       {/* Nav — A–Z for quick find */}
       <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-4 px-3">
         <AnimatePresence>
-          {sidebarOpen && (
+          {sidebarOpen && gmsNavItems.length > 0 && (
             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-            
+              GMS
+            </motion.p>
+          )}
+        </AnimatePresence>
+        {gmsNavItems.map(renderLink)}
+        <AnimatePresence>
+          {sidebarOpen && navItems.length > 0 && (
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2 mt-3">
+              {clientHospital ? hospitalName : ''}
             </motion.p>
           )}
         </AnimatePresence>
@@ -136,7 +160,9 @@ export default function Sidebar() {
             {sidebarOpen && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="overflow-hidden min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
-                <p className="text-xs text-gray-400 capitalize truncate">{user?.role?.replace('_', ' ')}</p>
+                <p className="text-xs text-gray-400 capitalize truncate">
+                  {gmsAdmin ? 'GMS Super Admin' : user?.role?.replace('_', ' ')}
+                </p>
                 <p className="text-[10px] text-blue-600 font-medium mt-0.5 group-hover:underline">Edit profile</p>
               </motion.div>
             )}

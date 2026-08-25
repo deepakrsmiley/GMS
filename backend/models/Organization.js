@@ -10,6 +10,12 @@ const organizationSchema = new mongoose.Schema({
     trim: true,
     match: [/^[A-Z0-9_-]{3,20}$/, 'Organization code must be 3-20 letters, numbers, underscore or hyphen'],
   },
+  kind: {
+    type: String,
+    enum: ['platform', 'client'],
+    default: 'client',
+    index: true,
+  },
   status: { type: String, enum: ['active', 'inactive'], default: 'active', index: true },
   logo: { type: String, trim: true },
   address: { type: String, trim: true },

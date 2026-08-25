@@ -1,6 +1,9 @@
 export const SYSTEM_NAME = 'GALACTIC MEDICAL SYSTEMS';
+export const SYSTEM_SHORT_NAME = 'GMS';
+export const SYSTEM_OWNER_LABEL = 'Super Admin';
 export const SYSTEM_TAGLINE = 'Hospital Management System';
 export const SOFTWARE_LOGO = '/gms-logo.png';
+export const DEVELOPED_BY_LABEL = 'GMS developed';
 
 export const DEFAULT_HOSPITAL_NAME = 'Your Hospital Name';
 export const DEFAULT_HOSPITAL_TAGLINE = 'Healthcare Excellence';
@@ -11,6 +14,8 @@ export const DEFAULT_BRANDING = {
   hospitalName: DEFAULT_HOSPITAL_NAME,
   tagline: DEFAULT_HOSPITAL_TAGLINE,
   logo: '',
+  developedBy: SYSTEM_SHORT_NAME,
+  developedByLabel: DEVELOPED_BY_LABEL,
   address: '',
   phone: '',
   email: '',

@@ -6,6 +6,8 @@ import MainLayout from './layouts/MainLayout';
 import AuthLayout from './layouts/AuthLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import GmsAdminPage from './pages/GmsAdminPage';
+import OrganizationsPage from './pages/OrganizationsPage';
 import PatientsPage from './pages/PatientsPage';
 import PatientProfilePage from './pages/PatientProfile/PatientProfilePage';
 import OPQueuePage from './pages/OPQueuePage';
@@ -29,6 +31,7 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
 import BrandingSync from './components/branding/BrandingSync';
 import { canAccessRoute } from './constants/navConfig';
+import { homePathForUser } from './utils/homePath';
 
 const ProtectedRoute = ({ children, routeKey }) => {
   const { user, loading } = useSelector((s) => s.auth);
@@ -38,6 +41,11 @@ const ProtectedRoute = ({ children, routeKey }) => {
     return <Navigate to="/unauthorized" replace />;
   }
   return children;
+};
+
+const HomeRedirect = () => {
+  const { user } = useSelector((s) => s.auth);
+  return <Navigate to={homePathForUser(user)} replace />;
 };
 
 export default function App() {
@@ -68,8 +76,11 @@ export default function App() {
         <Route path="/queue-display" element={<ProtectedRoute routeKey="queue-display"><TVQueueDisplayPage /></ProtectedRoute>} />
 
         <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<HomeRedirect />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
+
+          <Route path="/gms" element={<ProtectedRoute routeKey="gms"><GmsAdminPage /></ProtectedRoute>} />
+          <Route path="/gms/hospitals" element={<ProtectedRoute routeKey="gms"><OrganizationsPage /></ProtectedRoute>} />
 
           <Route path="/dashboard" element={<ProtectedRoute routeKey="dashboard"><DashboardPage /></ProtectedRoute>} />
           <Route path="/patients" element={<ProtectedRoute routeKey="patients"><PatientsPage /></ProtectedRoute>} />

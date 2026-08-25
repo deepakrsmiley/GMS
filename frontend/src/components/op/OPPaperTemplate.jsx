@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
 import '../../styles/opPaperPrint.css';
+import { GmsDevelopedPrintLine } from '../branding/GmsDevelopedBar';
 
 /**
  * OPPaperTemplate — A4 OP consultation pad.
@@ -156,6 +157,7 @@ export default function OPPaperTemplate({ branding, op }) {
             <div className="op-logo-fallback" aria-hidden>H</div>
           )}
           <div className="op-header-titles">
+            <GmsDevelopedPrintLine />
             <div className="op-hospital-name">{hospitalName}</div>
             {taglineLines.length > 0 && (
               <div className="op-taglines">

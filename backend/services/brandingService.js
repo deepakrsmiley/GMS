@@ -1,6 +1,6 @@
 const Branding = require('../models/Branding');
 const cloudinary = require('../config/cloudinary');
-const logger = require('../utils/logger');
+const { isPlatformOrg } = require('../utils/hospitalA');
 
 const SYSTEM_NAME = 'GALACTIC MEDICAL SYSTEMS';
 const SYSTEM_TAGLINE = 'Hospital Management System';
@@ -68,6 +68,8 @@ const applyDefaults = (branding, organization) => {
     upiId: data.upiId || DEFAULTS.upiId,
     labReport: data.labReport || {},
     organizationId: data.organizationId || organization?._id || null,
+    developedBy: 'GMS',
+    developedByLabel: 'GMS developed',
     updatedAt: data.updatedAt,
     isConfigured: !!(hospitalName && hospitalName !== DEFAULTS.hospitalName),
   };
@@ -84,6 +86,7 @@ const uploadLogo = async (logoData, existingLogo) => {
 
 exports.SYSTEM_NAME = SYSTEM_NAME;
 exports.SYSTEM_TAGLINE = SYSTEM_TAGLINE;
+exports.SYSTEM_SHORT_NAME = 'GMS';
 exports.DEFAULTS = DEFAULTS;
 
 exports.getPublicBranding = () => ({
@@ -93,9 +96,14 @@ exports.getPublicBranding = () => ({
   tagline: SYSTEM_TAGLINE,
   logo: '',
   isPublic: true,
+  developedBy: 'GMS',
+  developedByLabel: 'GMS developed',
 });
 
 exports.getBranding = async (req) => {
+  if (isPlatformOrg(req?.organization)) {
+    return exports.getPublicBranding();
+  }
   const branding = await Branding.findOne().sort({ updatedAt: -1 });
   return applyDefaults(branding, req?.organization);
 };
@@ -103,6 +111,12 @@ exports.getBranding = async (req) => {
 exports.getBrandingDocument = async () => Branding.findOne().sort({ updatedAt: -1 });
 
 exports.updateBranding = async (data, userId, req) => {
+  if (!req?.organizationId || isPlatformOrg(req?.organization)) {
+    const error = new Error('Select a client hospital before updating branding. GMS is the Super Admin organization.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const existing = await Branding.findOne().sort({ updatedAt: -1 });
   const logo = await uploadLogo(data.logo, existing?.logo);
 
@@ -127,21 +141,19 @@ exports.updateBranding = async (data, userId, req) => {
     bankIfsc: data.bankIfsc?.trim() || '',
     upiId: data.upiId?.trim() || '',
     updatedBy: userId,
+    organizationId: req.organizationId,
   };
 
   if (data.labReport && typeof data.labReport === 'object') {
     updateData.labReport = data.labReport;
   }
 
-  if (req?.organizationId) {
-    updateData.organizationId = req.organizationId;
+  if (existing) {
+    Object.assign(existing, updateData);
+    await existing.save();
+    return applyDefaults(existing, req.organization);
   }
 
-  const branding = await Branding.findOneAndUpdate(
-    {},
-    updateData,
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  );
-
-  return applyDefaults(branding, req?.organization);
+  const created = await Branding.create(updateData);
+  return applyDefaults(created, req.organization);
 };

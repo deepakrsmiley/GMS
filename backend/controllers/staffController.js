@@ -3,8 +3,10 @@ const ErrorResponse = require('../utils/errorResponse');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 const { sanitizePermissions } = require('../config/permissions');
-const { isSuperAdmin } = require('../utils/roles');
+const { isSuperAdmin, normalizeRole } = require('../utils/roles');
 const { userOrgFilter, getRequestOrganizationId } = require('../middleware/tenant');
+const Organization = require('../models/Organization');
+const { PLATFORM_CODE, KIND_PLATFORM } = require('../utils/hospitalA');
 
 // Helper to write audit logs
 const createAuditLog = async (userId, action, description, req) => {
@@ -58,18 +60,22 @@ exports.createStaff = asyncHandler(async (req, res, next) => {
     req.body.permissions = sanitizePermissions(req.body.permissions) || [];
   }
   sanitizeStaffBody(req.body);
+  if (req.body.role) req.body.role = normalizeRole(req.body.role);
 
   if (!isSuperAdmin(req.user.role) && isSuperAdmin(req.body.role)) {
     return next(new ErrorResponse('Hospital users cannot create a GMS Super Admin', 403));
   }
 
   const organizationId = getRequestOrganizationId(req);
-  if (!isSuperAdmin(req.body.role)) {
-    if (organizationId) {
-      req.body.organizationId = organizationId;
-    } else if (!req.tenant?.legacyUnscoped) {
-      return next(new ErrorResponse('Organization context is required to create hospital staff', 400));
-    }
+  if (isSuperAdmin(req.body.role)) {
+    const platform = await Organization.findOne({
+      $or: [{ kind: KIND_PLATFORM }, { code: PLATFORM_CODE }],
+    }).lean();
+    if (platform) req.body.organizationId = platform._id;
+  } else if (organizationId) {
+    req.body.organizationId = organizationId;
+  } else if (!req.tenant?.legacyUnscoped) {
+    return next(new ErrorResponse('Organization context is required to create hospital staff', 400));
   }
 
   const staff = await User.create(req.body);
@@ -86,6 +92,7 @@ exports.updateStaff = asyncHandler(async (req, res, next) => {
   if (req.body.password) delete req.body.password;
   delete req.body.organizationId;
   sanitizeStaffBody(req.body);
+  if (req.body.role) req.body.role = normalizeRole(req.body.role);
 
   const existingStaff = await User.findOne({ _id: req.params.id, ...userOrgFilter(req) });
   if (!existingStaff) return next(new ErrorResponse('Staff member not found', 404));

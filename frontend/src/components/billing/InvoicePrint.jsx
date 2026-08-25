@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, X } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
+import { GmsDevelopedPrintLine } from '../branding/GmsDevelopedBar';
 
 /* ─── formatters ─────────────────────────────────────── */
 const fmt2 = (n) => Number(n || 0).toFixed(2);
@@ -258,6 +259,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
                 )
               }
               <div style={{ flex:1 }}>
+                <GmsDevelopedPrintLine />
                 <div style={{ fontSize:24, fontWeight:500, color:primaryColor, lineHeight:1.1, letterSpacing:'-0.5px' }}>
                   {branding.hospitalName || 'Healthcare Center'}
                 </div>

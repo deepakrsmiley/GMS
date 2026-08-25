@@ -94,7 +94,8 @@ export default function HospitalBrandingPage() {
           <p className="hb-head__eyebrow">Institutional identity</p>
           <h2 className="hb-head__title">Hospital Branding</h2>
           <p className="hb-head__sub">
-            Profile used on bills, reports, prescriptions, and PDFs. Changes apply across the system after save.
+            This identity belongs to the client hospital, not to GMS.
+            Sri Sanjeevi bills keep the Sri Sanjeevi name. GMS developed stays at the top.
           </p>
         </div>
       </div>

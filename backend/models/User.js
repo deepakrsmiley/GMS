@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { isSuperAdmin } = require('../utils/roles');
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Name is required'], trim: true },
@@ -66,8 +67,8 @@ userSchema.methods.getSignedJwtToken = function (extras = {}) {
     tokenVersion: this.tokenVersion || 0,
   };
   const orgId = this.organizationId?._id || this.organizationId;
-  if (orgId) payload.organizationId = String(orgId);
-  if (this.role === 'Super Admin' && extras.activeOrganizationId) {
+  if (!isSuperAdmin(this.role) && orgId) payload.organizationId = String(orgId);
+  if (isSuperAdmin(this.role) && extras.activeOrganizationId) {
     payload.activeOrganizationId = String(extras.activeOrganizationId);
   }
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });

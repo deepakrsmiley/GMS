@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import { homePathForUser } from '../utils/homePath';
 
 function MedicalCross({ className }) {
   return (
@@ -61,7 +62,7 @@ function DNAHelix({ className }) {
 
 export default function AuthLayout() {
   const { user } = useSelector((s) => s.auth);
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user) return <Navigate to={homePathForUser(user)} replace />;
 
   return (
     <div className="relative min-h-screen bg-[#F8FAFC] overflow-hidden">

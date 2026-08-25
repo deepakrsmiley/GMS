@@ -1,7 +1,13 @@
 const ROLE_ALIASES = {
   super_admin: 'Super Admin',
   'super admin': 'Super Admin',
+  gms_super_admin: 'Super Admin',
+  'gms super admin': 'Super Admin',
+  'gms-super-admin': 'Super Admin',
   admin: 'Admin',
+  hospital_admin: 'Admin',
+  'hospital admin': 'Admin',
+  'hospital-admin': 'Admin',
   doctor: 'Doctor',
   receptionist: 'Receptionist',
   pharmacist: 'Pharmacist',

@@ -102,8 +102,8 @@ const MASTER_MODULES = [
   },
   {
     id: 'organizations',
-    label: 'Organizations',
-    description: 'GMS hospitals, admins, activate/deactivate',
+    label: 'Client hospitals',
+    description: 'GMS Super Admin creates client hospitals (Sri Sanjeevi, Srinivasa, later hospitals)',
     icon: Building,
     permission: 'MANAGE_ORGANIZATIONS',
     superAdminOnly: true,

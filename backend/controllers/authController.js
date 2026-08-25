@@ -10,7 +10,7 @@ const { serializeUser, parseDataUriPhoto } = require('../utils/userAvatar');
 const { sanitizeEnabledModules } = require('../config/hospitalModules');
 const { isSuperAdmin } = require('../utils/roles');
 const { resolveOrganizationContext } = require('../middleware/tenant');
-const { organizationSnapshot } = require('../utils/hospitalA');
+const { organizationSnapshot, isClientOrg } = require('../utils/hospitalA');
 
 // Helper function to create audit logs (userId may be null for unknown-email failures)
 const createAuditLog = async (userId, action, description, req, metadata = undefined) => {
@@ -56,7 +56,7 @@ exports.login = asyncHandler(async (req, res, next) => {
   const normalizedEmail = email.toLowerCase().trim();
   const user = await User.findOne({ email: normalizedEmail })
     .select('+password')
-    .populate('organizationId', 'name code status logo enabledModules');
+    .populate('organizationId', 'name code status logo enabledModules kind');
 
   if (!user) {
     logger.warn(`LOGIN failed: user not found for ${normalizedEmail}`);
@@ -79,7 +79,7 @@ exports.login = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Account is deactivated. Contact administrator.', 401));
   }
 
-  if (user.organizationId && user.organizationId.status && user.organizationId.status !== 'active') {
+  if (!isSuperAdmin(user.role) && user.organizationId && user.organizationId.status && user.organizationId.status !== 'active') {
     logger.warn(`LOGIN failed: deactivated organization for ${normalizedEmail}`);
     return next(new ErrorResponse('Organization is deactivated. Contact GMS Super Admin.', 401));
   }
@@ -145,13 +145,9 @@ exports.login = asyncHandler(async (req, res, next) => {
 
   logger.info(`LOGIN successful for ${normalizedEmail} (${user.role})`);
 
-  const context = await resolveOrganizationContext(user, {
-    activeOrganizationId: user.lastActiveOrganizationId,
-  });
-  if (isSuperAdmin(user.role) && context.organizationId) {
-    user.lastActiveOrganizationId = context.organizationId;
-    await user.save({ validateBeforeSave: false });
-  }
+  // GMS Super Admin always lands on the empty GMS console. Hospital data is
+  // only loaded after they explicitly open a client from the switcher.
+  const context = await resolveOrganizationContext(user, {});
 
   sendTokenResponse(user, 200, res, {
     activeOrganizationId: context.isSuperAdmin ? context.organizationId : undefined,
@@ -194,23 +190,31 @@ exports.logout = asyncHandler(async (req, res) => {
 exports.getMe = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id)
     .populate({ path: 'department', options: { skipOrganizationFilter: true } })
-    .populate('organizationId', 'name code status logo enabledModules');
+    .populate('organizationId', 'name code status logo enabledModules kind');
 
   const data = serializeUser(user);
   if (data) {
-    data.organizationId = req.organizationId || user.organizationId?._id || user.organizationId || null;
-    const orgDoc = req.organization || (user.organizationId && user.organizationId.name ? user.organizationId : null);
-    data.organization = orgDoc
-      ? {
-          _id: orgDoc._id,
-          name: orgDoc.name,
-          code: orgDoc.code,
-          status: orgDoc.status,
-          logo: orgDoc.logo || '',
-          enabledModules: sanitizeEnabledModules(orgDoc.enabledModules),
-        }
-      : null;
-    data.mustSelectOrganization = !!req.tenant?.mustSelectOrganization;
+    const selectedClient = req.organization && isClientOrg(req.organization) ? req.organization : null;
+    if (isSuperAdmin(user.role) && !selectedClient) {
+      data.organizationId = null;
+      data.organization = null;
+      data.mustSelectOrganization = true;
+    } else {
+      const orgDoc = selectedClient || req.organization || (user.organizationId && user.organizationId.name ? user.organizationId : null);
+      data.organizationId = req.organizationId || orgDoc?._id || user.organizationId?._id || user.organizationId || null;
+      data.organization = orgDoc
+        ? {
+            _id: orgDoc._id,
+            name: orgDoc.name,
+            code: orgDoc.code,
+            status: orgDoc.status,
+            logo: orgDoc.logo || '',
+            kind: orgDoc.kind || (String(orgDoc.code || '').toUpperCase() === 'GMS' ? 'platform' : 'client'),
+            enabledModules: sanitizeEnabledModules(orgDoc.enabledModules),
+          }
+        : null;
+      data.mustSelectOrganization = !!req.tenant?.mustSelectOrganization;
+    }
   }
 
   res.status(200).json({

@@ -168,6 +168,12 @@ const startServer = async () => {
   try {
     await connectDB();
     try {
+      const { ensureGmsPlatform } = require('./utils/ensureGmsPlatform');
+      await ensureGmsPlatform();
+    } catch (e) {
+      logger.warn(`GMS platform ensure skipped: ${e.message}`);
+    }
+    try {
       const { attachUntaggedHospitalAData } = require('./utils/attachHospitalAData');
       await attachUntaggedHospitalAData();
     } catch (e) {

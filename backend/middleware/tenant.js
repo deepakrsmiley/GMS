@@ -10,7 +10,7 @@ const {
   getContextOrganizationId,
 } = require('./tenantContext');
 const { legacyMissingOrgFilter, legacyOrOrgFilter } = require('../plugins/organizationScope');
-const { pickHospitalA, isHospitalA, HOSPITAL_A_CODE } = require('../utils/hospitalA');
+const { isHospitalA, HOSPITAL_A_CODE, isPlatformOrg, isClientOrg } = require('../utils/hospitalA');
 
 const toIdString = (value) => {
   if (!value) return null;
@@ -56,6 +56,9 @@ const resolveOrganizationContext = async (user, decoded = {}) => {
       if (org.status !== 'active') {
         throw new ErrorResponse('Organization is deactivated. Contact GMS Super Admin.', 401);
       }
+      if (isPlatformOrg(org)) {
+        throw new ErrorResponse('Hospital staff belong to a client hospital, not the GMS platform organization', 401);
+      }
       return {
         organizationId: org._id,
         organization: org,
@@ -78,13 +81,11 @@ const resolveOrganizationContext = async (user, decoded = {}) => {
 
   const selectedId = decoded.activeOrganizationId || null;
   const orgs = await Organization.find().sort({ createdAt: 1 }).lean();
-  const orgCount = orgs.length;
-  const hospitalA = pickHospitalA(orgs);
 
   if (selectedId && mongoose.Types.ObjectId.isValid(selectedId)) {
     const org = orgs.find((item) => String(item._id) === String(selectedId))
       || await Organization.findById(selectedId).lean();
-    if (org) {
+    if (org && isClientOrg(org)) {
       return {
         organizationId: org._id,
         organization: org,
@@ -96,26 +97,14 @@ const resolveOrganizationContext = async (user, decoded = {}) => {
     }
   }
 
-  if (orgCount === 0) {
-    return {
-      organizationId: null,
-      organization: null,
-      organizationCode: null,
-      isSuperAdmin: true,
-      legacyUnscoped: true,
-      mustSelectOrganization: false,
-    };
-  }
-
-  // With two+ hospitals, still open Sri Sanjeevi by default so live data is not blank.
-  const org = hospitalA || orgs[0];
+  // GMS Super Admin with no client selected: empty platform, not a hospital.
   return {
-    organizationId: org._id,
-    organization: org,
-    organizationCode: org.code,
+    organizationId: null,
+    organization: null,
+    organizationCode: null,
     isSuperAdmin: true,
-    legacyUnscoped: isHospitalA(org, orgs),
-    mustSelectOrganization: false,
+    legacyUnscoped: false,
+    mustSelectOrganization: true,
   };
 };
 
@@ -133,8 +122,13 @@ const authorizeSuperAdmin = (req, res, next) => {
   next();
 };
 
-const getRequestOrganizationId = (req) =>
-  req?.organizationId || req?.user?.organizationId || getContextOrganizationId();
+const getRequestOrganizationId = (req) => {
+  if (req?.organizationId) return req.organizationId;
+  if (isSuperAdmin(req?.user?.role)) {
+    return getContextOrganizationId();
+  }
+  return req?.user?.organizationId || getContextOrganizationId();
+};
 
 const orgFilter = (req, extra = {}) => {
   const ctx = req?.tenant || getOrganizationContext();
