@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 // Additive model for Section 13 (Operation History) of the Patient 360 EMR.
 // Does NOT touch any existing collection — only references them.
@@ -48,5 +49,7 @@ operationSchema.index({ patient: 1 });
 operationSchema.index({ ipAdmission: 1 });
 operationSchema.index({ surgeon: 1 });
 operationSchema.index({ startTime: -1 });
+
+applyOrganizationScope(operationSchema);
 
 module.exports = mongoose.model('Operation', operationSchema);

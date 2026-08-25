@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const saleItemSchema = new mongoose.Schema({
@@ -62,5 +63,7 @@ directSaleSchema.index({ saleDate: -1 });
 directSaleSchema.index({ patient: 1 });
 directSaleSchema.index({ invoiceNumber: 1 });
 directSaleSchema.index({ soldBy: 1 });
+
+applyOrganizationScope(directSaleSchema);
 
 module.exports = mongoose.model('DirectSale', directSaleSchema);

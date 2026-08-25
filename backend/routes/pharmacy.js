@@ -34,10 +34,12 @@ const {
   authenticateUser,
   authorizeAnyPermission,
 } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 const advancedResults = require('../middleware/advancedResults');
 const Medicine = require('../models/Medicine');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('pharmacy'));
 
 const VIEW = authorizeAnyPermission(
   'VIEW_PHARMACY',

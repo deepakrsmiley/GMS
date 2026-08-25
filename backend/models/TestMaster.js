@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const { LAB_TYPES } = require('./LabTest');
 
 // Hospital-configurable price list for lab tests/profiles (CBC, LFT, RFT, etc.)
@@ -26,5 +27,7 @@ const testMasterSchema = new mongoose.Schema({
 
 testMasterSchema.index({ category: 1 });
 testMasterSchema.index({ name: 'text' });
+
+applyOrganizationScope(testMasterSchema);
 
 module.exports = mongoose.model('TestMaster', testMasterSchema);

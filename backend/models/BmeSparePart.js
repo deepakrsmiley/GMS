@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const bmeSparePartSchema = new mongoose.Schema({
@@ -40,5 +41,7 @@ bmeSparePartSchema.pre('save', async function (next) {
 
 bmeSparePartSchema.index({ stock: 1 });
 bmeSparePartSchema.index({ category: 1 });
+
+applyOrganizationScope(bmeSparePartSchema);
 
 module.exports = mongoose.model('BmeSparePart', bmeSparePartSchema);

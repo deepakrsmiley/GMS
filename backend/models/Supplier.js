@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const supplierSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -32,5 +33,7 @@ const supplierSchema = new mongoose.Schema({
   notes: String,
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
+
+applyOrganizationScope(supplierSchema);
 
 module.exports = mongoose.model('Supplier', supplierSchema);

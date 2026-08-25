@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const patientSchema = new mongoose.Schema({
   patientId: { type: String, unique: true },
@@ -41,5 +42,7 @@ const patientSchema = new mongoose.Schema({
 
 patientSchema.index({ phone: 1 });
 patientSchema.index({ name: 'text', patientId: 'text', phone: 'text' });
+
+applyOrganizationScope(patientSchema);
 
 module.exports = mongoose.model('Patient', patientSchema);

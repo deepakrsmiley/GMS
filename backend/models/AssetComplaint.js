@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const assetComplaintSchema = new mongoose.Schema({
@@ -49,5 +50,7 @@ assetComplaintSchema.index({ status: 1 });
 assetComplaintSchema.index({ priority: 1 });
 assetComplaintSchema.index({ asset: 1 });
 assetComplaintSchema.index({ complaintDate: -1 });
+
+applyOrganizationScope(assetComplaintSchema);
 
 module.exports = mongoose.model('AssetComplaint', assetComplaintSchema);

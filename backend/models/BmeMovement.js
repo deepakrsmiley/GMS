@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const locationSnapshot = {
@@ -42,5 +43,7 @@ bmeMovementSchema.pre('save', async function (next) {
 });
 
 bmeMovementSchema.index({ equipment: 1, movedAt: -1 });
+
+applyOrganizationScope(bmeMovementSchema);
 
 module.exports = mongoose.model('BmeMovement', bmeMovementSchema);

@@ -13,9 +13,7 @@ import {
   Eraser,
   Stethoscope,
   ShoppingCart,
-  FlaskConical,
   Settings2,
-  Activity,
   ChevronDown,
   ChevronRight,
   FileQuestion,
@@ -48,6 +46,7 @@ const OP_SERVICE_BILL_CATEGORY = {
   Procedure: "Procedure",
   Nursing: "Nursing",
   Injection: "Procedure",
+  Laboratory: "Laboratory",
   Other: "Miscellaneous",
 };
 
@@ -96,7 +95,6 @@ function PendingPharmacyPanel({ canDispense }) {
   const [consultationGst, setConsultationGst] = useState(0);
   const [showConsultFee, setShowConsultFee] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(false);
-  const [includeVisitServices, setIncludeVisitServices] = useState(true);
 
   const { data: pending, isLoading } = useQuery({
     queryKey: ["opPharmacyPending"],
@@ -110,46 +108,25 @@ function PendingPharmacyPanel({ canDispense }) {
     [pending, selectedOpId],
   );
 
-  // Full visit details (labs, procedures, machine usage) for the selected OP
   const { data: visitDetail } = useQuery({
     queryKey: ["op-registration", selectedOp?._id],
     queryFn: () => api.get(`/op/${selectedOp._id}`).then((r) => r.data.data),
     enabled: !!selectedOp?._id,
   });
 
-  const visitUsages = useMemo(() => {
+  const manualCharges = useMemo(() => {
     const usages = visitDetail?.serviceUsages || selectedOp?.serviceUsages || [];
-    return {
-      labs: visitDetail?.labs || [],
-      procedures: usages.filter((u) => u.category === "Procedure"),
-      machines: usages.filter((u) => u.category === "Equipment"),
-      other: usages.filter(
-        (u) => u.category !== "Procedure" && u.category !== "Equipment",
-      ),
-      medicinesAlready: visitDetail?.pharmacyMedicines || [],
-    };
+    return usages.filter((u) => u && (Number(u.unitPrice) || 0) >= 0);
   }, [visitDetail, selectedOp]);
 
-  const billableVisitServices = useMemo(() => {
-    const usages = visitDetail?.serviceUsages || selectedOp?.serviceUsages || [];
-    return usages.filter((u) => u && (Number(u.unitPrice) || 0) > 0);
-  }, [visitDetail, selectedOp]);
-
-  const visitServicesTotal = useMemo(
+  const manualChargesTotal = useMemo(
     () =>
-      billableVisitServices.reduce(
+      manualCharges.reduce(
         (sum, u) => sum + (Number(u.quantity) || 1) * (Number(u.unitPrice) || 0),
         0,
       ),
-    [billableVisitServices],
+    [manualCharges],
   );
-
-  const hasVisitUsage =
-    visitUsages.labs.length > 0
-    || visitUsages.procedures.length > 0
-    || visitUsages.machines.length > 0
-    || visitUsages.other.length > 0
-    || visitUsages.medicinesAlready.length > 0;
 
   useEffect(() => {
     if (!selectedOpId && pending?.length) setSelectedOpId(pending[0]._id);
@@ -215,7 +192,7 @@ function PendingPharmacyPanel({ canDispense }) {
     const fee = Number(consultationFee) || 0;
     const feeGst = fee * ((Number(consultationGst) || 0) / 100);
     const feeTotal = fee + feeGst;
-    const servicesTotal = includeVisitServices ? visitServicesTotal : 0;
+    const servicesTotal = manualChargesTotal;
 
     const discountAmount =
       (subtotal + medGst) * ((Number(discount) || 0) / 100);
@@ -231,7 +208,7 @@ function PendingPharmacyPanel({ canDispense }) {
       feeTotal,
       servicesTotal,
     };
-  }, [items, discount, consultationFee, consultationGst, includeVisitServices, visitServicesTotal]);
+  }, [items, discount, consultationFee, consultationGst, manualChargesTotal]);
 
   const resetWorkbench = () => {
     setItems([]);
@@ -272,28 +249,25 @@ function PendingPharmacyPanel({ canDispense }) {
   const billMut = useMutation({
     mutationFn: async () => {
       if (!selectedOp) throw new Error("Select a patient");
-      const serviceLines =
-        includeVisitServices
-          ? billableVisitServices.map((u) => {
-              const qty = Number(u.quantity) || 1;
-              const unitPrice = Number(u.unitPrice) || 0;
-              return {
-                category: OP_SERVICE_BILL_CATEGORY[u.category] || "Procedure",
-                type: "procedure",
-                description: `${u.serviceName} × ${qty}${u.notes ? ` — ${u.notes}` : ""}`,
-                name: u.serviceName,
-                quantity: qty,
-                unitPrice,
-                gstPercent: 0,
-                gstAmount: 0,
-                referenceId: u._id,
-                referenceModel: "OPRegistration",
-              };
-            })
-          : [];
+      const serviceLines = manualCharges.map((u) => {
+        const qty = Number(u.quantity) || 1;
+        const unitPrice = Number(u.unitPrice) || 0;
+        return {
+          category: OP_SERVICE_BILL_CATEGORY[u.category] || "Procedure",
+          type: u.category === "Laboratory" ? "lab" : "procedure",
+          description: `${u.serviceName} × ${qty}${u.notes ? ` — ${u.notes}` : ""}`,
+          name: u.serviceName,
+          quantity: qty,
+          unitPrice,
+          gstPercent: 0,
+          gstAmount: 0,
+          referenceId: u._id,
+          referenceModel: "OPRegistration",
+        };
+      });
 
       if (!items.length && !totals.fee && !serviceLines.length) {
-        throw new Error("Add medicine, consultation fee, or a procedure / machine");
+        throw new Error("Add medicine, a manual charge, or consultation fee");
       }
 
       const billItems = [
@@ -360,7 +334,7 @@ function PendingPharmacyPanel({ canDispense }) {
       toast.success(
         message
           || (merged
-            ? "Medicines added to the same OP visit bill — consultation + medicines together"
+            ? "Medicines billed separately from the reception consultation receipt"
             : "Medicines saved — sent to Billing for payment"),
       );
       setPrintBill(bill);
@@ -510,163 +484,46 @@ function PendingPharmacyPanel({ canDispense }) {
             </div>
           </div>
 
-          {/* Everything used this OP visit — lab / procedure / machine */}
+          <div className="px-5 py-2.5 bg-slate-50 border-b border-blue-50 text-[11px] text-slate-500 flex items-center gap-2">
+            <Receipt size={12} className="text-blue-600 shrink-0" />
+            Add medicines and any extra charges here. Consultation fee is collected at reception.
+          </div>
+
           <div className="px-5 py-4 border-b border-blue-50 bg-white">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                <Activity size={15} className="text-blue-600" />
-                Used this visit
+                <Settings2 size={15} className="text-blue-600" />
+                Manual charges
               </h3>
-              <div className="flex flex-wrap items-center gap-2">
-                {billableVisitServices.length > 0 && (
-                  <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={includeVisitServices}
-                      onChange={(e) => setIncludeVisitServices(e.target.checked)}
-                      className="rounded border-slate-300"
-                    />
-                    Include in bill ({fmt(visitServicesTotal)})
-                  </label>
-                )}
-                <button
-                  type="button"
-                  disabled={!selectedOp}
-                  onClick={() => setShowServiceModal(true)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  <Plus size={14} /> Manual add (procedure / machine)
-                </button>
-              </div>
+              <button
+                type="button"
+                disabled={!selectedOp}
+                onClick={() => setShowServiceModal(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Plus size={14} /> Add charge
+              </button>
             </div>
-
-            {!hasVisitUsage ? (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center">
-                <p className="text-sm text-slate-500">No lab, procedure, or machine usage logged yet for this visit.</p>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Use <span className="font-medium text-slate-600">Manual add</span> for procedures, machines, nursing, injections — or add from OP Queue → Services / Lab.
-                </p>
-                <button
-                  type="button"
-                  disabled={!selectedOp}
-                  onClick={() => setShowServiceModal(true)}
-                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
-                >
-                  <Plus size={14} /> Add procedure / machine now
-                </button>
-              </div>
+            {manualCharges.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No extra charges yet. Add procedure, lab, machine, nursing, injection, or any other amount.
+              </p>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-3">
-                {visitUsages.labs.length > 0 && (
-                  <div className="rounded-xl border border-sky-100 bg-sky-50/50 px-3.5 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700 flex items-center gap-1.5 mb-2">
-                      <FlaskConical size={12} /> Lab ({visitUsages.labs.length})
-                    </p>
-                    <ul className="space-y-1.5">
-                      {visitUsages.labs.map((lab) => {
-                        const tests = (lab.tests || []).map((t) => t.testName).filter(Boolean);
-                        return (
-                          <li key={lab._id || lab.labNumber} className="text-sm text-slate-800">
-                            <span className="font-medium">{lab.testProfile || lab.labType || "Lab"}</span>
-                            {tests.length > 0 && (
-                              <span className="text-slate-500 text-xs block mt-0.5">{tests.join(", ")}</span>
-                            )}
-                            {lab.labNumber && (
-                              <span className="text-[10px] text-slate-400 font-mono">{lab.labNumber}</span>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
-
-                {visitUsages.procedures.length > 0 && (
-                  <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3.5 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 flex items-center gap-1.5 mb-2">
-                      <Settings2 size={12} /> Procedure ({visitUsages.procedures.length})
-                    </p>
-                    <ul className="space-y-1.5">
-                      {visitUsages.procedures.map((u) => (
-                        <li key={u._id} className="text-sm text-slate-800 flex justify-between gap-2">
-                          <span>
-                            <span className="font-medium">{u.serviceName}</span>
-                            {u.quantity > 1 && <span className="text-slate-400 text-xs"> × {u.quantity}</span>}
-                          </span>
-                          <span className="text-xs font-semibold text-blue-700 tabular-nums shrink-0">
-                            ₹{Number(u.quantity || 1) * Number(u.unitPrice || 0)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {visitUsages.machines.length > 0 && (
-                  <div className="rounded-xl border border-purple-100 bg-purple-50/50 px-3.5 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-purple-700 flex items-center gap-1.5 mb-2">
-                      <Settings2 size={12} /> Machine / Equipment ({visitUsages.machines.length})
-                    </p>
-                    <ul className="space-y-1.5">
-                      {visitUsages.machines.map((u) => (
-                        <li key={u._id} className="text-sm text-slate-800 flex justify-between gap-2">
-                          <span>
-                            <span className="font-medium">{u.serviceName}</span>
-                            {u.quantity > 1 && <span className="text-slate-400 text-xs"> × {u.quantity}</span>}
-                          </span>
-                          <span className="text-xs font-semibold text-purple-700 tabular-nums shrink-0">
-                            ₹{Number(u.quantity || 1) * Number(u.unitPrice || 0)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {visitUsages.other.length > 0 && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-2">
-                      Other services ({visitUsages.other.length})
-                    </p>
-                    <ul className="space-y-1.5">
-                      {visitUsages.other.map((u) => (
-                        <li key={u._id} className="text-sm text-slate-800 flex justify-between gap-2">
-                          <span>
-                            <span className="text-[10px] text-slate-400 mr-1">[{u.category}]</span>
-                            <span className="font-medium">{u.serviceName}</span>
-                          </span>
-                          <span className="text-xs font-semibold text-slate-700 tabular-nums shrink-0">
-                            ₹{Number(u.quantity || 1) * Number(u.unitPrice || 0)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {visitUsages.medicinesAlready.length > 0 && (
-                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 px-3.5 py-3 sm:col-span-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 flex items-center gap-1.5 mb-2">
-                      <Pill size={12} /> Medicines already billed ({visitUsages.medicinesAlready.length})
-                    </p>
-                    <ul className="space-y-1 grid sm:grid-cols-2 gap-x-4">
-                      {visitUsages.medicinesAlready.map((m, i) => (
-                        <li key={`${m.name}-${i}`} className="text-sm text-slate-800">
-                          <span className="font-medium">{m.name}</span>
-                          {m.dosage && <span className="text-slate-500 text-xs"> · {m.dosage}</span>}
-                          {m.quantity && <span className="text-slate-400 text-xs"> · Qty {m.quantity}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
+              <ul className="space-y-1.5">
+                {manualCharges.map((u) => (
+                  <li key={u._id} className="flex items-center justify-between gap-3 text-sm text-slate-800 rounded-lg border border-slate-100 px-3 py-2">
+                    <span>
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400 mr-1.5">{u.category || "Other"}</span>
+                      <span className="font-medium">{u.serviceName}</span>
+                      {u.quantity > 1 && <span className="text-slate-400 text-xs"> × {u.quantity}</span>}
+                    </span>
+                    <span className="text-xs font-semibold text-blue-700 tabular-nums shrink-0">
+                      {fmt((Number(u.quantity) || 1) * (Number(u.unitPrice) || 0))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
-          </div>
-
-          <div className="px-5 py-2.5 bg-slate-50 border-b border-blue-50 text-[11px] text-slate-500 flex items-center gap-2">
-            <Receipt size={12} className="text-blue-600 shrink-0" />
-            Consultation fee + medicines merge into the OP visit invoice · patient pays at Billing
           </div>
 
           {/* Consultation fee */}
@@ -934,7 +791,7 @@ function PendingPharmacyPanel({ canDispense }) {
                 </p>
               )}
               {totals.servicesTotal > 0 && (
-                <p>Procedures / machines: {fmt(totals.servicesTotal)}</p>
+                <p>Manual charges: {fmt(totals.servicesTotal)}</p>
               )}
               <p>
                 Medicines: Subtotal {fmt(totals.subtotal)} + GST {fmt(totals.medGst)} − Discount{" "}
@@ -956,7 +813,7 @@ function PendingPharmacyPanel({ canDispense }) {
                 disabled={
                   !canDispense ||
                   billMut.isPending ||
-                  (!items.length && !totals.fee && !(includeVisitServices && billableVisitServices.length))
+                  (!items.length && !totals.fee && !manualCharges.length)
                 }
                 className="btn-primary justify-center disabled:opacity-50 order-1 sm:order-2 min-w-[200px]"
               >

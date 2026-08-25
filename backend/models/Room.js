@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const roomSchema = new mongoose.Schema({
   roomNumber: { type: String, required: true },
@@ -28,5 +29,7 @@ const roomSchema = new mongoose.Schema({
 roomSchema.index({ ward: 1, status: 1 });
 roomSchema.index({ type: 1, status: 1 });
 roomSchema.index({ roomNumber: 1, ward: 1 }, { unique: true });
+
+applyOrganizationScope(roomSchema);
 
 module.exports = mongoose.model('Room', roomSchema);

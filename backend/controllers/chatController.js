@@ -2,6 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const ChatMessage = require('../models/ChatMessage');
 const User = require('../models/User');
+const { userOrgFilter, orgRoom } = require('../middleware/tenant');
 
 const STAFF_ROLES = [
   'Super Admin',
@@ -48,6 +49,7 @@ exports.getDirectory = asyncHandler(async (req, res, next) => {
     isActive: true,
     role: { $in: STAFF_ROLES },
     _id: { $ne: req.user._id },
+    ...userOrgFilter(req),
   };
   if (q) {
     filter.$or = [
@@ -208,6 +210,7 @@ exports.postMessage = asyncHandler(async (req, res, next) => {
         isActive: true,
         role: { $in: STAFF_ROLES },
         name: { $in: tokens.map((t) => new RegExp(`^${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) },
+        ...userOrgFilter(req),
       })
         .select('_id name')
         .lean();
@@ -222,7 +225,7 @@ exports.postMessage = asyncHandler(async (req, res, next) => {
 
   // Validate mention ids exist
   if (mentionIds.length) {
-    const valid = await User.find({ _id: { $in: mentionIds }, isActive: true }).select('_id');
+    const valid = await User.find({ _id: { $in: mentionIds }, isActive: true, ...userOrgFilter(req) }).select('_id');
     mentionIds = valid.map((u) => String(u._id));
   }
 
@@ -233,7 +236,7 @@ exports.postMessage = asyncHandler(async (req, res, next) => {
     if (String(recipientId) === String(req.user._id)) {
       return next(new ErrorResponse('Cannot message yourself', 400));
     }
-    const recipient = await User.findOne({ _id: recipientId, isActive: true });
+    const recipient = await User.findOne({ _id: recipientId, isActive: true, ...userOrgFilter(req) });
     if (!recipient) return next(new ErrorResponse('Recipient not found', 404));
     participants = [req.user._id, recipient._id];
     if (!mentionIds.includes(String(recipient._id))) mentionIds.push(String(recipient._id));
@@ -254,7 +257,7 @@ exports.postMessage = asyncHandler(async (req, res, next) => {
   const io = req.app.get('io');
   if (io) {
     if (channel === 'hospital') {
-      io.to('hospital:chat').emit('chat:message', payload);
+      io.to(orgRoom.chat(req.organizationId)).emit('chat:message', payload);
     } else {
       for (const uid of participants) {
         io.to(`user:${uid}`).emit('chat:message', payload);

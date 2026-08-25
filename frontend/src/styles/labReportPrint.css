@@ -1,11 +1,6 @@
 /**
  * labReportPrint.css
- * ------------------------------------------------------------------
- * Structural print rules for LabReportTemplate. Colors/fonts/margins
- * are dynamic (come from Hospital Settings) and are injected inline
- * by the component itself — this file only holds layout rules that
- * never change.
- * ------------------------------------------------------------------
+ * Structural print rules for LabReportTemplate.
  */
 
 .lab-report-root {
@@ -13,8 +8,6 @@
   color: #0f172a;
 }
 
-/* Table-based shell is the most reliable cross-browser way to repeat
-   a header and footer on every printed page. */
 .lab-report-shell {
   width: 100%;
   border-collapse: collapse;
@@ -49,31 +42,60 @@
   z-index: 1;
 }
 
-.lab-report-print-only { display: none; }
-
-@media print {
-  html, body {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  /* Hide the entire app and show only the report when printData is set. */
-  body:has(.lab-report-print-only) * { visibility: hidden; }
-  .lab-report-print-only,
-  .lab-report-print-only * { visibility: visible; }
-  .lab-report-print-only {
-    display: block !important;
-    position: absolute;
-    inset: 0;
-    margin: 0;
-  }
-
-  .no-print { display: none !important; }
-}
-
 @media screen {
+  .lab-report-print-only {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 210mm;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    z-index: -1 !important;
+  }
+
   .lab-report-screen-frame {
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15), 0 1px 2px rgba(15, 23, 42, 0.1);
     margin: 0 auto;
   }
+}
+
+@media print {
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body * { visibility: hidden !important; }
+
+  #lab-report-print-root,
+  #lab-report-print-root * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .lab-report-print-only {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    z-index: auto !important;
+  }
+
+  #lab-report-print-root {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 210mm !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  .no-print { display: none !important; }
 }

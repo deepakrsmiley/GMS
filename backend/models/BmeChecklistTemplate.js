@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const bmeChecklistTemplateSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -18,5 +19,7 @@ const bmeChecklistTemplateSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
+
+applyOrganizationScope(bmeChecklistTemplateSchema);
 
 module.exports = mongoose.model('BmeChecklistTemplate', bmeChecklistTemplateSchema);

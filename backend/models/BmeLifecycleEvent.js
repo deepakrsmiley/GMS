@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 /** Immutable lifecycle / timeline events for equipment — never delete. */
 const bmeLifecycleEventSchema = new mongoose.Schema({
@@ -26,5 +27,7 @@ const bmeLifecycleEventSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 bmeLifecycleEventSchema.index({ equipment: 1, occurredAt: -1 });
+
+applyOrganizationScope(bmeLifecycleEventSchema);
 
 module.exports = mongoose.model('BmeLifecycleEvent', bmeLifecycleEventSchema);

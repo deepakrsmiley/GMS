@@ -9,8 +9,10 @@ const {
   deleteRoom,
 } = require('../controllers/roomController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('ip'));
 
 const MANAGE_ROOMS = authorizeAnyPermission('MANAGE_ROOMS', 'MANAGE_BEDS');
 

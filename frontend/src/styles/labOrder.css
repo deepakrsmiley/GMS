@@ -560,10 +560,59 @@
   gap: 0.4rem;
 }
 
+.lo-other-toggle {
+  margin-top: 0.65rem;
+  width: 100%;
+}
+.lo-other-card {
+  border: 1px solid var(--lo-line);
+  border-radius: 0.5rem;
+  padding: 0.65rem;
+  background: var(--lo-canvas);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
 .lo-custom__row {
   display: grid;
   grid-template-columns: 1fr 5rem;
   gap: 0.4rem;
+}
+.lo-custom__row--other {
+  grid-template-columns: 1fr 7rem;
+}
+.lo-format {
+  background: var(--lo-surface);
+  border: 1px dashed var(--lo-line);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.65rem;
+}
+.lo-format__title {
+  margin: 0 0 0.35rem;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lo-accent);
+}
+.lo-format ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.lo-format li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 12px;
+  color: var(--lo-ink);
+}
+.lo-format li span {
+  color: var(--lo-muted);
+  font-size: 11px;
 }
 
 .lo-link-btn {

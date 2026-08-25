@@ -2,6 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const Shift = require('../models/shift');
 const Bill = require('../models/Bill');
+const DirectSale = require('../models/DirectSale');
 const LabTest = require('../models/LabTest');
 
 // ── Open a new shift ──────────────────────────────────────────────────────────
@@ -38,15 +39,20 @@ exports.getShiftReport = asyncHandler(async (req, res, next) => {
   const from = shift.openedAt;
   const to = shift.closedAt || new Date();
 
-  // Bills raised during this shift window
   const bills = await Bill.find({
     createdAt: { $gte: from, $lte: to },
     status: { $in: ['paid', 'partial'] },
   }).select('billType totalAmount paidAmount payments createdAt');
 
+  const sales = await DirectSale.find({
+    saleDate: { $gte: from, $lte: to },
+    paymentStatus: { $in: ['paid', 'partial'] },
+  }).select('grandTotal paidAmount paymentMethod');
+
   const summary = {
-    totalBills: bills.length,
-    totalRevenue: bills.reduce((s, b) => s + (b.paidAmount || 0), 0),
+    totalBills: bills.length + sales.length,
+    totalRevenue: bills.reduce((s, b) => s + (b.paidAmount || 0), 0)
+      + sales.reduce((s, x) => s + (x.paidAmount || 0), 0),
     cashAmount: 0,
     cardAmount: 0,
     upiAmount: 0,
@@ -68,6 +74,15 @@ exports.getShiftReport = asyncHandler(async (req, res, next) => {
     else if (b.billType === 'pharmacy') summary.pharmacyRevenue += b.paidAmount || 0;
     else if (b.billType === 'op') summary.opRevenue += b.paidAmount || 0;
     else if (b.billType === 'ip') summary.ipRevenue += b.paidAmount || 0;
+  });
+  sales.forEach((s) => {
+    const mode = String(s.paymentMethod || 'cash').toLowerCase();
+    const paid = s.paidAmount || 0;
+    if (mode === 'cash') summary.cashAmount += paid;
+    else if (mode === 'card') summary.cardAmount += paid;
+    else if (mode === 'upi') summary.upiAmount += paid;
+    else summary.otherAmount += paid;
+    summary.pharmacyRevenue += paid;
   });
 
   // Lab tests created in this shift window
@@ -117,11 +132,15 @@ exports.closeShift = asyncHandler(async (req, res, next) => {
   const from = shift.openedAt;
   const to = new Date();
 
-  // Auto-calculate revenue during this shift
   const bills = await Bill.find({
     createdAt: { $gte: from, $lte: to },
     status: { $in: ['paid', 'partial'] },
   }).select('billType totalAmount paidAmount payments');
+
+  const sales = await DirectSale.find({
+    saleDate: { $gte: from, $lte: to },
+    paymentStatus: { $in: ['paid', 'partial'] },
+  }).select('grandTotal paidAmount paymentMethod');
 
   let cashAmount = 0, cardAmount = 0, upiAmount = 0, otherAmount = 0;
   let labRevenue = 0, pharmacyRevenue = 0, opRevenue = 0, ipRevenue = 0;
@@ -137,6 +156,15 @@ exports.closeShift = asyncHandler(async (req, res, next) => {
     else if (b.billType === 'pharmacy') pharmacyRevenue += b.paidAmount || 0;
     else if (b.billType === 'op') opRevenue += b.paidAmount || 0;
     else if (b.billType === 'ip') ipRevenue += b.paidAmount || 0;
+  });
+  sales.forEach((s) => {
+    const mode = String(s.paymentMethod || 'cash').toLowerCase();
+    const paid = s.paidAmount || 0;
+    if (mode === 'cash') cashAmount += paid;
+    else if (mode === 'card') cardAmount += paid;
+    else if (mode === 'upi') upiAmount += paid;
+    else otherAmount += paid;
+    pharmacyRevenue += paid;
   });
 
   const totalCollected = cashAmount + cardAmount + upiAmount + otherAmount;
@@ -156,7 +184,7 @@ exports.closeShift = asyncHandler(async (req, res, next) => {
     pharmacyRevenue,
     opRevenue,
     ipRevenue,
-    totalBills: bills.length,
+    totalBills: bills.length + sales.length,
     notes: req.body.notes || '',
   };
 

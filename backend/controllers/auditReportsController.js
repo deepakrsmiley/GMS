@@ -15,6 +15,28 @@ const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 const Prescription = require('../models/Prescription');
 const Asset = require('../models/Asset');
+const AssetComplaint = require('../models/AssetComplaint');
+const ChangeRequest = require('../models/ChangeRequest');
+const Document = require('../models/Document');
+const Department = require('../models/Department');
+const Supplier = require('../models/Supplier');
+const BmeWorkOrder = require('../models/BmeWorkOrder');
+const ChatMessage = require('../models/ChatMessage');
+const Notification = require('../models/Notification');
+const Shift = require('../models/shift');
+const Ward = require('../models/Ward');
+const Room = require('../models/Room');
+const ServiceMaster = require('../models/ServiceMaster');
+const TestMaster = require('../models/TestMaster');
+const BmeCalibration = require('../models/BmeCalibration');
+const BmePreventiveMaintenance = require('../models/BmePreventiveMaintenance');
+const BmeContract = require('../models/BmeContract');
+const BmeMovement = require('../models/BmeMovement');
+const BmeVendor = require('../models/BmeVendor');
+const mongoose = require('mongoose');
+const { userOrgFilter } = require('../middleware/tenant');
+
+const staffScope = () => userOrgFilter({});
 
 const RADIOLOGY_TYPES = ['Radiology', 'X-Ray', 'CT Scan', 'MRI', 'Ultrasound'];
 const LAB_CLINICAL_TYPES = [
@@ -23,9 +45,15 @@ const LAB_CLINICAL_TYPES = [
 ];
 
 const SECTION_KEYS = [
-  'executive', 'user-activity', 'patient', 'appointment', 'doctor',
-  'pharmacy', 'inventory', 'billing', 'payment', 'laboratory', 'radiology',
-  'bed', 'nurse', 'ot', 'financial', 'insurance', 'employee', 'security', 'system',
+  'executive', 'trail',
+  'patient', 'op', 'ip', 'appointment', 'doctor',
+  'pharmacy', 'inventory', 'stock', 'prescription',
+  'billing', 'payment', 'financial', 'insurance', 'shift',
+  'laboratory', 'radiology',
+  'bed', 'facility', 'nurse', 'ot',
+  'assets', 'complaints', 'bems',
+  'departments', 'suppliers', 'catalog', 'documents',
+  'user-activity', 'employee', 'security', 'changes', 'chat', 'notifications', 'system',
 ];
 
 const NOT_TRACKED = 'Not tracked yet';
@@ -42,6 +70,54 @@ const parseRange = (req) => {
   if (from > to) [from, to] = [to, from];
   return { from, to };
 };
+
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const parseFilters = (req) => ({
+  q: String(req.query.q || '').trim(),
+  module: String(req.query.module || '').trim(),
+  action: String(req.query.action || '').trim(),
+  user: String(req.query.user || '').trim(),
+  status: String(req.query.status || '').trim(),
+  page: Math.max(1, parseInt(req.query.page, 10) || 1),
+  limit: Math.min(200, Math.max(10, parseInt(req.query.limit, 10) || 50)),
+});
+
+const pageOpts = (filters = {}) => {
+  const page = filters.page || 1;
+  const limit = filters.limit || 50;
+  return { page, limit, skip: (page - 1) * limit };
+};
+
+const searchOr = (q, fields = []) => {
+  if (!q || !fields.length) return {};
+  const rx = new RegExp(escapeRegex(q), 'i');
+  return { $or: fields.map((f) => ({ [f]: rx })) };
+};
+
+const mergeList = (base, filters = {}, searchFields = []) => {
+  const parts = [base];
+  const text = searchOr(filters.q, searchFields);
+  if (Object.keys(text).length) parts.push(text);
+  if (filters.status) parts.push({ status: filters.status });
+  if (parts.length === 1) return base;
+  return { $and: parts };
+};
+
+const pageMeta = (total, page, limit) => ({
+  total,
+  page,
+  pages: Math.ceil(total / limit) || 1,
+  limit,
+  serverSearch: true,
+});
+
+const flag = (key, label, value, highAt = 1, mediumAt = 1) => ({
+  key,
+  label,
+  value: value || 0,
+  severity: value >= highAt ? 'high' : value >= mediumAt ? 'medium' : 'ok',
+});
 
 const kpi = (key, label, value, format = 'number', tracked = true) => ({
   key, label, value: tracked ? value : NOT_TRACKED, format: tracked ? format : 'text', tracked,
@@ -64,6 +140,8 @@ const respond = (res, section, from, to, payload) => {
       kpis: payload.kpis || [],
       breakdown: payload.breakdown || [],
       details: payload.details || [],
+      registers: payload.registers || [],
+      exceptions: payload.exceptions || [],
       footnotes: payload.footnotes || [],
       meta: payload.meta || {},
     },
@@ -111,6 +189,15 @@ async function buildExecutive(from, to) {
     activeUsers,
     failedLogins,
     criticalAlerts,
+    cancelledBills,
+    overdueBills,
+    noShowOp,
+    pendingChanges,
+    openComplaints,
+    cancelledLabs,
+    overdueCalibrations,
+    overduePm,
+    unreadNotifications,
   ] = await Promise.all([
     Patient.countDocuments({ isActive: { $ne: false } }),
     Patient.countDocuments({ createdAt: { $gte: from, $lte: to } }),
@@ -129,7 +216,7 @@ async function buildExecutive(from, to) {
       { $group: { _id: null, total: { $sum: '$grandTotal' }, count: { $sum: 1 } } },
     ]),
     bedOccupancy(),
-    User.countDocuments({ isActive: true }),
+    User.countDocuments({ isActive: true, ...staffScope() }),
     ActivityLog.countDocuments({
       module: 'Authentication',
       action: 'Login Failure',
@@ -139,6 +226,19 @@ async function buildExecutive(from, to) {
       createdAt: { $gte: from, $lte: to },
       'results.status': 'Critical',
     }),
+    Bill.countDocuments({ createdAt: { $gte: from, $lte: to }, status: 'cancelled' }),
+    Bill.countDocuments({
+      status: { $in: ['pending', 'partial'] },
+      dueAmount: { $gt: 0 },
+      createdAt: { $lt: from },
+    }),
+    OPRegistration.countDocuments({ tokenDate: { $gte: from, $lte: to }, status: 'no_show' }),
+    ChangeRequest.countDocuments({ status: 'pending' }),
+    AssetComplaint.countDocuments({ status: { $nin: ['Completed', 'Closed'] } }),
+    LabTest.countDocuments({ createdAt: { $gte: from, $lte: to }, status: 'cancelled' }),
+    BmeCalibration.countDocuments({ status: 'Overdue' }),
+    BmePreventiveMaintenance.countDocuments({ status: 'Overdue' }),
+    Notification.countDocuments({ isRead: false }),
   ]);
 
   const billRevenue = sumField(revenueAgg);
@@ -162,7 +262,14 @@ async function buildExecutive(from, to) {
       kpi('bedOccupancy', 'Bed Occupancy', beds.percent, 'percent'),
       kpi('activeUsers', 'Active Users', activeUsers),
       kpi('failedLogins', 'Failed Logins', failedLogins),
-      kpi('criticalAlerts', 'Critical Alerts', criticalAlerts),
+      kpi('criticalAlerts', 'Critical Lab Alerts', criticalAlerts),
+      kpi('cancelledBills', 'Cancelled Bills', cancelledBills),
+      kpi('overdueBills', 'Overdue Bills', overdueBills),
+      kpi('noShowOp', 'OP No-shows', noShowOp),
+      kpi('pendingChanges', 'Pending Change Requests', pendingChanges),
+      kpi('openComplaints', 'Open Equipment Complaints', openComplaints),
+      kpi('overdueCalibrations', 'Overdue Calibrations', overdueCalibrations),
+      kpi('overduePm', 'Overdue Preventive Maintenance', overduePm),
     ],
     breakdown: [
       { label: 'Beds occupied', value: beds.occupied },
@@ -170,11 +277,25 @@ async function buildExecutive(from, to) {
       { label: 'Beds total', value: beds.total },
       { label: 'Bill revenue', value: billRevenue, format: 'currency' },
       { label: 'Pharmacy sales', value: pharmacySales, format: 'currency' },
+      { label: 'Cancelled lab orders', value: cancelledLabs },
     ],
     details: [],
+    exceptions: [
+      flag('failedLogins', 'Failed logins', failedLogins),
+      flag('criticalAlerts', 'Critical lab results', criticalAlerts),
+      flag('overdueBills', 'Overdue bills', overdueBills),
+      flag('cancelledBills', 'Cancelled bills', cancelledBills),
+      flag('noShowOp', 'OP no-shows', noShowOp),
+      flag('pendingChanges', 'Pending change requests', pendingChanges),
+      flag('openComplaints', 'Open equipment complaints', openComplaints),
+      flag('overdueCalibrations', 'Overdue calibrations', overdueCalibrations),
+      flag('overduePm', 'Overdue preventive maintenance', overduePm),
+      flag('unreadNotifications', 'Unread staff notifications', unreadNotifications),
+    ],
     footnotes: [
       'Expenses / Profit: Not tracked yet (no expense ledger).',
       'Critical Alerts = lab results marked Critical in the selected period.',
+      'Exception register flags items that require management review.',
     ],
     meta: { bedOccupancy: beds },
   };
@@ -196,10 +317,10 @@ async function buildUserActivity(from, to) {
       action: { $in: ['Password Change', 'Password Reset'] },
       createdAt: { $gte: from, $lte: to },
     }),
-    User.countDocuments({ isActive: true }),
-    User.countDocuments({ accountLockedUntil: { $gt: new Date() } }),
-    User.countDocuments({ isActive: false }),
-    User.find({ lastLogin: { $gte: from, $lte: to } })
+    User.countDocuments({ isActive: true, ...staffScope() }),
+    User.countDocuments({ accountLockedUntil: { $gt: new Date() }, ...staffScope() }),
+    User.countDocuments({ isActive: false, ...staffScope() }),
+    User.find({ lastLogin: { $gte: from, $lte: to }, ...staffScope() })
       .select('name email role lastLogin isActive failedLoginAttempts accountLockedUntil')
       .sort({ lastLogin: -1 })
       .limit(50)
@@ -237,8 +358,11 @@ async function buildUserActivity(from, to) {
   };
 }
 
-async function buildPatient(from, to) {
-  const [newPatients, opVisits, ipAdmissions, discharges, activePatients, genderBreakdown, statusOp] = await Promise.all([
+async function buildPatient(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { createdAt: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['patientId', 'name', 'phone', 'gender']);
+  const [newPatients, opVisits, ipAdmissions, discharges, activePatients, genderBreakdown, statusOp, recent, listTotal] = await Promise.all([
     Patient.countDocuments({ createdAt: { $gte: from, $lte: to } }),
     OPRegistration.countDocuments({ tokenDate: { $gte: from, $lte: to } }),
     IPAdmission.countDocuments({ admissionDate: { $gte: from, $lte: to } }),
@@ -252,13 +376,14 @@ async function buildPatient(from, to) {
       { $match: { tokenDate: { $gte: from, $lte: to } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
+    Patient.find(list)
+      .select('patientId name gender age phone createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Patient.countDocuments(list),
   ]);
-
-  const recent = await Patient.find({ createdAt: { $gte: from, $lte: to } })
-    .select('patientId name gender age phone createdAt')
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
 
   return {
     kpis: [
@@ -282,27 +407,32 @@ async function buildPatient(from, to) {
       registeredAt: p.createdAt,
     })),
     footnotes: ['Patient merge / soft-delete history: Not tracked yet.'],
+    meta: pageMeta(listTotal, page, limit),
   };
 }
 
-async function buildAppointment(from, to) {
-  const match = { appointmentDate: { $gte: from, $lte: to } };
-  const [total, byStatus, cancelled, noShow, completed, rescheduledHint] = await Promise.all([
-    Appointment.countDocuments(match),
-    Appointment.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
-    Appointment.countDocuments({ ...match, status: 'cancelled' }),
-    Appointment.countDocuments({ ...match, status: 'no_show' }),
-    Appointment.countDocuments({ ...match, status: 'completed' }),
-    Appointment.countDocuments({ ...match, status: 'scheduled' }),
+async function buildAppointment(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { appointmentDate: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['status']);
+  const [total, byStatus, cancelled, noShow, completed, rescheduledHint, details, listTotal] = await Promise.all([
+    Appointment.countDocuments(period),
+    Appointment.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Appointment.countDocuments({ ...period, status: 'cancelled' }),
+    Appointment.countDocuments({ ...period, status: 'no_show' }),
+    Appointment.countDocuments({ ...period, status: 'completed' }),
+    Appointment.countDocuments({ ...period, status: 'scheduled' }),
+    Appointment.find(list)
+      .populate('patient', 'name patientId')
+      .populate('doctor', 'name')
+      .select('appointmentDate status doctor patient department')
+      .sort({ appointmentDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Appointment.countDocuments(list),
   ]);
   const sm = statusMap(byStatus);
-  const details = await Appointment.find(match)
-    .populate('patient', 'name patientId')
-    .populate('doctor', 'name')
-    .select('appointmentDate status doctor patient department')
-    .sort({ appointmentDate: -1 })
-    .limit(50)
-    .lean();
 
   return {
     kpis: [
@@ -322,10 +452,15 @@ async function buildAppointment(from, to) {
       doctor: a.doctor?.name || '—',
       status: a.status,
     })),
+    exceptions: [
+      flag('cancelled', 'Cancelled appointments', cancelled),
+      flag('noShow', 'No-shows', noShow),
+    ],
     footnotes: [
       'Reschedule count: Not tracked yet (no dedicated reschedule field).',
       'Doctor change history: Not tracked yet.',
     ],
+    meta: pageMeta(listTotal, page, limit),
   };
 }
 
@@ -524,7 +659,7 @@ async function buildPharmacy(from, to) {
     }));
 
   const details = await DirectSale.find({ saleDate: { $gte: from, $lte: to } })
-    .select('invoiceNumber saleType grandTotal paymentMethod paymentStatus saleDate')
+    .select('invoiceNumber saleType grandTotal paymentMethod paymentStatus saleDate customerName')
     .sort({ saleDate: -1 })
     .limit(50)
     .lean();
@@ -572,6 +707,32 @@ async function buildPharmacy(from, to) {
         ? `Result: PROFIT of ₹${Math.round(netProfit).toLocaleString('en-IN')} (${marginPct}% margin).`
         : `Result: LOSS of ₹${Math.round(Math.abs(netProfit)).toLocaleString('en-IN')}.`,
     ],
+    exceptions: [
+      flag('expiredBatches', 'Expired batches still in stock', expiredBatches[0]?.count || 0),
+      flag('lowStock', 'Low stock items', lowStock, 10, 1),
+    ],
+    registers: [{
+      id: 'sales',
+      title: 'Counter sales register',
+      columns: [
+        { key: 'invoice', header: 'Invoice' },
+        { key: 'type', header: 'Type' },
+        { key: 'customer', header: 'Customer' },
+        { key: 'amount', header: 'Amount' },
+        { key: 'method', header: 'Mode' },
+        { key: 'status', header: 'Status' },
+        { key: 'date', header: 'Date' },
+      ],
+      rows: details.map((s) => ({
+        invoice: s.invoiceNumber,
+        type: s.saleType,
+        customer: s.customerName || '—',
+        amount: s.grandTotal,
+        method: s.paymentMethod,
+        status: s.paymentStatus,
+        date: s.saleDate,
+      })),
+    }],
     pnl: {
       revenue: Math.round(revenue * 100) / 100,
       cogs: Math.round(cogs * 100) / 100,
@@ -637,35 +798,38 @@ async function buildInventory(from, to) {
   };
 }
 
-async function buildBilling(from, to) {
-  const match = { createdAt: { $gte: from, $lte: to } };
+async function buildBilling(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { createdAt: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['billNumber', 'billType', 'status']);
   const [
-    total, byStatus, byType, discountAgg, refunded, edited, revenueAgg, outstandingAgg,
+    total, byStatus, byType, discountAgg, refunded, edited, revenueAgg, outstandingAgg, details, listTotal,
   ] = await Promise.all([
-    Bill.countDocuments(match),
-    Bill.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }]),
-    Bill.aggregate([{ $match: match }, { $group: { _id: '$billType', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }]),
+    Bill.countDocuments(period),
+    Bill.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }]),
+    Bill.aggregate([{ $match: period }, { $group: { _id: '$billType', count: { $sum: 1 }, amount: { $sum: '$totalAmount' } } }]),
     Bill.aggregate([
-      { $match: match },
+      { $match: period },
       { $group: { _id: null, discount: { $sum: { $ifNull: ['$discountAmount', 0] } } } },
     ]),
-    Bill.countDocuments({ ...match, status: 'refunded' }),
-    Bill.countDocuments({ ...match, 'editHistory.0': { $exists: true } }),
+    Bill.countDocuments({ ...period, status: 'refunded' }),
+    Bill.countDocuments({ ...period, 'editHistory.0': { $exists: true } }),
     Bill.aggregate([
-      { $match: { ...match, status: { $in: ['paid', 'partial'] } } },
+      { $match: { ...period, status: { $in: ['paid', 'partial'] } } },
       { $group: { _id: null, total: { $sum: '$paidAmount' } } },
     ]),
     Bill.aggregate([
       { $match: { status: { $in: ['pending', 'partial'] } } },
       { $group: { _id: null, total: { $sum: '$dueAmount' } } },
     ]),
+    Bill.find(list)
+      .select('billNumber billType status totalAmount paidAmount dueAmount discountAmount createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Bill.countDocuments(list),
   ]);
-
-  const details = await Bill.find(match)
-    .select('billNumber billType status totalAmount paidAmount dueAmount discountAmount createdAt')
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
 
   return {
     kpis: [
@@ -691,7 +855,12 @@ async function buildBilling(from, to) {
       discount: b.discountAmount || 0,
       date: b.createdAt,
     })),
+    exceptions: [
+      flag('cancelled', 'Cancelled bills', statusMap(byStatus).cancelled || 0),
+      flag('refunded', 'Refunded bills', refunded),
+    ],
     footnotes: [],
+    meta: pageMeta(listTotal, page, limit),
   };
 }
 
@@ -755,26 +924,29 @@ async function buildPayment(from, to) {
   };
 }
 
-async function buildLaboratory(from, to) {
-  const match = {
+async function buildLaboratory(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = {
     createdAt: { $gte: from, $lte: to },
     labType: { $in: LAB_CLINICAL_TYPES },
   };
-  const [total, byStatus, byType, completed, pending, critical] = await Promise.all([
-    LabTest.countDocuments(match),
-    LabTest.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
-    LabTest.aggregate([{ $match: match }, { $group: { _id: '$labType', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
-    LabTest.countDocuments({ ...match, status: 'completed' }),
-    LabTest.countDocuments({ ...match, status: { $in: ['pending', 'sample_collected', 'processing'] } }),
-    LabTest.countDocuments({ ...match, 'results.status': 'Critical' }),
+  const list = mergeList(period, filters, ['labNumber', 'labType', 'status', 'priority']);
+  const [total, byStatus, byType, completed, pending, critical, details, listTotal] = await Promise.all([
+    LabTest.countDocuments(period),
+    LabTest.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    LabTest.aggregate([{ $match: period }, { $group: { _id: '$labType', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    LabTest.countDocuments({ ...period, status: 'completed' }),
+    LabTest.countDocuments({ ...period, status: { $in: ['pending', 'sample_collected', 'processing'] } }),
+    LabTest.countDocuments({ ...period, 'results.status': 'Critical' }),
+    LabTest.find(list)
+      .populate('patient', 'name patientId')
+      .select('labNumber labType status priority totalAmount createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    LabTest.countDocuments(list),
   ]);
-
-  const details = await LabTest.find(match)
-    .populate('patient', 'name patientId')
-    .select('labNumber labType status priority totalAmount createdAt')
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
 
   return {
     kpis: [
@@ -797,29 +969,37 @@ async function buildLaboratory(from, to) {
       amount: t.totalAmount || 0,
       date: t.createdAt,
     })),
+    exceptions: [
+      flag('critical', 'Critical results', critical),
+      flag('pending', 'In-progress orders', pending, 20, 1),
+    ],
     footnotes: [],
+    meta: pageMeta(listTotal, page, limit),
   };
 }
 
-async function buildRadiology(from, to) {
-  const match = {
+async function buildRadiology(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = {
     createdAt: { $gte: from, $lte: to },
     labType: { $in: RADIOLOGY_TYPES },
   };
-  const [total, byStatus, byType, completed, pending] = await Promise.all([
-    LabTest.countDocuments(match),
-    LabTest.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
-    LabTest.aggregate([{ $match: match }, { $group: { _id: '$labType', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
-    LabTest.countDocuments({ ...match, status: 'completed' }),
-    LabTest.countDocuments({ ...match, status: { $in: ['pending', 'sample_collected', 'processing'] } }),
+  const list = mergeList(period, filters, ['labNumber', 'labType', 'status']);
+  const [total, byStatus, byType, completed, pending, details, listTotal] = await Promise.all([
+    LabTest.countDocuments(period),
+    LabTest.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    LabTest.aggregate([{ $match: period }, { $group: { _id: '$labType', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    LabTest.countDocuments({ ...period, status: 'completed' }),
+    LabTest.countDocuments({ ...period, status: { $in: ['pending', 'sample_collected', 'processing'] } }),
+    LabTest.find(list)
+      .populate('patient', 'name patientId')
+      .select('labNumber labType status priority totalAmount createdAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    LabTest.countDocuments(list),
   ]);
-
-  const details = await LabTest.find(match)
-    .populate('patient', 'name patientId')
-    .select('labNumber labType status priority totalAmount createdAt')
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
 
   return {
     kpis: [
@@ -844,6 +1024,7 @@ async function buildRadiology(from, to) {
       date: t.createdAt,
     })),
     footnotes: [],
+    meta: pageMeta(listTotal, page, limit),
   };
 }
 
@@ -1124,17 +1305,17 @@ async function buildInsurance(from, to) {
 
 async function buildEmployee(from, to) {
   const [total, active, byRole, staffEvents, newUsers] = await Promise.all([
-    User.countDocuments(),
-    User.countDocuments({ isActive: true }),
-    User.aggregate([{ $group: { _id: '$role', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    User.countDocuments(staffScope()),
+    User.countDocuments({ isActive: true, ...staffScope() }),
+    User.aggregate([{ $match: staffScope() }, { $group: { _id: '$role', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
     ActivityLog.countDocuments({
       createdAt: { $gte: from, $lte: to },
       action: { $in: ['User Creation', 'Role Change', 'Permission Change', 'User Update', 'User Status Toggle'] },
     }),
-    User.countDocuments({ createdAt: { $gte: from, $lte: to } }),
+    User.countDocuments({ createdAt: { $gte: from, $lte: to }, ...staffScope() }),
   ]);
 
-  const details = await User.find()
+  const details = await User.find(staffScope())
     .select('name email role department isActive lastLogin createdAt')
     .sort({ createdAt: -1 })
     .limit(50)
@@ -1181,7 +1362,7 @@ async function buildSecurity(from, to) {
       createdAt: { $gte: from, $lte: to },
       action: { $in: ['Role Change', 'Permission Change'] },
     }),
-    User.countDocuments({ accountLockedUntil: { $gt: new Date() } }),
+    User.countDocuments({ accountLockedUntil: { $gt: new Date() }, ...staffScope() }),
     ActivityLog.countDocuments({
       ...authMatch,
       action: 'Login Failure',
@@ -1265,25 +1446,878 @@ async function buildSystem() {
   };
 }
 
+async function buildTrail(from, to, filters = {}) {
+  const match = { createdAt: { $gte: from, $lte: to } };
+  if (filters.module) match.module = filters.module;
+  if (filters.action) match.action = new RegExp(`^${escapeRegex(filters.action)}$`, 'i');
+  if (filters.user && mongoose.Types.ObjectId.isValid(filters.user)) match.user = filters.user;
+  if (filters.q) {
+    const rx = new RegExp(escapeRegex(filters.q), 'i');
+    match.$or = [
+      { action: rx }, { module: rx }, { description: rx },
+      { ipAddress: rx }, { relatedModel: rx },
+    ];
+  }
+  const page = filters.page || 1;
+  const limit = filters.limit || 50;
+  const period = { createdAt: { $gte: from, $lte: to } };
+  const [total, rows, modules, actions, byModule, byAction] = await Promise.all([
+    ActivityLog.countDocuments(match),
+    ActivityLog.find(match)
+      .populate('user', 'name email role')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+    ActivityLog.distinct('module'),
+    ActivityLog.distinct('action', period),
+    ActivityLog.aggregate([
+      { $match: period },
+      { $group: { _id: '$module', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]),
+    ActivityLog.aggregate([
+      { $match: period },
+      { $group: { _id: '$action', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]),
+  ]);
+
+  return {
+    kpis: [
+      kpi('events', 'Audit events', total),
+      kpi('modules', 'Modules touched', byModule.length),
+      kpi('actions', 'Action types', byAction.length),
+      kpi('page', 'Page', page),
+    ],
+    breakdown: [
+      ...byModule.map((r) => ({ label: `Module: ${r._id || 'n/a'}`, value: r.count })),
+      ...byAction.slice(0, 8).map((r) => ({ label: `Action: ${r._id || 'n/a'}`, value: r.count })),
+    ],
+    details: rows.map((r) => ({
+      date: r.createdAt,
+      module: r.module,
+      action: r.action,
+      user: r.user?.name || '—',
+      role: r.user?.role || '—',
+      email: r.user?.email || '',
+      description: r.description || '',
+      related: r.relatedModel ? `${r.relatedModel}${r.relatedId ? ` #${String(r.relatedId).slice(-6)}` : ''}` : '—',
+      ip: r.ipAddress || '—',
+    })),
+    footnotes: ['Every staff action written to Activity Log appears here. Filter by module, action, or search text.'],
+    meta: {
+      total,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      limit,
+      modules: (modules || []).filter(Boolean).sort(),
+      actions: (actions || []).filter(Boolean).sort(),
+      serverSearch: true,
+    },
+  };
+}
+
+async function buildOp(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { tokenDate: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['tokenNumber', 'status', 'appointmentType']);
+  const [total, byStatus, byType, emergency, cancelled, noShow, details, listTotal] = await Promise.all([
+    OPRegistration.countDocuments(period),
+    OPRegistration.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    OPRegistration.aggregate([{ $match: period }, { $group: { _id: '$appointmentType', count: { $sum: 1 } } }]),
+    OPRegistration.countDocuments({ ...period, appointmentType: 'emergency' }),
+    OPRegistration.countDocuments({ ...period, status: 'cancelled' }),
+    OPRegistration.countDocuments({ ...period, status: 'no_show' }),
+    OPRegistration.find(list)
+      .populate('patient', 'name patientId')
+      .populate('doctor', 'name')
+      .populate('department', 'name')
+      .sort({ tokenDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    OPRegistration.countDocuments(list),
+  ]);
+  return {
+    kpis: [
+      kpi('visits', 'OP visits', total),
+      kpi('emergency', 'Emergency', emergency),
+      kpi('cancelled', 'Cancelled', cancelled),
+      kpi('noShow', 'No-show', noShow),
+      kpi('waiting', 'Waiting (period)', statusMap(byStatus).waiting || 0),
+      kpi('completed', 'Completed', (statusMap(byStatus).completed || 0) + (statusMap(byStatus).consultation_completed || 0)),
+    ],
+    breakdown: [
+      ...byStatus.map((r) => ({ label: `Status: ${r._id}`, value: r.count })),
+      ...byType.map((r) => ({ label: `Type: ${r._id || 'n/a'}`, value: r.count })),
+    ],
+    details: details.map((o) => ({
+      token: o.tokenNumber,
+      patient: o.patient?.name,
+      patientId: o.patient?.patientId,
+      doctor: o.doctor?.name,
+      department: o.department?.name,
+      type: o.appointmentType,
+      status: o.status,
+      date: o.tokenDate,
+    })),
+    exceptions: [
+      flag('noShow', 'OP no-shows', noShow),
+      flag('cancelled', 'Cancelled visits', cancelled),
+    ],
+    footnotes: [],
+    meta: pageMeta(listTotal, page, limit),
+  };
+}
+
+async function buildIp(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { admissionDate: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['admissionNumber', 'status']);
+  const [admitted, discharged, absconded, transferred, stillIn, byStatus, details, listTotal] = await Promise.all([
+    IPAdmission.countDocuments(period),
+    IPAdmission.countDocuments({ dischargeDate: { $gte: from, $lte: to } }),
+    IPAdmission.countDocuments({ ...period, status: 'absconded' }),
+    IPAdmission.countDocuments({ ...period, status: 'transferred' }),
+    IPAdmission.countDocuments({ status: 'admitted' }),
+    IPAdmission.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    IPAdmission.find(list)
+      .populate('patient', 'name patientId')
+      .populate('doctor', 'name')
+      .populate('department', 'name')
+      .populate('bed', 'bedNumber')
+      .sort({ admissionDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    IPAdmission.countDocuments(list),
+  ]);
+  return {
+    kpis: [
+      kpi('admitted', 'Admissions', admitted),
+      kpi('discharged', 'Discharges', discharged),
+      kpi('inHouse', 'Currently admitted', stillIn),
+      kpi('absconded', 'Absconded', absconded),
+      kpi('transferred', 'Transferred', transferred),
+    ],
+    breakdown: byStatus.map((r) => ({ label: `Status: ${r._id}`, value: r.count })),
+    details: details.map((a) => ({
+      admission: a.admissionNumber,
+      patient: a.patient?.name,
+      patientId: a.patient?.patientId,
+      doctor: a.doctor?.name,
+      department: a.department?.name,
+      bed: a.bed?.bedNumber,
+      status: a.status,
+      date: a.admissionDate,
+      discharge: a.dischargeDate,
+    })),
+    exceptions: [
+      flag('absconded', 'Absconded', absconded),
+    ],
+    footnotes: [],
+    meta: pageMeta(listTotal, page, limit),
+  };
+}
+
+async function buildPrescription(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { createdAt: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['status', 'diagnosis']);
+  const [total, byStatus, cancelled, dispensed, details, listTotal] = await Promise.all([
+    Prescription.countDocuments(period),
+    Prescription.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Prescription.countDocuments({ ...period, status: 'cancelled' }),
+    Prescription.countDocuments({ ...period, status: 'dispensed' }),
+    Prescription.find(list)
+      .populate('patient', 'name patientId')
+      .populate('doctor', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Prescription.countDocuments(list),
+  ]);
+  return {
+    kpis: [
+      kpi('total', 'Prescriptions', total),
+      kpi('dispensed', 'Fully dispensed', dispensed),
+      kpi('partial', 'Partially dispensed', statusMap(byStatus).partially_dispensed || 0),
+      kpi('active', 'Active / pending', statusMap(byStatus).active || 0),
+      kpi('cancelled', 'Cancelled', cancelled),
+    ],
+    breakdown: byStatus.map((r) => ({ label: `Status: ${r._id}`, value: r.count })),
+    details: details.map((p) => ({
+      patient: p.patient?.name,
+      patientId: p.patient?.patientId,
+      doctor: p.doctor?.name,
+      items: (p.medicines || []).length,
+      status: p.status,
+      diagnosis: p.diagnosis || '—',
+      date: p.createdAt,
+    })),
+    footnotes: [],
+    meta: pageMeta(listTotal, page, limit),
+  };
+}
+
+async function buildAssets(from, to) {
+  const created = { createdAt: { $gte: from, $lte: to } };
+  const [total, byStatus, byCategory, added, details] = await Promise.all([
+    Asset.countDocuments({}),
+    Asset.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Asset.aggregate([{ $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    Asset.countDocuments(created),
+    Asset.find({})
+      .populate('department', 'name')
+      .select('assetId name category status department location purchaseCost createdAt')
+      .sort({ createdAt: -1 })
+      .limit(80)
+      .lean(),
+  ]);
+  return {
+    kpis: [
+      kpi('total', 'Equipment records', total),
+      kpi('added', 'Added in period', added),
+      kpi('working', 'Working', statusMap(byStatus).Working || 0),
+    ],
+    breakdown: [
+      ...byStatus.map((r) => ({ label: `Status: ${r._id || 'n/a'}`, value: r.count })),
+      ...byCategory.map((r) => ({ label: r._id || 'Uncategorised', value: r.count })),
+    ],
+    details: details.map((a) => ({
+      assetId: a.assetId,
+      name: a.name,
+      category: a.category,
+      status: a.status,
+      department: a.department?.name || '—',
+      location: a.location || '—',
+      cost: a.purchaseCost || 0,
+      date: a.createdAt,
+    })),
+    footnotes: ['Full BME work orders, calibration and PM are under Biomedical / BME.'],
+  };
+}
+
+async function buildComplaints(from, to) {
+  const match = { createdAt: { $gte: from, $lte: to } };
+  const [total, open, critical, byStatus, byPriority, details] = await Promise.all([
+    AssetComplaint.countDocuments(match),
+    AssetComplaint.countDocuments({ status: { $nin: ['Completed', 'Closed'] } }),
+    AssetComplaint.countDocuments({ ...match, priority: 'Critical' }),
+    AssetComplaint.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    AssetComplaint.aggregate([{ $match: match }, { $group: { _id: '$priority', count: { $sum: 1 } } }]),
+    AssetComplaint.find(match).sort({ createdAt: -1 }).limit(80).lean(),
+  ]);
+  return {
+    kpis: [
+      kpi('total', 'Complaints in period', total),
+      kpi('open', 'Currently open', open),
+      kpi('critical', 'Critical', critical),
+    ],
+    breakdown: [
+      ...byStatus.map((r) => ({ label: `Status: ${r._id}`, value: r.count })),
+      ...byPriority.map((r) => ({ label: `Priority: ${r._id}`, value: r.count })),
+    ],
+    details: details.map((c) => ({
+      number: c.complaintNumber,
+      asset: c.assetName || c.assetId,
+      priority: c.priority,
+      status: c.status,
+      reportedBy: c.reportedByName,
+      problem: c.problemDescription,
+      cost: c.repairCost || 0,
+      date: c.complaintDate || c.createdAt,
+    })),
+    exceptions: [
+      flag('open', 'Open complaints', open),
+      flag('critical', 'Critical complaints', critical),
+    ],
+    footnotes: [],
+  };
+}
+
+async function buildBems(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { createdAt: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['workOrderNumber', 'type', 'status', 'engineerName']);
+  const [
+    total, byStatus, byType, open, details, listTotal,
+    overdueCal, overduePm, expiringContracts,
+    calRows, pmRows, contractRows, moveRows, vendorRows,
+  ] = await Promise.all([
+    BmeWorkOrder.countDocuments(period),
+    BmeWorkOrder.aggregate([{ $match: period }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    BmeWorkOrder.aggregate([{ $match: period }, { $group: { _id: '$type', count: { $sum: 1 } } }]),
+    BmeWorkOrder.countDocuments({ status: { $nin: ['Completed', 'Cancelled'] } }),
+    BmeWorkOrder.find(list)
+      .populate('equipment', 'name assetId')
+      .populate('department', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    BmeWorkOrder.countDocuments(list),
+    BmeCalibration.countDocuments({ status: 'Overdue' }),
+    BmePreventiveMaintenance.countDocuments({ status: 'Overdue' }),
+    BmeContract.countDocuments({ status: { $in: ['Expiring Soon', 'Expired'] } }),
+    BmeCalibration.find(period).populate('equipment', 'name assetId').sort({ calibrationDate: -1 }).limit(40).lean(),
+    BmePreventiveMaintenance.find(period).populate('equipment', 'name assetId').sort({ scheduledDate: -1 }).limit(40).lean(),
+    BmeContract.find({}).populate('vendor', 'name').sort({ endDate: 1 }).limit(40).lean(),
+    BmeMovement.find({ movedAt: { $gte: from, $lte: to } }).populate('equipment', 'name assetId').sort({ movedAt: -1 }).limit(40).lean(),
+    BmeVendor.find({}).sort({ name: 1 }).limit(40).lean(),
+  ]);
+  return {
+    kpis: [
+      kpi('orders', 'Work orders', total),
+      kpi('open', 'Open / in progress', open),
+      kpi('completed', 'Completed', statusMap(byStatus).Completed || 0),
+      kpi('cancelled', 'Cancelled', statusMap(byStatus).Cancelled || 0),
+      kpi('overdueCal', 'Overdue calibrations', overdueCal),
+      kpi('overduePm', 'Overdue PM', overduePm),
+      kpi('contractsAtRisk', 'AMC/CMC expiring or expired', expiringContracts),
+    ],
+    breakdown: [
+      ...byStatus.map((r) => ({ label: `Status: ${r._id}`, value: r.count })),
+      ...byType.map((r) => ({ label: r._id || 'Other', value: r.count })),
+    ],
+    details: details.map((w) => ({
+      number: w.workOrderNumber,
+      type: w.type,
+      equipment: w.equipment?.name || '—',
+      department: w.department?.name || '—',
+      priority: w.priority,
+      status: w.status,
+      engineer: w.engineerName || '—',
+      date: w.createdAt,
+    })),
+    exceptions: [
+      flag('overdueCal', 'Overdue calibrations', overdueCal),
+      flag('overduePm', 'Overdue PM', overduePm),
+      flag('open', 'Open work orders', open, 10, 1),
+      flag('contracts', 'Contracts expiring/expired', expiringContracts),
+    ],
+    registers: [
+      {
+        id: 'calibration',
+        title: 'Calibration register',
+        columns: [
+          { key: 'number', header: 'CAL #' },
+          { key: 'equipment', header: 'Equipment' },
+          { key: 'result', header: 'Result' },
+          { key: 'status', header: 'Status' },
+          { key: 'date', header: 'Date' },
+        ],
+        rows: calRows.map((c) => ({
+          number: c.calibrationNumber,
+          equipment: c.equipment?.name || '—',
+          result: c.result,
+          status: c.status,
+          date: c.calibrationDate,
+        })),
+      },
+      {
+        id: 'pm',
+        title: 'Preventive maintenance register',
+        columns: [
+          { key: 'number', header: 'PM #' },
+          { key: 'equipment', header: 'Equipment' },
+          { key: 'result', header: 'Result' },
+          { key: 'status', header: 'Status' },
+          { key: 'date', header: 'Scheduled' },
+        ],
+        rows: pmRows.map((p) => ({
+          number: p.pmNumber,
+          equipment: p.equipment?.name || '—',
+          result: p.result,
+          status: p.status,
+          date: p.scheduledDate,
+        })),
+      },
+      {
+        id: 'contracts',
+        title: 'AMC / CMC contracts',
+        columns: [
+          { key: 'number', header: 'Contract #' },
+          { key: 'type', header: 'Type' },
+          { key: 'vendor', header: 'Vendor' },
+          { key: 'status', header: 'Status' },
+          { key: 'cost', header: 'Cost' },
+          { key: 'date', header: 'End date' },
+        ],
+        rows: contractRows.map((c) => ({
+          number: c.contractNumber,
+          type: c.type,
+          vendor: c.vendor?.name || '—',
+          status: c.status,
+          cost: c.cost || 0,
+          date: c.endDate,
+        })),
+      },
+      {
+        id: 'movements',
+        title: 'Equipment movement register',
+        columns: [
+          { key: 'number', header: 'MOV #' },
+          { key: 'equipment', header: 'Equipment' },
+          { key: 'from', header: 'From' },
+          { key: 'to', header: 'To' },
+          { key: 'reason', header: 'Reason' },
+          { key: 'date', header: 'Moved' },
+        ],
+        rows: moveRows.map((m) => ({
+          number: m.movementNumber,
+          equipment: m.equipment?.name || '—',
+          from: m.from?.location || m.from?.departmentName || '—',
+          to: m.to?.location || m.to?.departmentName || '—',
+          reason: m.reason,
+          date: m.movedAt,
+        })),
+      },
+      {
+        id: 'vendors',
+        title: 'Biomedical vendors',
+        columns: [
+          { key: 'code', header: 'Code' },
+          { key: 'name', header: 'Vendor' },
+          { key: 'contact', header: 'Contact' },
+          { key: 'phone', header: 'Phone' },
+          { key: 'rating', header: 'Rating' },
+          { key: 'active', header: 'Active' },
+        ],
+        rows: vendorRows.map((v) => ({
+          code: v.vendorCode,
+          name: v.name,
+          contact: v.contactPerson || '—',
+          phone: v.phone || '—',
+          rating: v.performanceRating,
+          active: v.isActive !== false,
+        })),
+      },
+    ],
+    footnotes: ['Work-order register is paginated. Calibration, PM, contracts, movements and vendors are additional control registers.'],
+    meta: pageMeta(listTotal, page, limit),
+  };
+}
+
+async function buildDepartments() {
+  const rows = await Department.find({}).populate('head', 'name').sort('name').lean();
+  return {
+    kpis: [
+      kpi('total', 'Departments', rows.length),
+      kpi('active', 'Active', rows.filter((d) => d.isActive !== false).length),
+    ],
+    breakdown: rows.map((d) => ({ label: d.name, value: d.consultationFee || 0, amount: d.consultationFee || 0 })),
+    details: rows.map((d) => ({
+      name: d.name,
+      code: d.code,
+      head: d.head?.name || '—',
+      location: d.location || '—',
+      fee: d.consultationFee || 0,
+      active: d.isActive !== false,
+    })),
+    footnotes: ['Consultation fee is the department master rate used on OP billing.'],
+  };
+}
+
+async function buildSuppliers() {
+  const rows = await Supplier.find({}).sort('name').limit(100).lean();
+  const outstanding = rows.reduce((s, r) => s + (Number(r.outstanding) || 0), 0);
+  return {
+    kpis: [
+      kpi('total', 'Suppliers', rows.length),
+      kpi('active', 'Active', rows.filter((s) => s.isActive !== false).length),
+      kpi('outstanding', 'Outstanding', outstanding, 'currency'),
+    ],
+    breakdown: rows.filter((s) => s.outstanding > 0).slice(0, 15).map((s) => ({
+      label: s.name, value: s.outstanding, amount: s.outstanding, format: 'currency',
+    })),
+    details: rows.map((s) => ({
+      name: s.name,
+      contact: s.contactPerson || '—',
+      phone: s.phone,
+      gst: s.gstNumber || '—',
+      outstanding: s.outstanding || 0,
+      creditDays: s.creditDays,
+      active: s.isActive !== false,
+    })),
+    footnotes: [],
+  };
+}
+
+async function buildDocuments(from, to) {
+  const match = { createdAt: { $gte: from, $lte: to } };
+  const [total, byCat, details] = await Promise.all([
+    Document.countDocuments(match),
+    Document.aggregate([{ $match: match }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    Document.find(match)
+      .populate('patient', 'name patientId')
+      .populate('uploadedBy', 'name')
+      .sort({ createdAt: -1 })
+      .limit(80)
+      .lean(),
+  ]);
+  return {
+    kpis: [kpi('total', 'Documents uploaded', total)],
+    breakdown: byCat.map((r) => ({ label: r._id || 'Other', value: r.count })),
+    details: details.map((d) => ({
+      title: d.title,
+      category: d.category,
+      patient: d.patient?.name,
+      patientId: d.patient?.patientId,
+      uploadedBy: d.uploadedBy?.name,
+      date: d.createdAt,
+    })),
+    footnotes: [],
+  };
+}
+
+async function buildChanges(from, to) {
+  const match = { createdAt: { $gte: from, $lte: to } };
+  const [total, pending, byStatus, byCat, details] = await Promise.all([
+    ChangeRequest.countDocuments(match),
+    ChangeRequest.countDocuments({ status: 'pending' }),
+    ChangeRequest.aggregate([{ $match: match }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    ChangeRequest.aggregate([{ $match: match }, { $group: { _id: '$category', count: { $sum: 1 } } }]),
+    ChangeRequest.find(match)
+      .populate('requestedBy', 'name role')
+      .populate('reviewedBy', 'name')
+      .sort({ createdAt: -1 })
+      .limit(80)
+      .lean(),
+  ]);
+  return {
+    kpis: [
+      kpi('total', 'Change requests', total),
+      kpi('pending', 'Pending review', pending),
+      kpi('approved', 'Approved', statusMap(byStatus).approved || 0),
+      kpi('rejected', 'Rejected', statusMap(byStatus).rejected || 0),
+      kpi('applied', 'Applied', statusMap(byStatus).applied || 0),
+    ],
+    breakdown: [
+      ...byStatus.map((r) => ({ label: `Status: ${r._id}`, value: r.count })),
+      ...byCat.map((r) => ({ label: r._id, value: r.count })),
+    ],
+    details: details.map((c) => ({
+      number: c.requestNumber,
+      category: c.category,
+      title: c.title,
+      status: c.status,
+      priority: c.priority,
+      requestedBy: c.requestedBy?.name,
+      reviewedBy: c.reviewedBy?.name || '—',
+      date: c.createdAt,
+    })),
+    footnotes: [],
+  };
+}
+
+async function buildChat(from, to) {
+  const match = { createdAt: { $gte: from, $lte: to } };
+  const [total, hospital, direct, mentions, details] = await Promise.all([
+    ChatMessage.countDocuments(match),
+    ChatMessage.countDocuments({ ...match, channel: 'hospital' }),
+    ChatMessage.countDocuments({ ...match, channel: 'direct' }),
+    ChatMessage.countDocuments({ ...match, 'mentions.0': { $exists: true } }),
+    ChatMessage.find(match)
+      .populate('sender', 'name role')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean(),
+  ]);
+  return {
+    kpis: [
+      kpi('messages', 'Messages', total),
+      kpi('hospital', 'Hospital channel', hospital),
+      kpi('direct', 'Direct messages', direct),
+      kpi('mentions', 'With @mentions', mentions),
+    ],
+    breakdown: [
+      { label: 'Hospital channel', value: hospital },
+      { label: 'Direct', value: direct },
+    ],
+    details: details.map((m) => ({
+      user: m.sender?.name,
+      role: m.sender?.role,
+      channel: m.channel,
+      body: String(m.body || '').slice(0, 120),
+      date: m.createdAt,
+    })),
+    footnotes: ['Message body is truncated in this register for privacy in print packs.'],
+  };
+}
+
+async function buildShift(from, to) {
+  const match = { openedAt: { $gte: from, $lte: to } };
+  const [total, open, closed, details] = await Promise.all([
+    Shift.countDocuments(match),
+    Shift.countDocuments({ status: 'open' }),
+    Shift.countDocuments({ ...match, status: 'closed' }),
+    Shift.find(match)
+      .populate('openedBy', 'name')
+      .populate('closedBy', 'name')
+      .sort({ openedAt: -1 })
+      .limit(50)
+      .lean(),
+  ]);
+  const collected = details.reduce((s, sh) => s + (Number(sh.settlement?.totalCollected) || 0), 0);
+  return {
+    kpis: [
+      kpi('shifts', 'Shifts in period', total),
+      kpi('open', 'Currently open', open),
+      kpi('closed', 'Closed', closed),
+      kpi('collected', 'Settled collection', collected, 'currency'),
+    ],
+    breakdown: details.map((sh) => ({
+      label: `${sh.shiftName} · ${sh.openedBy?.name || '—'}`,
+      value: sh.status,
+      amount: sh.settlement?.totalCollected || 0,
+    })),
+    details: details.map((sh) => ({
+      shift: sh.shiftName,
+      status: sh.status,
+      openedBy: sh.openedBy?.name,
+      closedBy: sh.closedBy?.name || '—',
+      collected: sh.settlement?.totalCollected || 0,
+      date: sh.openedAt,
+      closedAt: sh.closedAt,
+    })),
+    footnotes: [],
+  };
+}
+
+async function buildStock(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const list = {
+    transactionDate: { $gte: from, $lte: to },
+    ...searchOr(filters.q, ['medicineName', 'type', 'batchNumber', 'remarks']),
+  };
+  if (filters.status) list.type = filters.status;
+  const period = { transactionDate: { $gte: from, $lte: to } };
+  const [total, byType, inQty, outQty, details, listTotal] = await Promise.all([
+    StockMovement.countDocuments(period),
+    StockMovement.aggregate([{ $match: period }, { $group: { _id: '$type', count: { $sum: 1 }, qty: { $sum: '$quantityChanged' } } }, { $sort: { count: -1 } }]),
+    StockMovement.aggregate([
+      { $match: { ...period, type: { $in: ['stock_in', 'stock_adjustment_increase'] } } },
+      { $group: { _id: null, qty: { $sum: { $abs: '$quantityChanged' } } } },
+    ]),
+    StockMovement.aggregate([
+      { $match: { ...period, type: { $in: ['dispense', 'sale', 'bill_deduct', 'dispose', 'stock_adjustment_reduce'] } } },
+      { $group: { _id: null, qty: { $sum: { $abs: '$quantityChanged' } } } },
+    ]),
+    StockMovement.find(list)
+      .populate('addedBy', 'name')
+      .sort({ transactionDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    StockMovement.countDocuments(list),
+  ]);
+  return {
+    kpis: [
+      kpi('movements', 'Stock movements', total),
+      kpi('stockIn', 'Units in', inQty[0]?.qty || 0),
+      kpi('stockOut', 'Units out', outQty[0]?.qty || 0),
+      kpi('types', 'Movement types', byType.length),
+    ],
+    breakdown: byType.map((r) => ({ label: r._id || 'unknown', value: r.count })),
+    details: details.map((m) => ({
+      date: m.transactionDate,
+      medicine: m.medicineName,
+      type: m.type,
+      batch: m.batchNumber || '—',
+      qty: m.quantityChanged,
+      before: m.quantityBefore,
+      after: m.quantityAfter,
+      value: m.totalValue || 0,
+      user: m.addedBy?.name || '—',
+      remarks: m.remarks || '—',
+    })),
+    footnotes: ['Use status filter as movement type (stock_in, dispense, sale, dispose, adjustment).'],
+    meta: pageMeta(listTotal, page, limit),
+  };
+}
+
+async function buildFacility() {
+  const [wards, rooms, byWardStatus, byRoomStatus] = await Promise.all([
+    Ward.find({}).populate('department', 'name').populate('inCharge', 'name').sort('name').lean(),
+    Room.find({}).populate('ward', 'name').populate('currentPatient', 'name patientId').sort('roomNumber').limit(200).lean(),
+    Ward.aggregate([{ $group: { _id: '$type', count: { $sum: 1 } } }]),
+    Room.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+  ]);
+  return {
+    kpis: [
+      kpi('wards', 'Wards', wards.length),
+      kpi('rooms', 'Rooms', rooms.length),
+      kpi('occupiedRooms', 'Occupied rooms', rooms.filter((r) => r.status === 'occupied').length),
+      kpi('availableRooms', 'Available rooms', rooms.filter((r) => r.status === 'available').length),
+    ],
+    breakdown: [
+      ...byWardStatus.map((r) => ({ label: `Ward type: ${r._id}`, value: r.count })),
+      ...byRoomStatus.map((r) => ({ label: `Room: ${r._id}`, value: r.count })),
+    ],
+    details: rooms.map((r) => ({
+      room: r.roomNumber,
+      ward: r.ward?.name || '—',
+      type: r.type,
+      status: r.status,
+      patient: r.currentPatient?.name || '—',
+      dailyRate: r.dailyCharge || 0,
+      floor: r.floor,
+    })),
+    registers: [{
+      id: 'wards',
+      title: 'Ward register',
+      columns: [
+        { key: 'name', header: 'Ward' },
+        { key: 'code', header: 'Code' },
+        { key: 'type', header: 'Type' },
+        { key: 'floor', header: 'Floor' },
+        { key: 'beds', header: 'Beds' },
+        { key: 'available', header: 'Available' },
+        { key: 'department', header: 'Department' },
+        { key: 'inCharge', header: 'In-charge' },
+      ],
+      rows: wards.map((w) => ({
+        name: w.name,
+        code: w.code,
+        type: w.type,
+        floor: w.floor,
+        beds: w.totalBeds,
+        available: w.availableBeds,
+        department: w.department?.name || '—',
+        inCharge: w.inCharge?.name || '—',
+      })),
+    }],
+    footnotes: [],
+  };
+}
+
+async function buildCatalog() {
+  const [services, tests] = await Promise.all([
+    ServiceMaster.find({}).sort('name').lean(),
+    TestMaster.find({}).sort('name').lean(),
+  ]);
+  return {
+    kpis: [
+      kpi('services', 'IP service tariff items', services.length),
+      kpi('tests', 'Lab / test tariff items', tests.length),
+      kpi('activeServices', 'Active services', services.filter((s) => s.isActive !== false).length),
+      kpi('activeTests', 'Active tests', tests.filter((t) => t.isActive !== false).length),
+    ],
+    breakdown: [
+      ...['Equipment', 'Procedure', 'Nursing', 'Injection', 'Other'].map((c) => ({
+        label: `Service: ${c}`,
+        value: services.filter((s) => s.category === c).length,
+      })),
+    ],
+    details: tests.map((t) => ({
+      name: t.name,
+      category: t.category,
+      sample: t.sampleType,
+      price: t.price,
+      gst: t.gstPercent,
+      active: t.isActive !== false,
+    })),
+    registers: [{
+      id: 'services',
+      title: 'IP service master',
+      columns: [
+        { key: 'name', header: 'Service' },
+        { key: 'category', header: 'Category' },
+        { key: 'chargeType', header: 'Charge type' },
+        { key: 'price', header: 'Price' },
+        { key: 'gst', header: 'GST %' },
+        { key: 'active', header: 'Active' },
+      ],
+      rows: services.map((s) => ({
+        name: s.name,
+        category: s.category,
+        chargeType: s.chargeType,
+        price: s.defaultPrice,
+        gst: s.gstPercent,
+        active: s.isActive !== false,
+      })),
+    }],
+    footnotes: ['Lab / diagnostic tariff is the main register. IP bedside services are in the additional register.'],
+  };
+}
+
+async function buildNotifications(from, to, filters = {}) {
+  const { skip, limit, page } = pageOpts(filters);
+  const period = { createdAt: { $gte: from, $lte: to } };
+  const list = mergeList(period, filters, ['title', 'message', 'type', 'recipientRole']);
+  const [total, unread, byType, details, listTotal] = await Promise.all([
+    Notification.countDocuments(period),
+    Notification.countDocuments({ isRead: false }),
+    Notification.aggregate([{ $match: period }, { $group: { _id: '$type', count: { $sum: 1 } } }, { $sort: { count: -1 } }]),
+    Notification.find(list)
+      .populate('recipient', 'name role')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Notification.countDocuments(list),
+  ]);
+  return {
+    kpis: [
+      kpi('sent', 'Notifications in period', total),
+      kpi('unread', 'Currently unread', unread),
+      kpi('types', 'Types used', byType.length),
+    ],
+    breakdown: byType.map((r) => ({ label: r._id || 'info', value: r.count })),
+    details: details.map((n) => ({
+      date: n.createdAt,
+      type: n.type,
+      title: n.title,
+      message: String(n.message || '').slice(0, 120),
+      recipient: n.recipient?.name || n.recipientRole || 'broadcast',
+      read: n.isRead,
+    })),
+    exceptions: [flag('unread', 'Unread notifications', unread, 50, 1)],
+    footnotes: [],
+    meta: pageMeta(listTotal, page, limit),
+  };
+}
+
 const SECTION_BUILDERS = {
   executive: buildExecutive,
+  trail: buildTrail,
   'user-activity': buildUserActivity,
   patient: buildPatient,
+  op: buildOp,
+  ip: buildIp,
   appointment: buildAppointment,
   doctor: buildDoctor,
   pharmacy: buildPharmacy,
   inventory: buildInventory,
+  stock: buildStock,
+  prescription: buildPrescription,
   billing: buildBilling,
   payment: buildPayment,
   laboratory: buildLaboratory,
   radiology: buildRadiology,
   bed: buildBed,
+  facility: buildFacility,
   nurse: buildNurse,
   ot: buildOt,
   financial: buildFinancial,
   insurance: buildInsurance,
+  shift: buildShift,
+  assets: buildAssets,
+  complaints: buildComplaints,
+  bems: buildBems,
+  departments: buildDepartments,
+  suppliers: buildSuppliers,
+  catalog: buildCatalog,
+  documents: buildDocuments,
   employee: buildEmployee,
   security: buildSecurity,
+  changes: buildChanges,
+  chat: buildChat,
+  notifications: buildNotifications,
   system: async () => buildSystem(),
 };
 
@@ -1304,6 +2338,7 @@ exports.getAuditSection = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse(`Unknown audit section: ${section}`, 404));
   }
   const { from, to } = parseRange(req);
-  const payload = await SECTION_BUILDERS[section](from, to);
+  const filters = parseFilters(req);
+  const payload = await SECTION_BUILDERS[section](from, to, filters);
   respond(res, section, from, to, payload);
 });

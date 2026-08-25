@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Name is required'], trim: true },
   email: { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, match: [/^\S+@\S+\.\S+$/, 'Invalid email'] },
   password: { type: String, required: [true, 'Password is required'], minlength: 6, select: false },
+  organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
   role: { type: String, enum: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Accountant', 'Nurse', 'Biomedical Engineer', 'Patient'], default: 'Patient' },
   department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
   specialization: String,
@@ -55,18 +56,20 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
-userSchema.methods.getSignedJwtToken = function () {
-  return jwt.sign(
-    { 
-      userId: this._id, 
-      role: this.role, 
-      name: this.name, 
-      email: this.email,
-      tokenVersion: this.tokenVersion || 0
-    }, 
-    process.env.JWT_SECRET, 
-    { expiresIn: process.env.JWT_EXPIRE }
-  );
+userSchema.methods.getSignedJwtToken = function (extras = {}) {
+  const payload = {
+    userId: this._id,
+    role: this.role,
+    name: this.name,
+    email: this.email,
+    tokenVersion: this.tokenVersion || 0,
+  };
+  const orgId = this.organizationId?._id || this.organizationId;
+  if (orgId) payload.organizationId = String(orgId);
+  if (this.role === 'Super Admin' && extras.activeOrganizationId) {
+    payload.activeOrganizationId = String(extras.activeOrganizationId);
+  }
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
 };
 
 userSchema.methods.matchPassword = async function (enteredPassword) {
@@ -75,5 +78,6 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 
 userSchema.index({ role: 1 });
 userSchema.index({ department: 1 });
+userSchema.index({ organizationId: 1, role: 1 });
 
 module.exports = mongoose.model('User', userSchema);

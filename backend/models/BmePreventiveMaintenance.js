@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const bmePmSchema = new mongoose.Schema({
@@ -51,5 +52,7 @@ bmePmSchema.pre('save', async function (next) {
 bmePmSchema.index({ equipment: 1, scheduledDate: 1 });
 bmePmSchema.index({ status: 1 });
 bmePmSchema.index({ nextDueDate: 1 });
+
+applyOrganizationScope(bmePmSchema);
 
 module.exports = mongoose.model('BmePreventiveMaintenance', bmePmSchema);

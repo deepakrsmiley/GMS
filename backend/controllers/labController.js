@@ -211,11 +211,14 @@ exports.addTestsToLabOrder = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('No tests to add', 400));
   }
 
-  const existingNames = new Set((lab.tests || []).map((t) => t.testName));
+  const existingNames = new Set(
+    (lab.tests || []).map((t) => `${t.profileName || ''}:${t.testName}`),
+  );
   newTests.forEach((t) => {
-    if (t?.testName && !existingNames.has(t.testName)) {
+    const key = `${t.profileName || ''}:${t.testName}`;
+    if (t?.testName && !existingNames.has(key)) {
       lab.tests.push(t);
-      existingNames.add(t.testName);
+      existingNames.add(key);
     }
   });
 

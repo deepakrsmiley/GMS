@@ -9,8 +9,10 @@ const {
   getAssetDashboard,
 } = require('../controllers/assetController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('biomedical'));
 
 // Full asset master (dashboard / edit) stays VIEW_ASSETS.
 // Staff who only raise complaints still need a read-only asset list to pick equipment.

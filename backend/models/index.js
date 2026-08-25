@@ -1,3 +1,4 @@
+require('./Organization');
 require('./User');
 require('./Department');
 require('./Patient');
@@ -34,3 +35,6 @@ require('./BmeLifecycleEvent');
 require('./DirectSale');
 require('./Operation');
 require('./Document');
+require('./ServiceMaster');
+require('./ChangeRequest');
+require('./shift');

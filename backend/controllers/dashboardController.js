@@ -51,7 +51,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
 
   // New stats
   const [totalDoctors, totalDepartments, totalAssets, assetsUnderRepair, pharmacySalesToday] = await Promise.all([
-    User.countDocuments({ role: 'Doctor', isActive: true }),
+    User.countDocuments({ role: 'Doctor', isActive: true, ...require('../middleware/tenant').userOrgFilter(req) }),
     Department.countDocuments({ isActive: true }),
     Asset.countDocuments({ isActive: true }),
     Asset.countDocuments({ isActive: true, status: { $in: ['Under Maintenance', 'Breakdown', 'Repair In Progress'] } }),

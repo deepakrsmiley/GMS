@@ -22,10 +22,12 @@ const {
   deleteMedication,
 } = require('../controllers/ipController');
 const { protect, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 const advancedResults = require('../middleware/advancedResults');
 const IPAdmission = require('../models/IPAdmission');
 
 router.use(protect);
+router.use(requireHospitalModule('ip'));
 
 // Permission-driven guards (see backend/config/permissions.js -> 'IP Admission'
 // group). Super Admin always passes. Everyone else is checked against their

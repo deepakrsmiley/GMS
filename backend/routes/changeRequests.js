@@ -8,8 +8,10 @@ const {
   getPendingMedicineLocks,
 } = require('../controllers/changeRequestController');
 const { protect, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(protect);
+router.use(requireHospitalModule('changeRequests'));
 
 const VIEW_CR = authorizeAnyPermission('VIEW_CHANGE_REQUESTS', 'CREATE_CHANGE_REQUEST', 'REVIEW_CHANGE_REQUESTS');
 const CREATE_CR = authorizeAnyPermission('CREATE_CHANGE_REQUEST');

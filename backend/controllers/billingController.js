@@ -2,10 +2,11 @@ const mongoose = require("mongoose");
 const asyncHandler = require("../utils/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 const Bill = require("../models/Bill");
+const DirectSale = require("../models/DirectSale");
 const OPRegistration = require("../models/OPRegistration");
 const Counter = require("../models/Counter");
 const Medicine = require("../models/Medicine");
-const { generateBillNo } = require("../utils/generateId");
+const { allocateBillNumber } = require("../utils/generateId");
 const {
   generateInvoicePDF,
   generateThermalPrint,
@@ -429,7 +430,60 @@ exports.getPendingDischarge = asyncHandler(async (req, res) => {
 });
 
 exports.getBills = asyncHandler(async (req, res) => {
-  res.status(200).json(res.advancedResults);
+  const Patient = require("../models/Patient");
+  const { orgFilter } = require("../middleware/tenant");
+  const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+  const extra = {};
+
+  if (req.query.status) extra.status = req.query.status;
+  if (req.query.billType === "op") {
+    extra.billType = { $in: ["op", "pharmacy", "lab", "unified"] };
+  } else if (req.query.billType === "ip") {
+    extra.billType = "ip";
+  } else if (req.query.billType && req.query.billType !== "all") {
+    extra.billType = req.query.billType;
+  }
+  if (req.query.department) extra.department = req.query.department;
+  if (req.query.from || req.query.to) {
+    extra.createdAt = {};
+    if (req.query.from) extra.createdAt.$gte = new Date(req.query.from);
+    if (req.query.to) extra.createdAt.$lt = new Date(req.query.to);
+  }
+
+  const q = String(req.query.search || req.query.billNumber || "").trim();
+  if (q) {
+    const rx = new RegExp(escapeRegex(q), "i");
+    const patients = await Patient.find(
+      orgFilter(req, { $or: [{ name: rx }, { patientId: rx }, { phone: rx }] }),
+    )
+      .select("_id")
+      .limit(80);
+    extra.$or = [{ billNumber: rx }, { patient: { $in: patients.map((p) => p._id) } }];
+  }
+
+  const filter = orgFilter(req, extra);
+  const [rows, total] = await Promise.all([
+    Bill.find(filter)
+      .populate("patient", "patientId name phone")
+      .populate("doctor", "name")
+      .populate("department", "name")
+      .sort("-createdAt")
+      .skip((page - 1) * limit)
+      .limit(limit),
+    Bill.countDocuments(filter),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    count: rows.length,
+    total,
+    page,
+    pages: Math.ceil(total / limit) || 1,
+    data: rows,
+  });
 });
 
 exports.getBill = asyncHandler(async (req, res, next) => {
@@ -449,8 +503,7 @@ exports.createBill = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("At least one bill item is required", 400));
   }
 
-  const seq = await Counter.getNextSeq("bill");
-  req.body.billNumber = generateBillNo(seq);
+  req.body.billNumber = await allocateBillNumber();
   req.body.createdBy = req.user._id;
   if (!req.body.billType) req.body.billType = "unified";
 
@@ -490,6 +543,15 @@ exports.createBill = asyncHandler(async (req, res, next) => {
       paymentMode: req.body.paymentMode,
       notes: req.body.notes,
     });
+    const paidNow = Number(req.body.paidAmount) || 0;
+    if (paidNow > 0 && !(Array.isArray(req.body.payments) && req.body.payments.length)) {
+      req.body.payments = [{
+        amount: paidNow,
+        mode: req.body.paymentMode || "cash",
+        receivedBy: req.user._id,
+        paidAt: new Date(),
+      }];
+    }
     bill = await Bill.create(req.body);
     await markSourcesAsBilled(req.body.items, bill._id);
   } catch (error) {
@@ -796,168 +858,435 @@ exports.printThermal = asyncHandler(async (req, res, next) => {
 });
 
 exports.getBillingStats = asyncHandler(async (req, res) => {
+  const { orgFilter } = require("../middleware/tenant");
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
   const month = new Date(today.getFullYear(), today.getMonth(), 1);
+  const todayWindow = { createdAt: { $gte: today, $lt: tomorrow } };
+  const scoped = (extra) => orgFilter(req, extra);
 
-  const [todayRevenue, monthRevenue, pendingBills, totalBills] =
-    await Promise.all([
-      Bill.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: today },
-            status: { $in: ["paid", "partial"] },
-          },
+  const [
+    todayAgg,
+    todayPaidAgg,
+    monthRevenue,
+    pendingAgg,
+    overdueAgg,
+    todayByStatus,
+    pendingDischarge,
+  ] = await Promise.all([
+    Bill.aggregate([
+      { $match: scoped({ ...todayWindow, status: { $ne: "cancelled" } }) },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          total: { $sum: "$totalAmount" },
+          collected: { $sum: "$paidAmount" },
         },
-        { $group: { _id: null, total: { $sum: "$paidAmount" } } },
-      ]),
-      Bill.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: month },
-            status: { $in: ["paid", "partial"] },
-          },
+      },
+    ]),
+    Bill.aggregate([
+      { $match: scoped({ ...todayWindow, status: { $in: ["paid", "partial"] } }) },
+      { $group: { _id: null, total: { $sum: "$paidAmount" } } },
+    ]),
+    Bill.aggregate([
+      {
+        $match: scoped({
+          createdAt: { $gte: month },
+          status: { $in: ["paid", "partial"] },
+        }),
+      },
+      { $group: { _id: null, total: { $sum: "$paidAmount" } } },
+    ]),
+    Bill.aggregate([
+      { $match: scoped({ status: { $in: ["pending", "partial"] } }) },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          total: { $sum: "$dueAmount" },
         },
-        { $group: { _id: null, total: { $sum: "$paidAmount" } } },
-      ]),
-      Bill.countDocuments({ status: { $in: ["pending", "partial"] } }),
-      Bill.countDocuments({ createdAt: { $gte: today } }),
-    ]);
+      },
+    ]),
+    Bill.aggregate([
+      {
+        $match: scoped({
+          status: { $in: ["pending", "partial"] },
+          dueAmount: { $gt: 0 },
+          createdAt: { $lt: today },
+        }),
+      },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          total: { $sum: "$dueAmount" },
+        },
+      },
+    ]),
+    Bill.aggregate([
+      { $match: scoped(todayWindow) },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          total: { $sum: "$totalAmount" },
+        },
+      },
+    ]),
+    getPendingDischargeBilling(),
+  ]);
+
+  const byStatus = { paid: { count: 0, total: 0 }, pending: { count: 0, total: 0 }, overdue: { count: 0, total: 0 }, cancelled: { count: 0, total: 0 } };
+  todayByStatus.forEach((row) => {
+    const key = row._id === "partial" ? "pending" : row._id;
+    if (!byStatus[key]) byStatus[key] = { count: 0, total: 0 };
+    byStatus[key].count += row.count;
+    byStatus[key].total += row.total || 0;
+  });
+  byStatus.overdue.count = overdueAgg[0]?.count || 0;
+  byStatus.overdue.total = overdueAgg[0]?.total || 0;
+
+  const pdAmount = (pendingDischarge || []).reduce(
+    (sum, row) => sum + (Number(row.estimatedTotal) || 0),
+    0,
+  );
 
   res.status(200).json({
     success: true,
     data: {
-      todayRevenue: todayRevenue[0]?.total || 0,
+      todayRevenue: todayPaidAgg[0]?.total || todayAgg[0]?.collected || 0,
       monthRevenue: monthRevenue[0]?.total || 0,
-      pendingBills,
-      totalBills,
+      pendingBills: pendingAgg[0]?.count || 0,
+      pendingAmount: pendingAgg[0]?.total || 0,
+      totalBills: todayAgg[0]?.count || 0,
+      todayBillsAmount: todayAgg[0]?.total || 0,
+      todayCollection: todayAgg[0]?.collected || 0,
+      overdueBills: overdueAgg[0]?.count || 0,
+      overdueAmount: overdueAgg[0]?.total || 0,
+      pendingDischarge: (pendingDischarge || []).length,
+      pendingDischargeAmount: pdAmount,
+      summary: byStatus,
     },
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shift helper — exactly TWO 12-hour shifts (matches the Shift Report UI):
-//   Morning shift : 07:00:00 – 18:59:59  (7 AM to 7 PM)
-//   Night shift   : 19:00:00 – 06:59:59  (7 PM to 7 AM, crosses midnight)
-// ─────────────────────────────────────────────────────────────────────────────
-const getShift = (date) => {
-  const h = new Date(date).getHours();
-  return (h >= 7 && h < 19) ? "morning" : "night";
+// Pharmacy sales: money actually paid on the selected IST calendar day.
+// Matches Billing "today paid" for pharmacy / medicine lines only — unpaid
+// bills and consultation/lab charges are excluded.
+const kolkataToday = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+const istDayBounds = (dateStr) => {
+  const raw = String(dateStr || "").slice(0, 10);
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : kolkataToday();
+  return {
+    iso,
+    from: new Date(`${iso}T00:00:00.000+05:30`),
+    to: new Date(`${iso}T23:59:59.999+05:30`),
+  };
 };
 
-// Sums a single bill's collected amount into cash/upi/card/other buckets.
-// Prefers the itemised `payments` array (handles split/"multiple" mode
-// payments correctly); falls back to the single paymentMode + paidAmount
-// for older bills that never recorded a payments breakdown.
+const lineQty = (items = []) =>
+  items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+const inRange = (value, from, to) => {
+  if (!value) return false;
+  const t = new Date(value).getTime();
+  return t >= from.getTime() && t <= to.getTime();
+};
+
+const isPharmacyLine = (item = {}) =>
+  String(item.type || "").toLowerCase() === "medicine" ||
+  item.category === "Pharmacy";
+
+const pharmacyShareOfBill = (bill) => {
+  if (String(bill.billType || "") === "pharmacy") return 1;
+  const total = Number(bill.totalAmount) || 0;
+  const part = (bill.items || []).reduce(
+    (sum, item) => sum + (isPharmacyLine(item) ? Number(item.totalAmount) || 0 : 0),
+    0,
+  );
+  if (part <= 0) return 0;
+  if (total <= 0) return 1;
+  return Math.min(1, part / total);
+};
+
+const paymentsReceivedInRange = (bill, from, to) => {
+  const listed = Array.isArray(bill.payments) ? bill.payments : [];
+  const listedSum = round2(
+    listed.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+  );
+  const paid = Number(bill.paidAmount) || 0;
+  const rows = listed.filter((p) => inRange(p.paidAt, from, to));
+
+  // createBill often stores paidAmount without a payments[] row
+  const missing = round2(paid - listedSum);
+  if (missing > 0.02 && inRange(bill.createdAt, from, to)) {
+    rows.push({
+      amount: missing,
+      mode: bill.paymentMode || "cash",
+      paidAt: bill.createdAt,
+    });
+  } else if (!listed.length && paid > 0 && inRange(bill.createdAt, from, to)) {
+    rows.push({
+      amount: paid,
+      mode: bill.paymentMode || "cash",
+      paidAt: bill.createdAt,
+    });
+  }
+
+  return rows;
+};
+
 const splitPaymentAmount = (bill) => {
+  const paid = Number(bill.paidAmount) || 0;
   const out = { cash: 0, upi: 0, card: 0, other: 0 };
   if (Array.isArray(bill.payments) && bill.payments.length) {
     bill.payments.forEach((p) => {
-      const amt = p.amount || 0;
-      if (p.mode === "cash") out.cash += amt;
-      else if (p.mode === "upi") out.upi += amt;
-      else if (p.mode === "card") out.card += amt;
+      const amt = Number(p.amount) || 0;
+      const mode = String(p.mode || "").toLowerCase();
+      if (mode === "cash") out.cash += amt;
+      else if (mode === "upi") out.upi += amt;
+      else if (mode === "card") out.card += amt;
       else out.other += amt;
     });
-  } else if (bill.paidAmount) {
-    if (bill.paymentMode === "cash") out.cash += bill.paidAmount;
-    else if (bill.paymentMode === "upi") out.upi += bill.paidAmount;
-    else if (bill.paymentMode === "card") out.card += bill.paidAmount;
-    else out.other += bill.paidAmount;
+  } else if (paid) {
+    const mode = String(bill.paymentMode || "").toLowerCase();
+    if (mode === "cash") out.cash = paid;
+    else if (mode === "upi") out.upi = paid;
+    else if (mode === "card") out.card = paid;
+    else out.other = paid;
   }
-  return out;
+  const splitTotal = out.cash + out.upi + out.card + out.other;
+  if (paid <= 0) return { cash: 0, upi: 0, card: 0, other: 0 };
+  if (splitTotal <= 0) {
+    const mode = String(bill.paymentMode || "cash").toLowerCase();
+    if (mode === "upi") return { cash: 0, upi: paid, card: 0, other: 0 };
+    if (mode === "card") return { cash: 0, upi: 0, card: paid, other: 0 };
+    if (mode === "cash") return { cash: paid, upi: 0, card: 0, other: 0 };
+    return { cash: 0, upi: 0, card: 0, other: paid };
+  }
+  if (Math.abs(splitTotal - paid) < 0.02) return out;
+  const k = paid / splitTotal;
+  const cash = round2(out.cash * k);
+  const upi = round2(out.upi * k);
+  const card = round2(out.card * k);
+  return { cash, upi, card, other: round2(paid - cash - upi - card) };
 };
 
-// ── Shift-wise Report ─────────────────────────────────────────────────────────
-// A "shift day" always runs 07:00 (selected date) -> 07:00 (next date), so the
-// night shift (7 PM -> 7 AM) is queried and totalled as ONE continuous window
-// and never gets split/mixed across two different report dates. Because the
-// split is computed purely from each bill's timestamp (no manual open/close
-// step), the same Morning/Night split automatically re-appears for every new
-// date you pick — nothing needs to be "reset" by hand.
-exports.getShiftReport = asyncHandler(async (req, res) => {
-  const dateParam = req.query.date || req.query.from || new Date().toISOString().slice(0, 10);
-  const base = new Date(dateParam);
-  base.setHours(0, 0, 0, 0);
+const mapPharmacyBillRow = (b, from, to) => {
+  if (b.status === "cancelled" || b.status === "refunded") return null;
+  const share = pharmacyShareOfBill(b);
+  if (share <= 0) return null;
 
-  const shiftStart = new Date(base); shiftStart.setHours(7, 0, 0, 0);   // 7 AM on the selected date
-  const nightStart = new Date(base); nightStart.setHours(19, 0, 0, 0);  // 7 PM on the selected date
-  const shiftEnd   = new Date(base);
-  shiftEnd.setDate(shiftEnd.getDate() + 1);
-  shiftEnd.setHours(7, 0, 0, 0);                                        // 7 AM the next date
+  const dayPayments = paymentsReceivedInRange(b, from, to);
+  const paidToday = round2(
+    dayPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+  );
+  const collected = round2(paidToday * share);
+  if (collected <= 0) return null;
 
-  const bills = await Bill.find({
-    createdAt: { $gte: shiftStart, $lt: shiftEnd },
-    status: { $ne: "cancelled" },
-  })
-    .populate("patient", "patientId name phone")
-    .populate("createdBy", "name role")
-    .sort({ createdAt: 1 })
-    .lean();
-
-  // Group by shift — every bill in the window lands in exactly one bucket.
-  const shiftMap = { morning: [], night: [] };
-  for (const b of bills) {
-    shiftMap[getShift(b.createdAt)].push(b);
-  }
-
-  const shifts = ["morning", "night"].map((shiftName) => {
-    const shiftBills = shiftMap[shiftName];
-
-    const totals = shiftBills.reduce((acc, b) => {
-      const p = splitPaymentAmount(b);
-      acc.totalAmount += b.totalAmount || 0;
-      acc.totalPaid   += b.paidAmount  || 0;
-      acc.totalDue    += b.dueAmount   || 0;
-      acc.cashAmount  += p.cash;
-      acc.upiAmount   += p.upi;
-      acc.cardAmount  += p.card;
-      acc.otherAmount += p.other;
-      return acc;
-    }, { totalAmount: 0, totalPaid: 0, totalDue: 0, cashAmount: 0, upiAmount: 0, cardAmount: 0, otherAmount: 0 });
-
-    return {
-      _id: shiftName,
-      window: shiftName === "morning"
-        ? { from: shiftStart, to: nightStart }
-        : { from: nightStart, to: shiftEnd },
-      totalBills:  shiftBills.length,
-      totalAmount: Number(totals.totalAmount.toFixed(2)),
-      totalPaid:   Number(totals.totalPaid.toFixed(2)),
-      totalDue:    Number(totals.totalDue.toFixed(2)),
-      cashAmount:  Number(totals.cashAmount.toFixed(2)),
-      upiAmount:   Number(totals.upiAmount.toFixed(2)),
-      cardAmount:  Number(totals.cardAmount.toFixed(2)),
-      otherAmount: Number(totals.otherAmount.toFixed(2)),
-      bills: shiftBills.map((b) => ({
-        billNumber:   b.billNumber,
-        patientName:  b.patient?.name || "—",
-        patientId:    b.patient?.patientId || "",
-        totalAmount:  b.totalAmount || 0,
-        paidAmount:   b.paidAmount  || 0,
-        dueAmount:    b.dueAmount   || 0,
-        billedByName: b.createdBy?.name || "—",
-        paymentMode:  b.paymentMode,
-        createdAt:    b.createdAt,
-      })),
-    };
+  const pharmacyItems =
+    String(b.billType || "") === "pharmacy"
+      ? b.items || []
+      : (b.items || []).filter(isPharmacyLine);
+  const billed = round2(
+    String(b.billType || "") === "pharmacy"
+      ? Number(b.totalAmount) || 0
+      : pharmacyItems.reduce((sum, it) => sum + (Number(it.totalAmount) || 0), 0),
+  );
+  const scaledPayments = dayPayments.map((p) => ({
+    ...p,
+    amount: round2((Number(p.amount) || 0) * share),
+  }));
+  const p = splitPaymentAmount({
+    ...b,
+    paidAmount: collected,
+    payments: scaledPayments,
   });
+  const lastPay = dayPayments[dayPayments.length - 1];
+  const modes = [
+    ...new Set(
+      dayPayments.map((pay) =>
+        String(pay.mode || b.paymentMode || "cash").toLowerCase(),
+      ),
+    ),
+  ];
 
-  const grandTotal = bills.reduce((s, b) => s + (b.totalAmount || 0), 0);
-  const grandPaid  = bills.reduce((s, b) => s + (b.paidAmount  || 0), 0);
-  const grandDue   = bills.reduce((s, b) => s + (b.dueAmount   || 0), 0);
+  return {
+    id: String(b._id),
+    source: "bill",
+    billNumber: b.billNumber,
+    patientName: b.patient?.name || "—",
+    patientId: b.patient?.patientId || "",
+    phone: b.patient?.phone || "",
+    createdAt: lastPay?.paidAt || b.createdAt,
+    items: lineQty(pharmacyItems),
+    totalAmount: billed,
+    discount: round2((Number(b.discountAmount) || 0) * share),
+    paidAmount: collected,
+    dueAmount: round2((Number(b.dueAmount) || 0) * share),
+    paymentMode: modes.length > 1 ? "multiple" : modes[0] || b.paymentMode || "—",
+    billedByName: b.createdBy?.name || "—",
+    billedByRole: b.createdBy?.role || "",
+    status: b.status,
+    cancelled: false,
+    cashAmount: p.cash,
+    upiAmount: p.upi,
+    cardAmount: p.card,
+    otherAmount: p.other,
+  };
+};
+
+const mapDirectSaleRow = (s) => {
+  const paid = Number(s.paidAmount) || 0;
+  if (paid <= 0 || s.paymentStatus === "pending") return null;
+  const mode = String(s.paymentMethod || "cash").toLowerCase();
+  const total = s.grandTotal || 0;
+  return {
+    id: String(s._id),
+    source: "sale",
+    billNumber: s.invoiceNumber,
+    patientName: s.patient?.name || s.customerName || "Walk-in",
+    patientId: s.patient?.patientId || "",
+    phone: s.patient?.phone || s.customerPhone || "",
+    createdAt: s.saleDate || s.createdAt,
+    items: lineQty(s.items),
+    totalAmount: total,
+    discount: s.totalDiscount || 0,
+    paidAmount: paid,
+    dueAmount: Math.max(0, total - paid),
+    paymentMode: mode,
+    billedByName: s.soldBy?.name || "—",
+    billedByRole: s.soldBy?.role || "",
+    status: s.paymentStatus || "paid",
+    cancelled: false,
+    cashAmount: mode === "cash" ? paid : 0,
+    upiAmount: mode === "upi" ? paid : 0,
+    cardAmount: mode === "card" ? paid : 0,
+    otherAmount: !["cash", "upi", "card"].includes(mode) ? paid : 0,
+  };
+};
+
+const summarisePharmacyRows = (rows) => {
+  const acc = rows.filter((r) => !r.cancelled).reduce(
+    (out, r) => {
+      out.totalBills += 1;
+      out.totalAmount += r.totalAmount;
+      out.totalPaid += r.paidAmount;
+      out.totalDue += r.dueAmount;
+      out.totalDiscount += r.discount;
+      out.totalItems += r.items;
+      out.cashAmount += r.cashAmount;
+      out.upiAmount += r.upiAmount;
+      out.cardAmount += r.cardAmount;
+      out.otherAmount += r.otherAmount;
+      return out;
+    },
+    {
+      totalBills: 0,
+      totalAmount: 0,
+      totalPaid: 0,
+      totalDue: 0,
+      totalDiscount: 0,
+      totalItems: 0,
+      cashAmount: 0,
+      upiAmount: 0,
+      cardAmount: 0,
+      otherAmount: 0,
+    },
+  );
+  ["totalAmount", "totalPaid", "totalDue", "totalDiscount", "cashAmount", "upiAmount", "cardAmount", "otherAmount"]
+    .forEach((k) => { acc[k] = round2(acc[k]); });
+  const modes = round2(acc.cashAmount + acc.upiAmount + acc.cardAmount + acc.otherAmount);
+  if (Math.abs(modes - acc.totalPaid) > 0.05) {
+    acc.otherAmount = round2(acc.otherAmount + (acc.totalPaid - modes));
+  }
+  return acc;
+};
+
+const loadPharmacySaleRows = async (from, to) => {
+  const pharmacyBillMatch = {
+    status: { $nin: ["cancelled", "refunded"] },
+    $and: [
+      {
+        $or: [
+          { billType: "pharmacy" },
+          { "items.type": "medicine" },
+          { "items.category": "Pharmacy" },
+        ],
+      },
+      {
+        $or: [
+          { createdAt: { $gte: from, $lte: to }, paidAmount: { $gt: 0 } },
+          { "payments.paidAt": { $gte: from, $lte: to } },
+        ],
+      },
+    ],
+  };
+
+  const [bills, sales] = await Promise.all([
+    Bill.find(pharmacyBillMatch)
+      .populate("patient", "patientId name phone")
+      .populate("createdBy", "name role")
+      .sort({ createdAt: 1 })
+      .lean(),
+    DirectSale.find({
+      saleDate: { $gte: from, $lte: to },
+      paidAmount: { $gt: 0 },
+      paymentStatus: { $ne: "pending" },
+    })
+      .populate("patient", "patientId name phone")
+      .populate("soldBy", "name role")
+      .sort({ saleDate: 1 })
+      .lean(),
+  ]);
+
+  const seen = new Set();
+  const rows = [];
+  bills.forEach((b) => {
+    const row = mapPharmacyBillRow(b, from, to);
+    if (!row) return;
+    seen.add(row.billNumber);
+    rows.push(row);
+  });
+  sales.forEach((s) => {
+    const row = mapDirectSaleRow(s);
+    if (!row || seen.has(row.billNumber)) return;
+    rows.push(row);
+  });
+  rows.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  return rows;
+};
+
+exports.getShiftReport = asyncHandler(async (req, res) => {
+  const fromParam = req.query.from || req.query.date || kolkataToday();
+  const toParam = req.query.to || fromParam;
+  const start = istDayBounds(fromParam);
+  const end = istDayBounds(toParam);
+  const from = start.from;
+  const to = end.to;
+
+  const bills = await loadPharmacySaleRows(from, to);
+  const summary = summarisePharmacyRows(bills);
 
   res.status(200).json({
     success: true,
-    shiftDate: base.toISOString().slice(0, 10),
-    dateRange: { from: shiftStart, to: shiftEnd },
-    summary: {
-      totalBills:  bills.length,
-      totalAmount: Number(grandTotal.toFixed(2)),
-      totalPaid:   Number(grandPaid.toFixed(2)),
-      totalDue:    Number(grandDue.toFixed(2)),
-    },
-    shifts,
+    date: start.iso,
+    dateRange: { from, to },
+    summary,
+    bills,
+    shifts: [{
+      _id: "day",
+      window: { from, to },
+      ...summary,
+      bills,
+    }],
   });
 });
 
@@ -973,7 +1302,7 @@ exports.getDailyReport = asyncHandler(async (req, res) => {
       $match: {
         createdAt: { $gte: from },
         status: { $ne: "cancelled" },
-        billType: { $in: ["pharmacy", "op", "unified"] },
+        billType: "pharmacy",
       },
     },
     {
@@ -1005,7 +1334,7 @@ exports.getWeeklyReport = asyncHandler(async (req, res) => {
       $match: {
         createdAt: { $gte: from },
         status: { $ne: "cancelled" },
-        billType: { $in: ["pharmacy", "op", "unified"] },
+        billType: "pharmacy",
       },
     },
     {
@@ -1056,7 +1385,7 @@ exports.getMonthlyReport = asyncHandler(async (req, res) => {
       $match: {
         createdAt: { $gte: from },
         status: { $ne: "cancelled" },
-        billType: { $in: ["pharmacy", "op", "unified"] },
+        billType: "pharmacy",
       },
     },
     {
@@ -1078,60 +1407,48 @@ exports.getMonthlyReport = asyncHandler(async (req, res) => {
 
 // ── Staff / Pharmacist Settlement Report ──────────────────────────────────────
 exports.getStaffReport = asyncHandler(async (req, res) => {
-  const from = req.query.from
-    ? new Date(req.query.from)
-    : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
-  const to = req.query.to
-    ? (() => { const d = new Date(req.query.to); d.setHours(23,59,59,999); return d; })()
-    : (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })();
+  const fromBound = istDayBounds(req.query.from || kolkataToday());
+  const toBound = istDayBounds(req.query.to || req.query.from || kolkataToday());
+  const from = fromBound.from;
+  const to = toBound.to;
 
-  const bills = await Bill.find({
-    createdAt: { $gte: from, $lte: to },
-    status: { $ne: "cancelled" },
-  })
-    .populate("createdBy", "name role")
-    .lean();
-
-  // Group by staff × shift
+  const rows = await loadPharmacySaleRows(from, to);
   const map = {};
-  for (const b of bills) {
-    const staffId   = b.createdBy?._id?.toString() || "unknown";
-    const staffName = b.createdBy?.name || "Unknown";
-    const shift     = getShift(b.createdAt);
-    const key       = `${staffId}__${shift}`;
-
+  for (const r of rows) {
+    if (r.cancelled) continue;
+    const staffName = r.billedByName || "Unknown";
+    const key = staffName;
     if (!map[key]) {
       map[key] = {
-        _id:          { staffId, staffName, shift },
+        _id: { staffName },
         staffName,
-        totalBills:   0,
-        totalAmount:  0,
-        totalPaid:    0,
-        totalDue:     0,
+        totalBills: 0,
+        totalAmount: 0,
+        totalPaid: 0,
+        totalDue: 0,
         cashCollected: 0,
-        upiCollected:  0,
+        upiCollected: 0,
         cardCollected: 0,
       };
     }
     const row = map[key];
-    const p = splitPaymentAmount(b);
-    row.totalBills++;
-    row.totalAmount   += b.totalAmount || 0;
-    row.totalPaid     += b.paidAmount  || 0;
-    row.totalDue      += b.dueAmount   || 0;
-    row.cashCollected += p.cash;
-    row.upiCollected  += p.upi;
-    row.cardCollected += p.card;
+    row.totalBills += 1;
+    row.totalAmount += r.totalAmount;
+    row.totalPaid += r.paidAmount;
+    row.totalDue += r.dueAmount;
+    row.cashCollected += r.cashAmount;
+    row.upiCollected += r.upiAmount;
+    row.cardCollected += r.cardAmount;
   }
 
-  const data = Object.values(map).map(row => ({
+  const data = Object.values(map).map((row) => ({
     ...row,
-    totalAmount:   Number(row.totalAmount.toFixed(2)),
-    totalPaid:     Number(row.totalPaid.toFixed(2)),
-    totalDue:      Number(row.totalDue.toFixed(2)),
-    cashCollected: Number(row.cashCollected.toFixed(2)),
-    upiCollected:  Number(row.upiCollected.toFixed(2)),
-    cardCollected: Number(row.cardCollected.toFixed(2)),
+    totalAmount: round2(row.totalAmount),
+    totalPaid: round2(row.totalPaid),
+    totalDue: round2(row.totalDue),
+    cashCollected: round2(row.cashCollected),
+    upiCollected: round2(row.upiCollected),
+    cardCollected: round2(row.cardCollected),
   }));
 
   res.status(200).json({ success: true, dateRange: { from, to }, data });

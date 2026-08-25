@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 /**
  * Hospital staff chat — hospital channel + direct threads + @mentions.
@@ -23,5 +24,7 @@ chatMessageSchema.index({ channel: 1, createdAt: -1 });
 chatMessageSchema.index({ mentions: 1, createdAt: -1 });
 chatMessageSchema.index({ participants: 1, createdAt: -1 });
 chatMessageSchema.index({ createdAt: -1 });
+
+applyOrganizationScope(chatMessageSchema);
 
 module.exports = mongoose.model('ChatMessage', chatMessageSchema);

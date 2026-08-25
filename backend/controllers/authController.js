@@ -7,6 +7,7 @@ const ActivityLog = require('../models/ActivityLog');
 const sendTokenResponse = require('../utils/sendToken');
 const logger = require('../utils/logger');
 const { serializeUser, parseDataUriPhoto } = require('../utils/userAvatar');
+const { sanitizeEnabledModules } = require('../config/hospitalModules');
 
 // Helper function to create audit logs (userId may be null for unknown-email failures)
 const createAuditLog = async (userId, action, description, req, metadata = undefined) => {
@@ -50,7 +51,9 @@ exports.login = asyncHandler(async (req, res, next) => {
   }
 
   const normalizedEmail = email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail }).select('+password');
+  const user = await User.findOne({ email: normalizedEmail })
+    .select('+password')
+    .populate('organizationId', 'name code status logo enabledModules');
 
   if (!user) {
     logger.warn(`LOGIN failed: user not found for ${normalizedEmail}`);
@@ -71,6 +74,11 @@ exports.login = asyncHandler(async (req, res, next) => {
   if (!user.isActive) {
     logger.warn(`LOGIN failed: inactive account ${normalizedEmail}`);
     return next(new ErrorResponse('Account is deactivated. Contact administrator.', 401));
+  }
+
+  if (user.organizationId && user.organizationId.status && user.organizationId.status !== 'active') {
+    logger.warn(`LOGIN failed: deactivated organization for ${normalizedEmail}`);
+    return next(new ErrorResponse('Organization is deactivated. Contact GMS Super Admin.', 401));
   }
 
   const isMatch = await user.matchPassword(password);
@@ -118,16 +126,17 @@ exports.login = asyncHandler(async (req, res, next) => {
 
   if (isNewDevice) {
     try {
-      const { notifyRoles } = require('../utils/notify');
-      await notifyRoles(req, {
-        roles: ['Super Admin'],
-        title: 'Login from new device',
-        message: `${user.name} (${user.role}) signed in from a new IP/device`,
-        type: 'system',
-        link: '/masters/staff',
-        relatedId: user._id,
-        relatedModel: 'User',
-      });
+        const { notifyRoles } = require('../utils/notify');
+        await notifyRoles(req, {
+          roles: ['Super Admin'],
+          title: 'Login from new device',
+          message: `${user.name} (${user.role}) signed in from a new IP/device`,
+          type: 'system',
+          link: '/masters/staff',
+          relatedId: user._id,
+          relatedModel: 'User',
+          organizationId: user.organizationId,
+        });
     } catch (_) { /* ignore */ }
   }
 
@@ -164,11 +173,30 @@ exports.logout = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/me
 // @access  Private
 exports.getMe = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user.id).populate('department');
+  const user = await User.findById(req.user.id)
+    .populate({ path: 'department', options: { skipOrganizationFilter: true } })
+    .populate('organizationId', 'name code status logo enabledModules');
+
+  const data = serializeUser(user);
+  if (data) {
+    data.organizationId = req.organizationId || user.organizationId?._id || user.organizationId || null;
+    const orgDoc = req.organization || (user.organizationId && user.organizationId.name ? user.organizationId : null);
+    data.organization = orgDoc
+      ? {
+          _id: orgDoc._id,
+          name: orgDoc.name,
+          code: orgDoc.code,
+          status: orgDoc.status,
+          logo: orgDoc.logo || '',
+          enabledModules: sanitizeEnabledModules(orgDoc.enabledModules),
+        }
+      : null;
+    data.mustSelectOrganization = !!req.tenant?.mustSelectOrganization;
+  }
 
   res.status(200).json({
     success: true,
-    data: serializeUser(user),
+    data,
   });
 });
 
@@ -309,6 +337,7 @@ exports.updatePassword = asyncHandler(async (req, res, next) => {
       link: '/masters/staff',
       relatedId: user._id,
       relatedModel: 'User',
+      organizationId: user.organizationId,
     });
   } catch (_) { /* ignore */ }
 
@@ -360,7 +389,17 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
   try {
     const { notifyRoles } = require('../utils/notify');
     await notifyRoles(req, {
-      roles: ['Super Admin', 'Admin'],
+      roles: ['Admin'],
+      title: 'Password reset OTP',
+      message: `${user.name} (${user.email}) — OTP ${otp} (valid 10 minutes). Share only with this staff member.`,
+      type: 'system',
+      link: '/masters/staff',
+      relatedId: user._id,
+      relatedModel: 'User',
+      organizationId: user.organizationId,
+    });
+    await notifyRoles(req, {
+      roles: ['Super Admin'],
       title: 'Password reset OTP',
       message: `${user.name} (${user.email}) — OTP ${otp} (valid 10 minutes). Share only with this staff member.`,
       type: 'system',
@@ -433,6 +472,7 @@ exports.resetPassword = asyncHandler(async (req, res, next) => {
       link: '/masters/staff',
       relatedId: user._id,
       relatedModel: 'User',
+      organizationId: user.organizationId,
     });
   } catch (_) { /* ignore */ }
 

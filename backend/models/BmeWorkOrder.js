@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const partUsedSchema = new mongoose.Schema({
@@ -68,5 +69,7 @@ bmeWorkOrderSchema.pre('save', async function (next) {
 bmeWorkOrderSchema.index({ status: 1 });
 bmeWorkOrderSchema.index({ equipment: 1 });
 bmeWorkOrderSchema.index({ engineer: 1 });
+
+applyOrganizationScope(bmeWorkOrderSchema);
 
 module.exports = mongoose.model('BmeWorkOrder', bmeWorkOrderSchema);

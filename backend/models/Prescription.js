@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const prescriptionItemSchema = new mongoose.Schema({
   medicine: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine' },
@@ -26,5 +27,7 @@ const prescriptionSchema = new mongoose.Schema({
   dispensedAt: Date,
   bill: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill' },
 }, { timestamps: true });
+
+applyOrganizationScope(prescriptionSchema);
 
 module.exports = mongoose.model('Prescription', prescriptionSchema);

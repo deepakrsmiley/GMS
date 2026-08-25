@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const appointmentSchema = new mongoose.Schema({
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
@@ -20,5 +21,7 @@ const appointmentSchema = new mongoose.Schema({
 appointmentSchema.index({ doctor: 1, appointmentDate: 1 });
 appointmentSchema.index({ patient: 1 });
 appointmentSchema.index({ status: 1 });
+
+applyOrganizationScope(appointmentSchema);
 
 module.exports = mongoose.model('Appointment', appointmentSchema);

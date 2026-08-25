@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const labController = require('../controllers/labController');
 const { authenticateUser, authorizePermissions, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('lab'));
 
 // Permission-driven access — controlled per-user via Users & Access checkboxes.
 router.get('/dashboard', authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION'), labController.getLabDashboard);

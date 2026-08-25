@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const wardSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
@@ -12,5 +13,7 @@ const wardSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   description: String,
 }, { timestamps: true });
+
+applyOrganizationScope(wardSchema);
 
 module.exports = mongoose.model('Ward', wardSchema);

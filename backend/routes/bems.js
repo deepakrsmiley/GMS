@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 const ctrl = require('../controllers/bemsController');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('biomedical'));
 
 // Dashboard & QR
 router.get('/dashboard', authorizeAnyPermission('VIEW_BEMS', 'MANAGE_BEMS'), ctrl.getDashboard);

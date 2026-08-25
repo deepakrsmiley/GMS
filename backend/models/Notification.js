@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const notificationSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -22,5 +23,7 @@ const notificationSchema = new mongoose.Schema({
 
 notificationSchema.index({ recipient: 1, isRead: 1 });
 notificationSchema.index({ createdAt: -1 });
+
+applyOrganizationScope(notificationSchema);
 
 module.exports = mongoose.model('Notification', notificationSchema);

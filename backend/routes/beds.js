@@ -13,8 +13,10 @@ const {
   deleteWard,     // NEW
 } = require('../controllers/bedController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('ip'));
 
 const MANAGE_WARDS = authorizeAnyPermission('MANAGE_WARDS', 'MANAGE_BEDS');
 const CREATE_BED = authorizeAnyPermission('CREATE_BED', 'MANAGE_BEDS');

@@ -1,5 +1,6 @@
 import { hasRole, normalizeRole } from '../utils/roles';
 import { hasPermission } from './permissions';
+import { isHospitalModuleEnabledForUser, ROUTE_TO_MODULE } from './hospitalModules';
 
 /**
  * Role-based navigation for the 6 main enterprise roles + Super Admin.
@@ -9,24 +10,24 @@ import { hasPermission } from './permissions';
  */
 export const NAV_ITEMS = [
   { id: 'dashboard',        to: '/dashboard',               label: 'Dashboard',          icon: 'LayoutDashboard', permission: 'VIEW_DASHBOARD',        roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Biomedical Engineer'] },
-  { id: 'patients',         to: '/patients',                label: 'Patient Registration',icon: 'Users',          permission: 'VIEW_PATIENT',           roles: ['Super Admin', 'Admin', 'Receptionist'] },
-  { id: 'op-reg',           to: '/op-queue',                label: 'OP Registration',    icon: 'Activity',        permission: 'CREATE_OP_QUEUE',        roles: ['Super Admin', 'Admin', 'Receptionist'] },
-  { id: 'doctor-queue',     to: '/op-queue',                label: 'Doctor Queue',       icon: 'Stethoscope',     permission: 'VIEW_OP_QUEUE',          roles: ['Super Admin', 'Doctor', 'Receptionist'] },
-  { id: 'appointments',     to: '/appointments',            label: 'Appointments',       icon: 'Calendar',        permission: 'VIEW_APPOINTMENT',       roles: ['Super Admin', 'Admin', 'Receptionist'] },
-  { id: 'ip-patients',      to: '/ip-admissions',           label: 'IP Admissions',      icon: 'Building2',       permission: 'VIEW_IP_ADMISSION',      roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist'] },
-  { id: 'nurse-station',    to: '/nurse-station',           label: 'Nurse Station',      icon: 'HeartPulse',      permission: 'VIEW_NURSE_STATION',      roles: ['Super Admin', 'Admin', 'Doctor', 'Nurse'] },
-  { id: 'billing',          to: '/billing',                 label: 'Billing',            icon: 'Receipt',         permission: 'VIEW_BILLING',           roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-  { id: 'prescriptions',    to: '/pharmacy?tab=prescriptions', label: 'Prescriptions',  icon: 'ClipboardList',   permission: 'VIEW_PRESCRIPTION',      roles: ['Super Admin', 'Doctor', 'Pharmacist', 'Receptionist'] },
-  { id: 'pharmacy',         to: '/pharmacy?tab=prescriptions', label: 'Pharmacy',        icon: 'Pill',            permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-  { id: 'pharmacy-reports', to: '/pharmacy-reports',        label: 'Pharmacy Reports',   icon: 'FileBarChart2',   permission: 'VIEW_PHARMACY',          roles: ['Super Admin', 'Admin', 'Pharmacist'] },
-  { id: 'lab-orders',       to: '/lab',                     label: 'Lab Orders',         icon: 'FlaskConical',    permission: 'VIEW_LAB',               roles: ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist'] },
-  { id: 'lab-reports',      to: '/lab?tab=reports',         label: 'Lab Reports',        icon: 'FileBarChart',    permission: 'VIEW_LAB',               roles: ['Super Admin', 'Admin', 'Lab Technician'] },
-  { id: 'biomedical',       to: '/biomedical',              label: 'Biomedical',         icon: 'Wrench',          permission: 'VIEW_BEMS',              roles: ['Super Admin', 'Admin', 'Biomedical Engineer'] },
+  { id: 'patients',         to: '/patients',                label: 'Patient Registration',icon: 'Users',          permission: 'VIEW_PATIENT',           module: 'patients', roles: ['Super Admin', 'Admin', 'Receptionist'] },
+  { id: 'op-reg',           to: '/op-queue',                label: 'OP Registration',    icon: 'Activity',        permission: 'CREATE_OP_QUEUE',        module: 'op', roles: ['Super Admin', 'Admin', 'Receptionist'] },
+  { id: 'doctor-queue',     to: '/op-queue',                label: 'Doctor Queue',       icon: 'Stethoscope',     permission: 'VIEW_OP_QUEUE',          module: 'op', roles: ['Super Admin', 'Doctor', 'Receptionist'] },
+  { id: 'appointments',     to: '/appointments',            label: 'Appointments',       icon: 'Calendar',        permission: 'VIEW_APPOINTMENT',       module: 'appointments', roles: ['Super Admin', 'Admin', 'Receptionist'] },
+  { id: 'ip-patients',      to: '/ip-admissions',           label: 'IP Admissions',      icon: 'Building2',       permission: 'VIEW_IP_ADMISSION',      module: 'ip', roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist'] },
+  { id: 'nurse-station',    to: '/nurse-station',           label: 'Nurse Station',      icon: 'HeartPulse',      permission: 'VIEW_NURSE_STATION',      module: 'ip', roles: ['Super Admin', 'Admin', 'Doctor', 'Nurse'] },
+  { id: 'billing',          to: '/billing',                 label: 'Billing',            icon: 'Receipt',         permission: 'VIEW_BILLING',           module: 'billing', roles: ['Super Admin', 'Admin', 'Pharmacist'] },
+  { id: 'prescriptions',    to: '/pharmacy?tab=prescriptions', label: 'Prescriptions',  icon: 'ClipboardList',   permission: 'VIEW_PRESCRIPTION',      module: 'pharmacy', roles: ['Super Admin', 'Doctor', 'Pharmacist', 'Receptionist'] },
+  { id: 'pharmacy',         to: '/pharmacy?tab=prescriptions', label: 'Pharmacy',        icon: 'Pill',            permission: 'VIEW_PHARMACY',          module: 'pharmacy', roles: ['Super Admin', 'Admin', 'Pharmacist'] },
+  { id: 'pharmacy-reports', to: '/pharmacy-reports',        label: 'Pharmacy Reports',   icon: 'FileBarChart2',   permission: 'VIEW_PHARMACY',          module: 'pharmacy', roles: ['Super Admin', 'Admin', 'Pharmacist'] },
+  { id: 'lab-orders',       to: '/lab',                     label: 'Lab Orders',         icon: 'FlaskConical',    permission: 'VIEW_LAB',               module: 'lab', roles: ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist'] },
+  { id: 'lab-reports',      to: '/lab?tab=reports',         label: 'Lab Reports',        icon: 'FileBarChart',    permission: 'VIEW_LAB',               module: 'lab', roles: ['Super Admin', 'Admin', 'Lab Technician'] },
+  { id: 'biomedical',       to: '/biomedical',              label: 'Biomedical',         icon: 'Wrench',          permission: 'VIEW_BEMS',              module: 'biomedical', roles: ['Super Admin', 'Admin', 'Biomedical Engineer'] },
   { id: 'masters',          to: '/masters',                 label: 'Masters',            icon: 'Database',        permission: 'MANAGE_MASTERS',         roles: ['Super Admin', 'Admin'] },
-  { id: 'asset-complaints', to: '/asset-complaints',        label: 'Complaints',         icon: 'Activity',        permission: 'VIEW_ASSET_COMPLAINTS',  roles: ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist', 'Biomedical Engineer'] },
-  { id: 'change-requests',  to: '/change-requests',         label: 'Change Requests',    icon: 'ClipboardCheck',  permission: 'VIEW_CHANGE_REQUESTS',   roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Accountant', 'Biomedical Engineer'] },
-  { id: 'reports',          to: '/reports',                 label: 'Audit Reports',      icon: 'BarChart3',       permission: 'VIEW_REPORTS',           roles: ['Super Admin', 'Admin'] },
-  { id: 'queue-display',    to: '/queue-display',           label: 'TV Queue Display',   icon: 'MonitorPlay',     permission: 'VIEW_OP_QUEUE',          roles: ['Super Admin', 'Admin', 'Receptionist'] },
+  { id: 'asset-complaints', to: '/asset-complaints',        label: 'Complaints',         icon: 'Activity',        permission: 'VIEW_ASSET_COMPLAINTS',  module: 'biomedical', roles: ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist', 'Lab Technician', 'Receptionist', 'Biomedical Engineer'] },
+  { id: 'change-requests',  to: '/change-requests',         label: 'Change Requests',    icon: 'ClipboardCheck',  permission: 'VIEW_CHANGE_REQUESTS',   module: 'changeRequests', roles: ['Super Admin', 'Admin', 'Doctor', 'Receptionist', 'Pharmacist', 'Lab Technician', 'Nurse', 'Accountant', 'Biomedical Engineer'] },
+  { id: 'reports',          to: '/reports',                 label: 'Audit Reports',      icon: 'BarChart3',       permission: 'VIEW_REPORTS',           module: 'reports', roles: ['Super Admin', 'Admin'] },
+  { id: 'queue-display',    to: '/queue-display',           label: 'TV Queue Display',   icon: 'MonitorPlay',     permission: 'VIEW_OP_QUEUE',          module: 'op', roles: ['Super Admin', 'Admin', 'Receptionist'] },
 ];
 
 /** Route-level access for App.jsx ProtectedRoute (role-based fallback) */
@@ -131,6 +132,8 @@ const PHARMACY_ROUTE_PERMS = [
 export const canAccessRoute = (userOrRole, path) => {
   const user = typeof userOrRole === 'string' ? { role: userOrRole } : (userOrRole || {});
   const segment = path.split('/').filter(Boolean)[0] || 'dashboard';
+  const hospitalModule = ROUTE_TO_MODULE[segment];
+  if (hospitalModule && !isHospitalModuleEnabledForUser(user, hospitalModule)) return false;
 
   if (normalizeRole(user.role) === 'Super Admin') return true;
 
@@ -151,15 +154,17 @@ export const canAccessRoute = (userOrRole, path) => {
 /** Filters the nav for a full user object, respecting custom per-user permissions when present. */
 export const filterNavForUser = (user) => {
   if (!user) return [];
-  if (normalizeRole(user.role) === 'Super Admin') return NAV_ITEMS;
+  const byPermission = normalizeRole(user.role) === 'Super Admin'
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((item) => {
+      if (item.id === 'masters') return hasMastersAccess(user);
+      if (item.id === 'pharmacy' || item.id === 'pharmacy-reports' || item.id === 'expiry-report') {
+        return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code)) || hasPermission(user, 'VIEW_BILLING');
+      }
+      return hasPermission(user, item.permission);
+    });
 
-  return NAV_ITEMS.filter((item) => {
-    if (item.id === 'masters') return hasMastersAccess(user);
-    if (item.id === 'pharmacy' || item.id === 'pharmacy-reports' || item.id === 'expiry-report') {
-      return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code)) || hasPermission(user, 'VIEW_BILLING');
-    }
-    return hasPermission(user, item.permission);
-  });
+  return byPermission.filter((item) => isHospitalModuleEnabledForUser(user, item.module));
 };
 
 /** Legacy role-only filter, kept for any existing callers / for computing role defaults. */

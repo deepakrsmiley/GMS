@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const bmeElectricalSafetySchema = new mongoose.Schema({
@@ -38,5 +39,7 @@ bmeElectricalSafetySchema.pre('save', async function (next) {
   }
   next();
 });
+
+applyOrganizationScope(bmeElectricalSafetySchema);
 
 module.exports = mongoose.model('BmeElectricalSafety', bmeElectricalSafetySchema);

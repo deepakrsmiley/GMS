@@ -5,10 +5,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, CheckCircle2, Stethoscope, AlertCircle, RefreshCw, Pill,
-  FlaskConical, Bed, Home, ChevronRight, Building2, ListFilter, User,
-  Users, ClipboardList, Calendar, Timer, XCircle, ArrowRight,
+  FlaskConical, Bed, Building2, User,
+  Users, ClipboardList, Calendar, Timer, XCircle,
   Search, UserPlus, Footprints, Flag, Link2, RotateCcw, Send, Info,
-  Hourglass, Phone, CreditCard, X, Printer, Settings2,
+  Hourglass, Phone, CreditCard, X, Printer, Settings2, MoreVertical,
+  FileText, UserSearch, CalendarDays, BarChart3,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSelector } from 'react-redux';
@@ -18,8 +19,30 @@ import Modal from '../components/common/Modal';
 import { getSocket } from '../services/socket';
 import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
+import OPConsultationReceipt from '../components/op/OPConsultationReceipt';
 import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 import { hasPermission } from '../constants/permissions';
+import { SYSTEM_NAME } from '../constants/branding';
+import '../styles/opQueue.css';
+
+const EMERGENCY_SURCHARGE = 300;
+
+const resolveOpConsultationFee = (doctor, department, appointmentType) => {
+  const consult = Number(doctor?.consultationFee) || Number(department?.consultationFee) || 0;
+  const follow = Number(doctor?.followUpFee) || 0;
+  if (appointmentType === 'followup') {
+    if (follow > 0) return follow;
+    if (consult > 0) return Math.round(consult * 0.5);
+    return 0;
+  }
+  return consult;
+};
+
+const defaultPaymentPurpose = (appointmentType) => {
+  if (appointmentType === 'followup') return 'Follow-up consultation fee';
+  if (appointmentType === 'emergency') return 'Emergency consultation fee';
+  return 'Doctor consultation fee';
+};
 
 const statusConfig = {
   waiting: { label: 'Waiting', color: 'badge-yellow', icon: Clock },
@@ -45,12 +68,70 @@ const TABS = [
   { key: 'admitted', label: 'Admitted' },
 ];
 
+const PAGE_SIZE = 5;
+const AVATAR_COLORS = [
+  'bg-blue-100 text-blue-700',
+  'bg-violet-100 text-violet-700',
+  'bg-rose-100 text-rose-700',
+  'bg-amber-100 text-amber-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-sky-100 text-sky-700',
+];
+
+const initials = (name) => (name || '?').split(' ').filter(Boolean).slice(0, 2).map((n) => n[0]).join('').toUpperCase();
+const avatarColor = (id) => {
+  const str = String(id || '');
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+};
+const formatDoctorName = (name) => {
+  if (!name) return 'Unassigned';
+  const cleaned = String(name).replace(/^(dr\.?\s*)+/i, '').trim();
+  return cleaned ? `Dr. ${cleaned}` : 'Unassigned';
+};
+const tokenLabel = (n) => {
+  const raw = String(n || '').replace(/^T-?/i, '');
+  if (!raw) return '—';
+  return `T-${raw.padStart(4, '0')}`;
+};
+const formatWait = (mins) => {
+  if (mins == null || mins <= 0) return '—';
+  if (mins >= 60) return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+  return `${mins} mins`;
+};
+const waitClass = (mins) => {
+  if (mins == null || mins <= 0) return 'opq-wait--muted';
+  if (mins >= 20) return 'opq-wait--long';
+  if (mins >= 11) return 'opq-wait--mid';
+  return 'opq-wait--short';
+};
+const statusPill = (status) => {
+  if (status === 'waiting') return { cls: 'opq-status--waiting', Icon: Clock, label: 'Waiting' };
+  if (status === 'in_consultation') return { cls: 'opq-status--consult', Icon: Stethoscope, label: 'In Consultation' };
+  if (status === 'admitted') return { cls: 'opq-status--admitted', Icon: Bed, label: 'Admitted' };
+  if (['cancelled', 'no_show'].includes(status)) return { cls: 'opq-status--danger', Icon: AlertCircle, label: statusConfig[status]?.label || status };
+  if (['completed', 'consultation_completed', 'sent_to_pharmacy', 'pharmacy_completed', 'sent_to_lab', 'discharged'].includes(status)) {
+    return { cls: 'opq-status--done', Icon: CheckCircle2, label: statusConfig[status]?.label || 'Completed' };
+  }
+  return { cls: 'opq-status--muted', Icon: Clock, label: statusConfig[status]?.label || status };
+};
+
+function MiniSpark({ color }) {
+  return (
+    <svg width="72" height="28" viewBox="0 0 72 28" fill="none" aria-hidden>
+      <path d="M1 18 C12 16 16 8 24 11 S38 24 46 15 S60 6 71 12" stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function OPQueuePage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canLogServices = hasPermission(user, 'CREATE_SERVICE_USAGE');
+  const canRegister = hasPermission(user, 'CREATE_OP_QUEUE');
   const [showAdd, setShowAdd] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -61,17 +142,22 @@ export default function OPQueuePage() {
   const [deptFilter, setDeptFilter] = useState('');
   const [doctorFilter, setDoctorFilter] = useState(user?.role === 'Doctor' ? user?.id : '');
   const [typeFilter, setTypeFilter] = useState('');
+  const [queueDate, setQueueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [activeTab, setActiveTab] = useState('waiting');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [openMenuId, setOpenMenuId] = useState(null);
   const [printData, setPrintData] = useState(null); // { branding, op } for OPPaperTemplate
+  const [billPrint, setBillPrint] = useState(null); // { bill, op }
   const [serviceOp, setServiceOp] = useState(null);
   const qc = useQueryClient();
 
   const { data: queue, isLoading, refetch } = useQuery({
-    queryKey: ['opQueue', deptFilter, doctorFilter],
+    queryKey: ['opQueue', deptFilter, doctorFilter, queueDate],
     queryFn: () => {
       const params = new URLSearchParams();
       if (deptFilter) params.set('department', deptFilter);
       if (doctorFilter) params.set('doctor', doctorFilter);
+      if (queueDate) params.set('date', queueDate);
       return api.get(`/op/queue?${params}`).then((r) => r.data);
     },
     refetchInterval: 15000,
@@ -96,6 +182,7 @@ export default function OPQueuePage() {
     patient: '', doctor: '', department: '', appointmentType: 'walkin',
     priority: 'normal', queueFor: 'Consultation', chiefComplaint: '', referredBy: '',
     visitDate: todayStr(), visitTime: nowStr(), mobileNumber: '', uhid: '',
+    paidAmount: '', paymentMode: 'cash', paymentPurpose: 'Doctor consultation fee',
   };
 
   const { register, handleSubmit, reset, watch, setValue } = useForm({ defaultValues: defaultRegForm });
@@ -140,7 +227,19 @@ export default function OPQueuePage() {
   };
 
   const selectedDoctorId = watch('doctor');
+  const appointmentType = watch('appointmentType');
+  const selectedDeptId = watch('department');
   const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const selectedDept = useMemo(
+    () => departments.find((d) => d._id === selectedDeptId) || selectedDoctor?.department || null,
+    [departments, selectedDeptId, selectedDoctor],
+  );
+  const consultFee = useMemo(
+    () => resolveOpConsultationFee(selectedDoctor, selectedDept, appointmentType),
+    [selectedDoctor, selectedDept, appointmentType],
+  );
+  const surcharge = appointmentType === 'emergency' ? EMERGENCY_SURCHARGE : 0;
+  const billTotal = consultFee + surcharge;
 
   useEffect(() => {
     if (selectedDoctorId) {
@@ -155,6 +254,11 @@ export default function OPQueuePage() {
     }
   }, [selectedDoctorId, doctors, setValue]);
 
+  useEffect(() => {
+    setValue('paidAmount', billTotal);
+    setValue('paymentPurpose', defaultPaymentPurpose(appointmentType));
+  }, [billTotal, appointmentType, setValue]);
+
   const registerMut = useMutation({
     mutationFn: (d) => {
       const scheduledTime = d.visitDate && d.visitTime ? new Date(`${d.visitDate}T${d.visitTime}`) : undefined;
@@ -168,19 +272,35 @@ export default function OPQueuePage() {
         chiefComplaint: d.chiefComplaint,
         referredBy: d.referredBy,
         scheduledTime,
+        paidAmount: d.paidAmount === '' || d.paidAmount == null ? billTotal : Number(d.paidAmount),
+        paymentMode: d.paymentMode || 'cash',
+        paymentPurpose: d.paymentPurpose || defaultPaymentPurpose(d.appointmentType),
       };
       return api.post('/op', payload);
     },
-    onSuccess: (r) => {
-      toast.success('Patient registered — printing OP paper…');
+    onSuccess: async (r) => {
       qc.invalidateQueries(['opQueue']);
-      const op = r?.data?.data;
-      // Prefer address from the selected patient if create response omitted it
+      let op = r?.data?.data;
+      let bill = r?.data?.bill || op?.bill;
       if (op && selectedPatient?.address && !op.patient?.address) {
         op.patient = { ...op.patient, address: selectedPatient.address };
       }
       closeRegForm();
-      if (op) setPrintData({ branding, op });
+      const hasBill = bill && typeof bill === 'object' && (bill.items || bill.billNumber);
+      if (!hasBill && op?._id) {
+        try {
+          const r2 = await api.get(`/op/${op._id}`, { params: { ensureBill: 1 } });
+          op = r2?.data?.data || op;
+          bill = op?.bill;
+        } catch (_) { /* print can still be retried from the queue */ }
+      }
+      if (bill && typeof bill === 'object' && (bill.items || bill.billNumber)) {
+        toast.success('Patient added to doctor queue — print A5 consultation receipt');
+        setBillPrint({ bill, op });
+      } else {
+        toast.success('Patient registered to queue');
+        if (op) setPrintData({ branding, op });
+      }
     },
     onError: (err) => toast.error(err?.response?.data?.message || 'Failed to register patient'),
   });
@@ -189,9 +309,24 @@ export default function OPQueuePage() {
     try {
       const r = await api.get(`/op/${item._id}`);
       const op = r?.data?.data || item;
-      setPrintData({ branding, op });
+      setPrintData({ branding, op: { ...op, labs: [], pharmacyMedicines: [], serviceUsages: [] } });
     } catch {
       setPrintData({ branding, op: item });
+    }
+  };
+
+  const printConsultationBill = async (item) => {
+    try {
+      const r = await api.get(`/op/${item._id}`, { params: { ensureBill: 1 } });
+      const op = r?.data?.data || item;
+      const bill = r?.data?.bill || op?.bill;
+      if (bill && typeof bill === 'object' && (bill.items || bill.billNumber)) {
+        setBillPrint({ bill, op });
+        return;
+      }
+      toast.error('No consultation bill for this visit');
+    } catch {
+      toast.error('Could not load consultation bill');
     }
   };
 
@@ -268,6 +403,18 @@ export default function OPQueuePage() {
 
   const tabData = { waiting, in_consultation: inConsult, completed, admitted };
   const activeItems = tabData[activeTab] || [];
+  const visibleItems = activeItems.slice(0, visibleCount);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+    setOpenMenuId(null);
+  }, [activeTab, deptFilter, doctorFilter, typeFilter, queueDate]);
+
+  useEffect(() => {
+    const close = () => setOpenMenuId(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, []);
 
   const summary = useMemo(() => {
     const waitTimes = waiting.map((q) => q.waitingMinutes || 0).filter((n) => n > 0);
@@ -276,343 +423,304 @@ export default function OPQueuePage() {
     const cancelled = typeFiltered.filter((q) => ['cancelled', 'no_show'].includes(q.status)).length;
     return {
       total: typeFiltered.length,
-      avg: avg !== null ? `${avg} min` : '--',
-      longest: longest !== null ? `${longest} min` : '--',
+      avg: avg !== null ? formatWait(avg) : '—',
+      longest: longest !== null ? formatWait(longest) : '—',
       completedToday: completed.length,
       cancelled,
     };
   }, [typeFiltered, waiting, completed]);
 
+  const doctorSchedule = useMemo(() => {
+    const map = new Map();
+    typeFiltered.forEach((q) => {
+      const id = q.doctor?._id || q.doctor || 'unassigned';
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          name: formatDoctorName(q.doctor?.name),
+          spec: q.doctor?.specialization || q.department?.name || 'OPD',
+          count: 0,
+        });
+      }
+      map.get(id).count += 1;
+    });
+    return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 6);
+  }, [typeFiltered]);
+
+  const exportQueue = () => {
+    const rows = [
+      ['#', 'Patient', 'UHID', 'Age', 'Gender', 'Token', 'Doctor', 'Department', 'Time', 'Wait (mins)', 'Status'],
+      ...typeFiltered.map((item, i) => [
+        i + 1,
+        item.patient?.name || '',
+        item.patient?.patientId || '',
+        item.patient?.age ?? '',
+        item.patient?.gender || '',
+        item.tokenNumber || '',
+        formatDoctorName(item.doctor?.name),
+        item.department?.name || '',
+        item.tokenDate || item.createdAt || '',
+        item.waitingMinutes || 0,
+        statusConfig[item.status]?.label || item.status,
+      ]),
+    ];
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `op-queue-${queueDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const statCards = [
-    { key: 'waiting', label: 'Waiting', sub: 'Patients in queue', count: waiting.length, icon: Clock, bg: 'bg-blue-600' },
-    { key: 'in_consultation', label: 'In Consultation', sub: 'Currently with doctor', count: inConsult.length, icon: User, bg: 'bg-amber-500' },
-    { key: 'completed', label: 'Completed', sub: 'Today completed', count: completed.length, icon: CheckCircle2, bg: 'bg-emerald-500' },
-    { key: 'admitted', label: 'Admitted', sub: 'Today admitted', count: admitted.length, icon: Users, bg: 'bg-purple-500' },
+    { key: 'waiting', label: 'Waiting', sub: 'Patients in queue', count: waiting.length, icon: Clock, tone: 'blue', spark: '#3b82f6' },
+    { key: 'in_consultation', label: 'In Consultation', sub: 'Currently with doctor', count: inConsult.length, icon: User, tone: 'orange', spark: '#f97316' },
+    { key: 'completed', label: 'Completed', sub: 'Today completed', count: completed.length, icon: CheckCircle2, tone: 'green', spark: '#10b981' },
+    { key: 'admitted', label: 'Admitted', sub: 'Today admitted', count: admitted.length, icon: Users, tone: 'purple', spark: '#8b5cf6' },
   ];
 
-  const printBtn = (item) => (
-    <button
-      type="button"
-      title="Print OP Paper"
-      onClick={() => printOPPaper(item)}
-      className="inline-flex items-center gap-1 text-xs font-medium py-1.5 px-2.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50"
-    >
-      <Printer size={13} /> Print
-    </button>
-  );
-
-  const admitBtn = (item) => {
-    if (!canAdmit || item.status === 'admitted' || !item.patient?._id) return null;
-    return (
-      <button
-        type="button"
-        title="Admit this patient to IP"
-        onClick={() => navigate(`/ip-admissions?patient=${item.patient._id}&op=${item._id}`)}
-        className="inline-flex items-center gap-1 text-xs font-semibold py-1.5 px-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-      >
-        <Bed size={13} /> Admit to IP
-      </button>
-    );
-  };
-
-  const servicesBtn = (item) => {
-    if (!canLogServices || item.status === 'cancelled' || item.status === 'no_show') return null;
-    return (
-      <button
-        type="button"
-        title="Add lab procedures, equipment / machine usage"
-        onClick={() => setServiceOp(item)}
-        className="inline-flex items-center gap-1 text-xs font-medium py-1.5 px-2.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100"
-      >
-        <Settings2 size={13} /> Services
-      </button>
-    );
-  };
-
-  const labBtn = (item) => {
-    if (!item.patient?._id || item.status === 'cancelled' || item.status === 'no_show') return null;
-    return (
-      <button
-        type="button"
-        title="Order lab tests for this patient"
-        onClick={() => navigate(`/lab?patient=${item.patient._id}&op=${item._id}`)}
-        className="inline-flex items-center gap-1 text-xs font-medium py-1.5 px-2.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-lg hover:bg-sky-100"
-      >
-        <FlaskConical size={13} /> Lab
-      </button>
-    );
-  };
-
-  const actionFor = (item) => {
-    if (item.status === 'waiting') {
-      return (
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {printBtn(item)}
-          {servicesBtn(item)}
-          {labBtn(item)}
-          {admitBtn(item)}
-          <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
-            className="text-xs font-medium py-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            Open Consultation
-          </button>
-          <button type="button" onClick={() => statusMut.mutate({ id: item._id, status: 'no_show' })}
-            className="text-xs font-medium py-1.5 px-3 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
-            No Show
-          </button>
-        </div>
-      );
-    }
-    if (item.status === 'in_consultation') {
-      return (
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {printBtn(item)}
-          {servicesBtn(item)}
-          {labBtn(item)}
-          {admitBtn(item)}
-          <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
-            className="text-xs font-medium py-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            Continue
-          </button>
-        </div>
-      );
-    }
-    if (item.status === 'admitted') {
-      return (
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {printBtn(item)}
-          {servicesBtn(item)}
-          <button type="button" onClick={() => navigate('/ip-admissions')}
-            className="text-xs font-medium py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
-            View Details
-          </button>
-        </div>
-      );
-    }
-    return (
-      <div className="flex items-center gap-2 flex-wrap justify-end">
-        {printBtn(item)}
-        {servicesBtn(item)}
-        {labBtn(item)}
-        {admitBtn(item)}
-        <button type="button" onClick={() => navigate(`/consultation/${item._id}`)}
-          className="text-xs font-medium py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
-          View Details
-        </button>
-      </div>
-    );
-  };
-
-  const TableRow = ({ item, index }) => {
-    const cfg = statusConfig[item.status] || statusConfig.waiting;
-    return (
-      <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60 transition-colors">
-        <td className="px-4 py-3 text-sm text-slate-500">{String(index + 1).padStart(3, '0')}</td>
-        <td className="px-4 py-3">
-          <p className="text-sm font-semibold text-slate-900">{item.patient?.name}</p>
-          <p className="text-xs text-slate-500">
-            <span className="font-semibold">UHID:</span>{' '}
-            <span className="font-mono font-semibold text-blue-600">{item.patient?.patientId || '—'}</span>
-            {' · '}{item.patient?.age}yr · {item.patient?.gender}
-          </p>
-        </td>
-        <td className="px-4 py-3 text-sm text-slate-600">{item.tokenNumber}</td>
-        <td className="px-4 py-3 text-sm text-slate-600">Dr. {item.doctor?.name || 'Unassigned'}</td>
-        <td className="px-4 py-3 text-sm text-slate-600">{item.department?.name}</td>
-        <td className="px-4 py-3 text-sm text-slate-600">{fmtTime(item.createdAt)}</td>
-        <td className="px-4 py-3 text-sm text-slate-600">{item.status === 'waiting' && item.waitingMinutes > 0 ? `${item.waitingMinutes} min` : '-'}</td>
-        <td className="px-4 py-3"><span className={cfg.color}>{cfg.label}</span></td>
-        <td className="px-4 py-3">{actionFor(item)}</td>
-      </tr>
-    );
+  const viewItem = (item) => {
+    if (item.status === 'admitted') navigate('/ip-admissions');
+    else navigate(`/consultation/${item._id}`);
   };
 
   const activeTabMeta = TABS.find((t) => t.key === activeTab);
+  const showingTo = Math.min(visibleCount, activeItems.length);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">OP Queue</h1>
-          <p className="text-sm text-slate-400 flex items-center gap-1.5 mt-1">
-            <Home size={13} /> Home <ChevronRight size={13} /> <span className="text-slate-500">OP Queue</span>
-          </p>
-          <p className="text-sm text-slate-500 flex items-center gap-2 mt-2">
-            <span className="flex items-center gap-1.5 font-medium text-emerald-600">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /> Live Queue
-            </span>
-            <span className="text-slate-300">|</span>
-            {queue?.data?.length || 0} patients today
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={() => refetch()} className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors">
-            <RefreshCw size={16} /> Refresh
+    <div className="opq">
+      <div className="opq-toolbar">
+        <select className="opq-select" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+          <option value="">All Departments</option>
+          {departments.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
+        </select>
+        {user?.role !== 'Doctor' && (
+          <select className="opq-select" value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)}>
+            <option value="">All Doctors</option>
+            {doctors.map((d) => <option key={d._id} value={d._id}>{formatDoctorName(d.name)}</option>)}
+          </select>
+        )}
+        <select className="opq-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="">All Consultation Types</option>
+          <option value="walkin">Walk-in</option>
+          <option value="appointment">Appointment</option>
+          <option value="followup">Follow-up</option>
+          <option value="emergency">Emergency</option>
+        </select>
+        <input
+          type="date"
+          className="opq-date"
+          value={queueDate}
+          onChange={(e) => setQueueDate(e.target.value)}
+        />
+        <div className="opq-toolbar-actions">
+          <button type="button" className="opq-btn-export" onClick={exportQueue}>
+            <FileText size={15} /> Export Report
           </button>
-          {canAdmit && (
+          <button type="button" className="opq-btn-icon" onClick={() => refetch()} title="Refresh">
+            <RefreshCw size={16} />
+          </button>
+          {canRegister && (
             <button
               type="button"
-              onClick={() => navigate('/ip-admissions')}
-              className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm shadow-emerald-600/20"
+              className="opq-btn-add"
+              onClick={() => { resetRegForm(); setShowAdd(true); }}
             >
-              <Bed size={16} /> Admit Patient (IP)
+              <Plus size={16} /> Add Patient
             </button>
           )}
-          <button onClick={() => { resetRegForm(); setShowAdd(true); }} className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm shadow-blue-600/20">
-            <Plus size={16} /> Register Patient
-          </button>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px]">
-          <Building2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}
-            className="w-full pl-9 pr-8 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-            <option value="">All Departments</option>
-            {departments.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
-          </select>
-        </div>
-        {user?.role !== 'Doctor' && (
-          <div className="relative flex-1 min-w-[200px]">
-            <Stethoscope size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <select value={doctorFilter} onChange={(e) => setDoctorFilter(e.target.value)}
-              className="w-full pl-9 pr-8 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-              <option value="">All Doctors</option>
-              {doctors.map((d) => <option key={d._id} value={d._id}>Dr. {d.name}</option>)}
-            </select>
-          </div>
-        )}
-        <div className="relative flex-1 min-w-[200px]">
-          <ListFilter size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
-            className="w-full pl-9 pr-8 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-            <option value="">All Consultation Types</option>
-            <option value="walkin">Walk-in</option>
-            <option value="appointment">Appointment</option>
-            <option value="followup">Follow-up</option>
-            <option value="emergency">Emergency</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="opq-stats">
         {statCards.map((s) => (
           <button
             key={s.key}
+            type="button"
+            className={`opq-stat${activeTab === s.key ? ' is-active' : ''}`}
             onClick={() => setActiveTab(s.key)}
-            className={`text-left bg-white rounded-2xl p-4 shadow-sm border transition-all ${
-              activeTab === s.key ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-100 hover:border-slate-200'
-            }`}
           >
-            <div className="flex items-center gap-3">
-              <div className={`w-11 h-11 ${s.bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
-                <s.icon size={20} className="text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-2xl font-bold text-slate-900 leading-none">{s.count}</p>
-                <p className="text-sm font-medium text-slate-700 mt-1.5 truncate">{s.label}</p>
-                <p className="text-xs text-slate-400 truncate">{s.sub}</p>
-              </div>
+            <div className={`opq-stat-icon opq-stat-icon--${s.tone}`}>
+              <s.icon size={18} />
             </div>
+            <div className="opq-stat-copy">
+              <div className="opq-stat-count">{s.count}</div>
+              <div className="opq-stat-label">{s.label}</div>
+              <div className="opq-stat-sub">{s.sub}</div>
+            </div>
+            <MiniSpark color={s.spark} />
           </button>
         ))}
       </div>
 
-      {/* Main grid: table + summary sidebar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Queue table */}
-        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="flex items-center gap-1 px-4 pt-3 border-b border-slate-100 overflow-x-auto">
+      <div className="opq-layout">
+        <div className="opq-panel">
+          <div className="opq-tabs">
             {TABS.map((t) => (
               <button
                 key={t.key}
+                type="button"
+                className={`opq-tab${activeTab === t.key ? ' is-active' : ''}`}
                 onClick={() => setActiveTab(t.key)}
-                className={`relative px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeTab === t.key ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'
-                }`}
               >
                 {t.label} ({tabData[t.key]?.length || 0})
-                {activeTab === t.key && (
-                  <motion.div layoutId="op-tab-underline" className="absolute left-0 right-0 -bottom-px h-0.5 bg-blue-600 rounded-full" />
-                )}
               </button>
             ))}
           </div>
 
           {isLoading ? (
-            <div className="p-10 text-center text-sm text-slate-400">Loading queue...</div>
+            <div className="opq-empty">Loading queue...</div>
           ) : activeItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 px-4">
-              <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
-                <ClipboardList size={28} className="text-blue-300" />
-              </div>
-              <p className="text-sm font-semibold text-slate-600">No patients in {activeTabMeta?.label.toLowerCase()} queue</p>
-              <p className="text-xs text-slate-400 mt-1">All caught up! Great job.</p>
+            <div className="opq-empty">
+              <div className="opq-empty-icon"><ClipboardList size={26} /></div>
+              <p>No patients in {activeTabMeta?.label.toLowerCase()} queue</p>
+              <span>All caught up. Great job.</span>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50 text-left">
-                    {['#', 'Patient Details', 'Token No.', 'Doctor', 'Department', 'Arrival Time', 'Wait Time', 'Status', 'Action'].map((h) => (
-                      <th key={h} className="px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <AnimatePresence>
-                    {activeItems.map((item, i) => <TableRow key={item._id} item={item} index={i} />)}
-                  </AnimatePresence>
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Completed patients quick list */}
-          {completed.length > 0 && (
-            <div className="border-t border-slate-100 p-4">
-              <p className="text-sm font-semibold text-slate-700 mb-3">Completed Patients ({completed.length})</p>
-              <div className="space-y-2">
-                {completed.map((item) => (
-                  <div key={item._id} className="flex items-center gap-3 border-l-4 border-emerald-500 bg-slate-50/60 rounded-r-xl px-3 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 truncate">{item.patient?.name}</p>
-                      <p className="text-xs text-slate-500 truncate">
-                        <span className="font-semibold">UHID:</span>{' '}
-                        <span className="font-mono font-semibold text-blue-600">{item.patient?.patientId || '—'}</span>
-                        {' · '}{item.patient?.age}yr · {item.patient?.gender}
-                      </p>
-                    </div>
-                    <div className="hidden sm:block text-xs text-slate-500 min-w-[140px]">
-                      <p>Dr. {item.doctor?.name || 'Unassigned'}</p>
-                      <p className="text-slate-400">{item.department?.name}</p>
-                    </div>
-                    <div className="hidden md:block text-xs text-slate-500 min-w-[70px]">{fmtTime(item.createdAt)}</div>
-                    <span className="badge-green flex-shrink-0">Completed</span>
-                    {printBtn(item)}
-                    <button onClick={() => navigate(`/consultation/${item._id}`)}
-                      className="text-xs font-medium py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 flex-shrink-0">
-                      View Details
-                    </button>
-                  </div>
-                ))}
+            <>
+              <div className="opq-table-wrap">
+                <table className="opq-table">
+                  <thead>
+                    <tr>
+                      {['#', 'Patient Details', 'Token No.', 'Doctor', 'Time', 'Wait Time', 'Status', 'Actions'].map((h) => (
+                        <th key={h}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleItems.map((item, i) => {
+                      const pill = statusPill(item.status);
+                      const waitMins = item.status === 'waiting' ? (item.waitingMinutes || 0) : 0;
+                      const when = item.tokenDate || item.createdAt;
+                      return (
+                        <tr key={item._id}>
+                          <td className="opq-idx">{i + 1}</td>
+                          <td>
+                            <div className="opq-patient">
+                              <div className={`opq-avatar ${avatarColor(item.patient?._id || item._id)}`}>
+                                {initials(item.patient?.name)}
+                              </div>
+                              <div>
+                                <div className="opq-patient-name">{item.patient?.name || '—'}</div>
+                                <div className="opq-patient-meta">
+                                  {item.patient?.age != null ? `${item.patient.age} Y` : '—'}
+                                  {item.patient?.gender ? ` / ${item.patient.gender}` : ''}
+                                  {'  '}
+                                  {item.patient?.patientId || ''}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td><span className="opq-token">{tokenLabel(item.tokenNumber)}</span></td>
+                          <td>
+                            <div className="opq-doc-name">{formatDoctorName(item.doctor?.name)}</div>
+                            <div className="opq-doc-spec">{item.doctor?.specialization || item.department?.name || '—'}</div>
+                          </td>
+                          <td>
+                            <div className="opq-time">{fmtTime(when)}</div>
+                            <div className="opq-date-sub">{when ? fmtDate(new Date(when)) : '—'}</div>
+                          </td>
+                          <td>
+                            <span className={`opq-wait ${waitClass(waitMins)}`}>
+                              {item.status === 'waiting' ? formatWait(waitMins) : '—'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`opq-status ${pill.cls}`}>
+                              <pill.Icon size={13} />
+                              {pill.label}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="opq-actions">
+                              <button type="button" className="opq-view" onClick={() => viewItem(item)}>View</button>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  className="opq-kebab"
+                                  title="More actions"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuId((id) => (id === item._id ? null : item._id));
+                                  }}
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
+                                {openMenuId === item._id && (
+                                  <div className="opq-menu" onClick={(e) => e.stopPropagation()}>
+                                    <button type="button" onClick={() => { setOpenMenuId(null); printConsultationBill(item); }}>
+                                      <Printer size={14} /> Print A5 receipt
+                                    </button>
+                                    <button type="button" onClick={() => { setOpenMenuId(null); printOPPaper(item); }}>
+                                      <FileText size={14} /> Print OP paper
+                                    </button>
+                                    {item.status === 'waiting' && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/consultation/${item._id}`); }}>
+                                        <Stethoscope size={14} /> Open consultation
+                                      </button>
+                                    )}
+                                    {item.status === 'in_consultation' && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/consultation/${item._id}`); }}>
+                                        <Stethoscope size={14} /> Continue
+                                      </button>
+                                    )}
+                                    {canLogServices && item.status !== 'cancelled' && item.status !== 'no_show' && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); setServiceOp(item); }}>
+                                        <Settings2 size={14} /> Services
+                                      </button>
+                                    )}
+                                    {item.patient?._id && item.status !== 'cancelled' && item.status !== 'no_show' && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/lab?patient=${item.patient._id}&op=${item._id}`); }}>
+                                        <FlaskConical size={14} /> Lab
+                                      </button>
+                                    )}
+                                    {canAdmit && item.status !== 'admitted' && item.patient?._id && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/ip-admissions?patient=${item.patient._id}&op=${item._id}`); }}>
+                                        <Bed size={14} /> Admit to IP
+                                      </button>
+                                    )}
+                                    {item.status === 'waiting' && (
+                                      <button
+                                        type="button"
+                                        className="is-danger"
+                                        onClick={() => { setOpenMenuId(null); statusMut.mutate({ id: item._id, status: 'no_show' }); }}
+                                      >
+                                        <XCircle size={14} /> No show
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            </div>
+              <div className="opq-foot">
+                <span className="opq-foot-count">
+                  Showing 1 to {showingTo} of {activeItems.length} entries
+                </span>
+                {showingTo < activeItems.length && (
+                  <button type="button" className="opq-load" onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}>
+                    Load More
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </div>
 
-        {/* Queue summary sidebar */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-slate-900">Queue Summary</h3>
-            <span className="flex items-center gap-1.5 text-xs text-slate-400">
-              <Calendar size={13} /> {fmtDate(new Date())}
-            </span>
-          </div>
-          <div className="space-y-1">
+        <div className="opq-side">
+          <div className="opq-card">
+            <div className="opq-card-head">
+              <h3 className="opq-card-title">Queue Summary</h3>
+              <span className="opq-card-date"><Calendar size={13} /> {fmtDate(new Date(queueDate))}</span>
+            </div>
             {[
               { icon: Users, label: 'Total Patients Today', value: summary.total, bg: 'bg-blue-50', color: 'text-blue-600' },
               { icon: Clock, label: 'Average Wait Time', value: summary.avg, bg: 'bg-amber-50', color: 'text-amber-600' },
@@ -620,25 +728,65 @@ export default function OPQueuePage() {
               { icon: CheckCircle2, label: 'Completed Today', value: summary.completedToday, bg: 'bg-emerald-50', color: 'text-emerald-600' },
               { icon: XCircle, label: 'Cancelled', value: summary.cancelled, bg: 'bg-red-50', color: 'text-red-600' },
             ].map((row) => (
-              <div key={row.label} className="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
-                <div className={`w-8 h-8 ${row.bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
-                  <row.icon size={15} className={row.color} />
-                </div>
-                <span className="text-sm text-slate-600 flex-1">{row.label}</span>
-                <span className="text-sm font-bold text-slate-900">{row.value}</span>
+              <div key={row.label} className="opq-sum-row">
+                <div className={`opq-sum-ico ${row.bg} ${row.color}`}><row.icon size={15} /></div>
+                <span className="opq-sum-label">{row.label}</span>
+                <span className="opq-sum-val">{row.value}</span>
               </div>
             ))}
           </div>
-          <button onClick={() => navigate('/reports')}
-            className="w-full flex items-center justify-center gap-2 mt-4 text-sm font-medium py-2.5 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 transition-colors">
-            View Queue Analytics <ArrowRight size={15} />
-          </button>
+
+          <div className="opq-card">
+            <div className="opq-card-head">
+              <h3 className="opq-card-title">Quick Actions</h3>
+            </div>
+            <div className="opq-quick">
+              <button type="button" onClick={() => { if (canRegister) { resetRegForm(); setShowAdd(true); } else navigate('/patients'); }}>
+                <span className="opq-quick-ico bg-blue-50 text-blue-600"><UserPlus size={16} /></span>
+                New Registration
+              </button>
+              <button type="button" onClick={() => navigate('/patients')}>
+                <span className="opq-quick-ico bg-emerald-50 text-emerald-600"><UserSearch size={16} /></span>
+                Find Patient
+              </button>
+              <button type="button" onClick={() => navigate('/appointments')}>
+                <span className="opq-quick-ico bg-violet-50 text-violet-600"><CalendarDays size={16} /></span>
+                Today&apos;s Appointments
+              </button>
+              <button type="button" onClick={() => navigate('/reports')}>
+                <span className="opq-quick-ico bg-orange-50 text-orange-600"><BarChart3 size={16} /></span>
+                Queue Analytics
+              </button>
+            </div>
+          </div>
+
+          <div className="opq-card">
+            <div className="opq-card-head">
+              <h3 className="opq-card-title">Today&apos;s Schedule</h3>
+            </div>
+            {doctorSchedule.length === 0 ? (
+              <p className="text-xs text-slate-400 py-2">No doctors on this date&apos;s queue.</p>
+            ) : doctorSchedule.map((d) => (
+              <div key={d.id} className="opq-sched">
+                <div className={`opq-avatar ${avatarColor(d.id)}`}>{initials(d.name)}</div>
+                <div>
+                  <div className="opq-sched-name">{d.name}</div>
+                  <div className="opq-sched-spec">{d.spec}</div>
+                </div>
+                <span className="opq-sched-count">{d.count}</span>
+              </div>
+            ))}
+            <button type="button" className="opq-sched-more" onClick={() => navigate('/appointments')}>
+              View Full Schedule
+            </button>
+          </div>
         </div>
       </div>
 
-      <p className="text-center text-xs text-slate-400 pt-2">
-        © {new Date().getFullYear()} {branding.hospitalName}. All rights reserved.
-      </p>
+      <div className="opq-page-foot">
+        <span>© {new Date().getFullYear()} {branding.systemName || SYSTEM_NAME}. All rights reserved.</span>
+        <span>Version 2.0.0</span>
+      </div>
 
       {/* Register Patient in OP Queue Modal */}
       <AnimatePresence>
@@ -656,7 +804,7 @@ export default function OPQueuePage() {
               <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 flex-shrink-0">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Register Patient in OP Queue</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">Add patient to queue for outpatient consultation</p>
+                  <p className="text-sm text-slate-400 mt-0.5">Collect doctor consultation fee, add to queue, print A5 receipt</p>
                 </div>
                 <button type="button" onClick={closeRegForm} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
                   <X size={20} />
@@ -747,12 +895,14 @@ export default function OPQueuePage() {
                         <h4 className="font-semibold flex items-center gap-1.5"><Stethoscope size={15} /> Doctor Consultation Details</h4>
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div>
-                            <p className="text-slate-500">Consultation Fee</p>
-                            <p className="font-semibold text-sm text-slate-900">₹{selectedDoctor.consultationFee || 0}</p>
+                            <p className="text-slate-500">Consultation Fee (master)</p>
+                            <p className="font-semibold text-sm text-slate-900">₹{selectedDoctor.consultationFee || selectedDept?.consultationFee || 0}</p>
                           </div>
                           <div>
-                            <p className="text-slate-500">Follow-up Fee</p>
-                            <p className="font-semibold text-sm text-slate-900">₹{selectedDoctor.followUpFee || 0}</p>
+                            <p className="text-slate-500">Follow-up Fee (master)</p>
+                            <p className="font-semibold text-sm text-slate-900">
+                              ₹{selectedDoctor.followUpFee > 0 ? selectedDoctor.followUpFee : Math.round((selectedDoctor.consultationFee || selectedDept?.consultationFee || 0) * 0.5)}
+                            </p>
                           </div>
                           {selectedDoctor.qualification && (
                             <div className="col-span-2">
@@ -763,6 +913,56 @@ export default function OPQueuePage() {
                         </div>
                       </div>
                     )}
+
+                    <div className="mt-4 bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                      <div className="flex items-center gap-2 text-emerald-700 mb-3">
+                        <CreditCard size={15} />
+                        <h4 className="text-sm font-semibold">Consultation payment</h4>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Fee from master (auto)</label>
+                          <div className="px-3 py-2.5 text-sm bg-white border border-emerald-200 rounded-xl font-semibold text-slate-900">
+                            ₹{consultFee.toLocaleString('en-IN')}
+                            {surcharge > 0 && (
+                              <span className="ml-2 text-xs font-medium text-amber-700">+ ₹{surcharge} emergency</span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            Total billed: ₹{billTotal.toLocaleString('en-IN')} · from doctor / department master
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Amount paid</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            {...register('paidAmount')}
+                            className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Payment mode</label>
+                          <select {...register('paymentMode')} className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="cash">Cash</option>
+                            <option value="upi">UPI</option>
+                            <option value="card">Card</option>
+                            <option value="online">Online</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="insurance">Insurance</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Purpose of payment</label>
+                          <input
+                            {...register('paymentPurpose')}
+                            placeholder="Doctor consultation fee"
+                            className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
                     <div className="grid grid-cols-3 gap-4 mt-4">
                       <div>
@@ -860,7 +1060,7 @@ export default function OPQueuePage() {
                   {/* Info banner */}
                   <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-700">
                     <Info size={16} className="mt-0.5 flex-shrink-0" />
-                    Patient will be added to the queue and the A4 OP consultation paper will print automatically.
+                    Patient is added to the doctor queue. Consultation fee comes from the doctor master. After payment, an A5 receipt prints with consultation only (no medicines or scans).
                   </div>
                 </div>
 
@@ -877,7 +1077,7 @@ export default function OPQueuePage() {
                     </button>
                     <button type="submit" disabled={registerMut.isPending}
                       className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-sm shadow-blue-600/20">
-                      <Send size={15} /> {registerMut.isPending ? 'Adding...' : 'Add to Queue'}
+                      <Send size={15} /> {registerMut.isPending ? 'Adding...' : 'Add to Queue & Print A5'}
                     </button>
                   </div>
                 </div>
@@ -936,6 +1136,15 @@ export default function OPQueuePage() {
       {printData &&
         createPortal(
           <OPPaperTemplate branding={printData.branding || branding} op={printData.op} />,
+          document.body,
+        )}
+      {billPrint &&
+        createPortal(
+          <OPConsultationReceipt
+            bill={billPrint.bill}
+            op={billPrint.op}
+            onClose={() => setBillPrint(null)}
+          />,
           document.body,
         )}
     </div>

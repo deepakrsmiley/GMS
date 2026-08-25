@@ -3,16 +3,18 @@ import { NavLink, Navigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
   Database, Building2, Bed, Package, Pill, Truck, FlaskConical,
-  Syringe, Image, UserCog,
+  Syringe, Image, UserCog, Building,
 } from 'lucide-react';
 import { hasPermission } from '../constants/permissions';
 import { normalizeRole } from '../utils/roles';
+import { isHospitalModuleEnabledForUser } from '../constants/hospitalModules';
 import DepartmentPage from './DepartmentPage';
 import BedsPage from './BedsPage';
 import AssetPage from './AssetPage';
 import StaffPage from './StaffPage';
 import ServiceMasterPage from './ServiceMasterPage';
 import HospitalBrandingPage from './HospitalBrandingPage';
+import OrganizationsPage from './OrganizationsPage';
 import PharmacyPage from './PharmacyPage';
 import LabTestMasterPage from './LabTestMasterPage';
 import '../styles/masters.css';
@@ -32,6 +34,7 @@ const MASTER_MODULES = [
     description: 'Wards, rooms & bed status',
     icon: Bed,
     permission: 'MANAGE_BEDS',
+    hospitalModule: 'ip',
     group: 'Hospital',
   },
   {
@@ -40,6 +43,7 @@ const MASTER_MODULES = [
     description: 'Equipment register & status',
     icon: Package,
     permission: 'VIEW_ASSETS',
+    hospitalModule: 'biomedical',
     group: 'Hospital',
   },
   {
@@ -65,6 +69,7 @@ const MASTER_MODULES = [
       'ADJUST_PHARMACY_STOCK',
       'DELETE_MEDICINE',
     ],
+    hospitalModule: 'pharmacy',
     group: 'Clinical catalog',
   },
   {
@@ -74,6 +79,7 @@ const MASTER_MODULES = [
     icon: Truck,
     permission: 'MANAGE_SUPPLIERS',
     anyOf: ['MANAGE_SUPPLIERS', 'MANAGE_PHARMACY'],
+    hospitalModule: 'pharmacy',
     group: 'Clinical catalog',
   },
   {
@@ -82,6 +88,7 @@ const MASTER_MODULES = [
     description: 'Test / profile price list',
     icon: FlaskConical,
     permission: 'VIEW_LAB',
+    hospitalModule: 'lab',
     group: 'Clinical catalog',
   },
   {
@@ -90,7 +97,17 @@ const MASTER_MODULES = [
     description: 'Equipment & procedure charges',
     icon: Syringe,
     permission: 'MANAGE_SETTINGS',
+    hospitalModulesAny: ['op', 'ip', 'billing'],
     group: 'Clinical catalog',
+  },
+  {
+    id: 'organizations',
+    label: 'Organizations',
+    description: 'GMS hospitals, admins, activate/deactivate',
+    icon: Building,
+    permission: 'MANAGE_ORGANIZATIONS',
+    superAdminOnly: true,
+    group: 'Access',
   },
   {
     id: 'staff',
@@ -104,6 +121,14 @@ const MASTER_MODULES = [
 
 function canSeeModule(user, module) {
   if (!user) return false;
+  if (module.superAdminOnly) return normalizeRole(user.role) === 'Super Admin';
+  if (module.hospitalModule && !isHospitalModuleEnabledForUser(user, module.hospitalModule)) {
+    return false;
+  }
+  if (Array.isArray(module.hospitalModulesAny) && module.hospitalModulesAny.length) {
+    const anyOn = module.hospitalModulesAny.some((id) => isHospitalModuleEnabledForUser(user, id));
+    if (!anyOn) return false;
+  }
   if (normalizeRole(user.role) === 'Super Admin') return true;
   if (Array.isArray(module.anyOf) && module.anyOf.length) {
     return module.anyOf.some((code) => hasPermission(user, code));
@@ -131,6 +156,8 @@ function SectionBody({ section }) {
       return <ServiceMasterPage />;
     case 'staff':
       return <StaffPage />;
+    case 'organizations':
+      return <OrganizationsPage />;
     default:
       return null;
   }

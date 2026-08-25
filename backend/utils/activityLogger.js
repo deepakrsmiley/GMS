@@ -24,6 +24,7 @@ const logActivity = async (req, {
       relatedId: relatedId ? String(relatedId) : undefined,
       relatedModel,
       metadata: metadata || undefined,
+      organizationId: req?.organizationId || undefined,
     });
 
     const populated = await ActivityLog.findById(entry._id)
@@ -51,8 +52,12 @@ const logActivity = async (req, {
 
     const io = req?.app?.get?.('io');
     if (io) {
+      const { orgRoom } = require('../middleware/tenant');
+      if (req?.organizationId) {
+        io.to(orgRoom.role(req.organizationId, 'Super Admin')).emit('activity:new', payload);
+        io.to(orgRoom.role(req.organizationId, 'Admin')).emit('activity:new', payload);
+      }
       io.to('role:Super Admin').emit('activity:new', payload);
-      io.to('role:Admin').emit('activity:new', payload);
     }
 
     return payload;

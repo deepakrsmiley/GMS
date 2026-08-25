@@ -4,6 +4,7 @@ const BmePreventiveMaintenance = require('../models/BmePreventiveMaintenance');
 const BmeSparePart = require('../models/BmeSparePart');
 const Notification = require('../models/Notification');
 const { notifyRoles } = require('./notify');
+const { runForEachOrganization } = require('./runForEachOrganization');
 const logger = require('./logger');
 
 const BME_ROLES = ['Biomedical Engineer', 'Admin', 'Super Admin'];
@@ -30,6 +31,14 @@ const alreadyNotifiedToday = async (relatedModel, relatedId) => {
 };
 
 const runBemsReminders = async (io) => {
+  try {
+    await runForEachOrganization(() => runBemsRemindersForOrg(io));
+  } catch (err) {
+    logger.warn(`BEMS reminder job error: ${err.message}`);
+  }
+};
+
+const runBemsRemindersForOrg = async (io) => {
   try {
     const now = new Date();
     const todayStart = startOfDay(now);

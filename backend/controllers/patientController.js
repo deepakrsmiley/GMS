@@ -86,7 +86,7 @@ exports.createPatient = asyncHandler(async (req, res) => {
     try {
       if (hasCloudinaryCredentials()) {
         const upload = await cloudinary.uploader.upload(payload.photo, {
-          folder: 'hms/patients',
+          folder: require('../middleware/tenant').uploadsFolder(req, 'patients'),
           resource_type: 'image',
         });
         payload.photo = upload.secure_url;

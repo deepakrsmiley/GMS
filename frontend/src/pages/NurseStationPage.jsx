@@ -19,6 +19,7 @@ import {
   expandProfilesToTests,
   getProfileMeta,
   STATUS_LABELS,
+  buildOtherLabTests,
 } from '../constants/labProfiles';
 import '../styles/assetMaster.css';
 import '../styles/nurseStation.css';
@@ -78,6 +79,8 @@ export default function NurseStationPage() {
   const [labType, setLabType] = useState('');
   const [labProfile, setLabProfile] = useState('');
   const [labNotes, setLabNotes] = useState('');
+  const [otherLabName, setOtherLabName] = useState('');
+  const [otherLabPrice, setOtherLabPrice] = useState('');
   const [showMedModal, setShowMedModal] = useState(false);
   const [showProcModal, setShowProcModal] = useState(false);
 
@@ -202,6 +205,27 @@ export default function NurseStationPage() {
 
   const labMut = useMutation({
     mutationFn: async () => {
+      const isOther = labType === 'Other' || labProfile === '__other__';
+      if (isOther) {
+        if (!otherLabName.trim()) throw new Error('Enter the lab / test name');
+        const built = buildOtherLabTests(otherLabName, otherLabPrice, {
+          testMaster: testMasterQ.data || [],
+        });
+        return api.post('/lab', {
+          patient: admission.patient._id || admission.patient,
+          doctor: admission.doctor?._id || admission.doctor,
+          ipAdmission: admission._id,
+          profiles: [built.profileName],
+          testProfile: built.profileName,
+          labType: 'Other',
+          sampleType: 'other',
+          priority: 'routine',
+          notes: labNotes || undefined,
+          tests: built.tests,
+          totalAmount: built.totalAmount,
+          orderSource: 'nurse_ip',
+        });
+      }
       const master = (testMasterQ.data || []).find((t) => t.name === labProfile);
       const price = Number(master?.price) || 0;
       const meta = getProfileMeta(labProfile);
@@ -225,6 +249,8 @@ export default function NurseStationPage() {
       toast.success('Lab order sent to Lab desk (Nurse / IP queue)');
       setLabProfile('');
       setLabNotes('');
+      setOtherLabName('');
+      setOtherLabPrice('');
       invalidatePatient();
     },
     onError: (e) => toast.error(e?.response?.data?.message || 'Failed to create lab order'),
@@ -745,7 +771,13 @@ export default function NurseStationPage() {
                         onSubmit={(e) => {
                           e.preventDefault();
                           if (!labType) return toast.error('Select lab type first');
-                          if (!labProfile) return toast.error('Select a lab package');
+                          const isOther = labType === 'Other' || labProfile === '__other__';
+                          if (isOther) {
+                            if (!otherLabName.trim()) return toast.error('Enter the lab / test name');
+                            if (otherLabPrice === '' || Number(otherLabPrice) < 0) return toast.error('Enter the lab price');
+                          } else if (!labProfile) {
+                            return toast.error('Select a lab package');
+                          }
                           labMut.mutate();
                         }}
                       >
@@ -755,22 +787,23 @@ export default function NurseStationPage() {
                             value={labType}
                             onChange={(e) => {
                               setLabType(e.target.value);
-                              setLabProfile('');
+                              setLabProfile(e.target.value === 'Other' ? '__other__' : '');
                             }}
                             required
                           >
                             <option value="">What type of lab?</option>
-                            {LAB_TYPES.filter((t) => t !== 'Other').map((t) => (
+                            {LAB_TYPES.map((t) => (
                               <option key={t} value={t}>{t}</option>
                             ))}
                           </select>
                         </div>
+                        {labType !== 'Other' && (
                         <div className="full">
                           <label>2 · Package *</label>
                           <select
                             value={labProfile}
                             onChange={(e) => setLabProfile(e.target.value)}
-                            required
+                            required={labType !== 'Other'}
                             disabled={!labType}
                           >
                             <option value="">{labType ? 'Select package…' : 'Pick type first'}</option>
@@ -782,8 +815,39 @@ export default function NurseStationPage() {
                                 </option>
                               );
                             })}
+                            <option value="__other__">Other — not in this list</option>
                           </select>
                         </div>
+                        )}
+                        {(labType === 'Other' || labProfile === '__other__') && (
+                          <>
+                            <div className="full">
+                              <label>Lab / test name *</label>
+                              <input
+                                value={otherLabName}
+                                onChange={(e) => setOtherLabName(e.target.value)}
+                                placeholder="Enter lab name"
+                                required
+                              />
+                            </div>
+                            <div className="full">
+                              <label>Price ₹ *</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={otherLabPrice}
+                                onChange={(e) => setOtherLabPrice(e.target.value)}
+                                placeholder="0"
+                                required
+                              />
+                            </div>
+                            {otherLabName.trim() && (
+                              <p className="ns-hint" style={{ fontSize: 12, color: '#64748b' }}>
+                                Report format will include {otherLabName.trim()}, Findings and Impression automatically.
+                              </p>
+                            )}
+                          </>
+                        )}
                         <div className="full">
                           <label>Notes</label>
                           <input value={labNotes} onChange={(e) => setLabNotes(e.target.value)} />

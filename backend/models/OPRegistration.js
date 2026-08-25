@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const vitalSchema = new mongoose.Schema({
   bloodPressure: String,
@@ -12,7 +13,7 @@ const vitalSchema = new mongoose.Schema({
   recordedAt: { type: Date, default: Date.now },
 });
 
-const SERVICE_CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Other'];
+const SERVICE_CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Laboratory', 'Other'];
 const CHARGE_TYPES = ['per_use', 'per_hour', 'per_day'];
 
 // Equipment/procedure usage logged against an OP visit (ECG, Nebulizer, dressing,
@@ -73,5 +74,7 @@ opRegistrationSchema.index({ doctor: 1 });
 opRegistrationSchema.index({ department: 1 });
 opRegistrationSchema.index({ tokenDate: 1 });
 opRegistrationSchema.index({ status: 1 });
+
+applyOrganizationScope(opRegistrationSchema);
 
 module.exports = mongoose.model('OPRegistration', opRegistrationSchema);

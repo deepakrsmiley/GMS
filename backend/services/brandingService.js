@@ -36,19 +36,25 @@ const hasCloudinaryCredentials = () => (
   && !process.env.CLOUDINARY_API_SECRET.startsWith('your_')
 );
 
-const applyDefaults = (branding) => {
-  const data = branding ? branding.toObject() : {};
+const applyDefaults = (branding, organization) => {
+  const data = branding
+    ? (typeof branding.toObject === 'function' ? branding.toObject() : branding)
+    : {};
+  const hospitalName = data.hospitalName
+    && data.hospitalName !== DEFAULTS.hospitalName
+    ? data.hospitalName
+    : (organization?.name || DEFAULTS.hospitalName);
   return {
     systemName: SYSTEM_NAME,
     systemTagline: SYSTEM_TAGLINE,
-    hospitalName: data.hospitalName || DEFAULTS.hospitalName,
+    hospitalName,
     tagline: data.tagline || DEFAULTS.tagline,
-    logo: data.logo || DEFAULTS.logo,
-    address: data.address || DEFAULTS.address,
-    phone: data.phone || DEFAULTS.phone,
-    email: data.email || DEFAULTS.email,
+    logo: data.logo || organization?.logo || DEFAULTS.logo,
+    address: data.address || organization?.address || DEFAULTS.address,
+    phone: data.phone || organization?.phone || DEFAULTS.phone,
+    email: data.email || organization?.email || DEFAULTS.email,
     website: data.website || DEFAULTS.website,
-    gstNumber: data.gstNumber || DEFAULTS.gstNumber,
+    gstNumber: data.gstNumber || organization?.gstNumber || DEFAULTS.gstNumber,
     nabhAccreditation: data.nabhAccreditation || DEFAULTS.nabhAccreditation,
     nablAccreditation: data.nablAccreditation || DEFAULTS.nablAccreditation,
     primaryColor: data.primaryColor || DEFAULTS.primaryColor,
@@ -60,24 +66,19 @@ const applyDefaults = (branding) => {
     bankAccount: data.bankAccount || DEFAULTS.bankAccount,
     bankIfsc: data.bankIfsc || DEFAULTS.bankIfsc,
     upiId: data.upiId || DEFAULTS.upiId,
+    labReport: data.labReport || {},
+    organizationId: data.organizationId || organization?._id || null,
     updatedAt: data.updatedAt,
-    isConfigured: !!(data.hospitalName && data.hospitalName !== DEFAULTS.hospitalName),
+    isConfigured: !!(hospitalName && hospitalName !== DEFAULTS.hospitalName),
   };
 };
 
 const uploadLogo = async (logoData, existingLogo) => {
-  // If user wants to remove logo
   if (logoData === '') return '';
-  
-  // If no new logo provided, keep existing
   if (!logoData) return existingLogo || '';
-  
-  // Store base64 logo directly in database
   if (logoData.startsWith('data:')) {
     return logoData;
   }
-  
-  // If it's already a URL, keep it
   return logoData;
 };
 
@@ -85,19 +86,28 @@ exports.SYSTEM_NAME = SYSTEM_NAME;
 exports.SYSTEM_TAGLINE = SYSTEM_TAGLINE;
 exports.DEFAULTS = DEFAULTS;
 
-exports.getBranding = async () => {
+exports.getPublicBranding = () => ({
+  systemName: SYSTEM_NAME,
+  systemTagline: SYSTEM_TAGLINE,
+  hospitalName: SYSTEM_NAME,
+  tagline: SYSTEM_TAGLINE,
+  logo: '',
+  isPublic: true,
+});
+
+exports.getBranding = async (req) => {
   const branding = await Branding.findOne().sort({ updatedAt: -1 });
-  return applyDefaults(branding);
+  return applyDefaults(branding, req?.organization);
 };
 
 exports.getBrandingDocument = async () => Branding.findOne().sort({ updatedAt: -1 });
 
-exports.updateBranding = async (data, userId) => {
+exports.updateBranding = async (data, userId, req) => {
   const existing = await Branding.findOne().sort({ updatedAt: -1 });
   const logo = await uploadLogo(data.logo, existing?.logo);
 
   const updateData = {
-    hospitalName: data.hospitalName?.trim() || DEFAULTS.hospitalName,
+    hospitalName: data.hospitalName?.trim() || req?.organization?.name || DEFAULTS.hospitalName,
     tagline: data.tagline?.trim() || DEFAULTS.tagline,
     logo,
     address: data.address?.trim() || '',
@@ -119,11 +129,19 @@ exports.updateBranding = async (data, userId) => {
     updatedBy: userId,
   };
 
+  if (data.labReport && typeof data.labReport === 'object') {
+    updateData.labReport = data.labReport;
+  }
+
+  if (req?.organizationId) {
+    updateData.organizationId = req.organizationId;
+  }
+
   const branding = await Branding.findOneAndUpdate(
     {},
     updateData,
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
 
-  return applyDefaults(branding);
+  return applyDefaults(branding, req?.organization);
 };

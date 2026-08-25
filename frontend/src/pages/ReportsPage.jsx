@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
-  FileSpreadsheet, Printer, RefreshCw, CalendarRange,
+  FileSpreadsheet, Printer, RefreshCw, CalendarRange, Search,
   LayoutDashboard, Users, UserRound, CalendarDays, Stethoscope, Pill,
   Package, Receipt, Wallet, FlaskConical, Scan, BedDouble, HeartPulse,
   Scissors, IndianRupee, ShieldCheck, UserCog, Lock, Server,
-  TrendingUp, TrendingDown, AlertCircle,
+  TrendingUp, TrendingDown, AlertCircle, ClipboardList, Ticket,
+  FileText, Wrench, AlertTriangle, GitPullRequest, FolderOpen,
+  Building2, Truck, MessageSquare, Clock, Activity, Bell, Warehouse, BookOpen, Landmark, Filter,
 } from 'lucide-react';
 import {
   startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, subMonths, format,
@@ -13,6 +15,7 @@ import {
 import reportsApi from '../services/reportsApi';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { exportToCSV, printSection } from '../utils/exportUtils';
+import { useBranding } from '../hooks/useBranding';
 import '../styles/auditReports.css';
 
 const PRESETS = [
@@ -27,17 +30,21 @@ const NAV_GROUPS = [
     title: 'Overview',
     items: [
       { id: 'executive', label: 'Executive Summary', icon: LayoutDashboard },
+      { id: 'trail', label: 'Full Audit Trail', icon: ClipboardList },
     ],
   },
   {
     title: 'Operations',
     items: [
       { id: 'patient', label: 'Patient', icon: UserRound },
+      { id: 'op', label: 'OP Queue & Visits', icon: Ticket },
+      { id: 'ip', label: 'IP Admissions', icon: Building2 },
       { id: 'appointment', label: 'Appointment', icon: CalendarDays },
       { id: 'doctor', label: 'Doctor', icon: Stethoscope },
       { id: 'bed', label: 'Bed Management', icon: BedDouble },
+      { id: 'facility', label: 'Wards & Rooms', icon: Landmark },
       { id: 'ot', label: 'Operation Theatre', icon: Scissors },
-      { id: 'nurse', label: 'Nurse', icon: HeartPulse },
+      { id: 'nurse', label: 'Nurse Station', icon: HeartPulse },
     ],
   },
   {
@@ -45,8 +52,10 @@ const NAV_GROUPS = [
     items: [
       { id: 'laboratory', label: 'Laboratory', icon: FlaskConical },
       { id: 'radiology', label: 'Radiology', icon: Scan },
+      { id: 'prescription', label: 'Prescriptions', icon: FileText },
       { id: 'pharmacy', label: 'Pharmacy & Medicines', icon: Pill },
       { id: 'inventory', label: 'Inventory', icon: Package },
+      { id: 'stock', label: 'Stock Movements', icon: Warehouse },
     ],
   },
   {
@@ -56,6 +65,24 @@ const NAV_GROUPS = [
       { id: 'payment', label: 'Payments', icon: Wallet },
       { id: 'financial', label: 'Financial', icon: IndianRupee },
       { id: 'insurance', label: 'Insurance', icon: ShieldCheck },
+      { id: 'shift', label: 'Shift Settlement', icon: Clock },
+    ],
+  },
+  {
+    title: 'Assets & Facility',
+    items: [
+      { id: 'assets', label: 'Equipment Master', icon: Wrench },
+      { id: 'complaints', label: 'Equipment Complaints', icon: AlertTriangle },
+      { id: 'bems', label: 'Biomedical / BME', icon: Activity },
+    ],
+  },
+  {
+    title: 'Masters',
+    items: [
+      { id: 'departments', label: 'Departments', icon: Building2 },
+      { id: 'suppliers', label: 'Suppliers', icon: Truck },
+      { id: 'catalog', label: 'Tariff / Catalog', icon: BookOpen },
+      { id: 'documents', label: 'Documents & Consents', icon: FolderOpen },
     ],
   },
   {
@@ -64,6 +91,9 @@ const NAV_GROUPS = [
       { id: 'user-activity', label: 'User Activity', icon: Users },
       { id: 'employee', label: 'Employee', icon: UserCog },
       { id: 'security', label: 'Security', icon: Lock },
+      { id: 'changes', label: 'Change Requests', icon: GitPullRequest },
+      { id: 'chat', label: 'Staff Chat', icon: MessageSquare },
+      { id: 'notifications', label: 'Notifications', icon: Bell },
       { id: 'system', label: 'System', icon: Server },
     ],
   },
@@ -73,6 +103,16 @@ const ALL_SECTIONS = NAV_GROUPS.flatMap((g) => g.items);
 
 const DETAIL_COLUMNS = {
   executive: [],
+  trail: [
+    { key: 'date', header: 'When' },
+    { key: 'module', header: 'Module' },
+    { key: 'action', header: 'Action' },
+    { key: 'user', header: 'User' },
+    { key: 'role', header: 'Role' },
+    { key: 'description', header: 'What happened' },
+    { key: 'related', header: 'Record' },
+    { key: 'ip', header: 'IP' },
+  ],
   'user-activity': [
     { key: 'name', header: 'Name' },
     { key: 'email', header: 'Email' },
@@ -88,6 +128,27 @@ const DETAIL_COLUMNS = {
     { key: 'age', header: 'Age' },
     { key: 'phone', header: 'Phone' },
     { key: 'registeredAt', header: 'Registered' },
+  ],
+  op: [
+    { key: 'token', header: 'Token' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'patientId', header: 'UHID' },
+    { key: 'doctor', header: 'Doctor' },
+    { key: 'department', header: 'Department' },
+    { key: 'type', header: 'Type' },
+    { key: 'status', header: 'Status' },
+    { key: 'date', header: 'Date' },
+  ],
+  ip: [
+    { key: 'admission', header: 'Admission #' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'patientId', header: 'UHID' },
+    { key: 'doctor', header: 'Doctor' },
+    { key: 'department', header: 'Department' },
+    { key: 'bed', header: 'Bed' },
+    { key: 'status', header: 'Status' },
+    { key: 'date', header: 'Admitted' },
+    { key: 'discharge', header: 'Discharged' },
   ],
   appointment: [
     { key: 'date', header: 'Date' },
@@ -119,6 +180,15 @@ const DETAIL_COLUMNS = {
     { key: 'currentStock', header: 'Stock', align: 'right' },
     { key: 'minimumStock', header: 'Minimum', align: 'right' },
     { key: 'reorderLevel', header: 'Reorder', align: 'right' },
+  ],
+  prescription: [
+    { key: 'patient', header: 'Patient' },
+    { key: 'patientId', header: 'UHID' },
+    { key: 'doctor', header: 'Doctor' },
+    { key: 'items', header: 'Items', align: 'right' },
+    { key: 'status', header: 'Status' },
+    { key: 'diagnosis', header: 'Diagnosis' },
+    { key: 'date', header: 'Date' },
   ],
   billing: [
     { key: 'billNumber', header: 'Bill #' },
@@ -185,6 +255,69 @@ const DETAIL_COLUMNS = {
     { key: 'approved', header: 'Approved', align: 'right' },
     { key: 'date', header: 'Date' },
   ],
+  shift: [
+    { key: 'shift', header: 'Shift' },
+    { key: 'status', header: 'Status' },
+    { key: 'openedBy', header: 'Opened by' },
+    { key: 'closedBy', header: 'Closed by' },
+    { key: 'collected', header: 'Collected', align: 'right' },
+    { key: 'date', header: 'Opened' },
+  ],
+  assets: [
+    { key: 'assetId', header: 'Asset ID' },
+    { key: 'name', header: 'Equipment' },
+    { key: 'category', header: 'Category' },
+    { key: 'status', header: 'Status' },
+    { key: 'department', header: 'Department' },
+    { key: 'location', header: 'Location' },
+    { key: 'cost', header: 'Cost', align: 'right' },
+    { key: 'date', header: 'Added' },
+  ],
+  complaints: [
+    { key: 'number', header: 'Complaint #' },
+    { key: 'asset', header: 'Equipment' },
+    { key: 'priority', header: 'Priority' },
+    { key: 'status', header: 'Status' },
+    { key: 'reportedBy', header: 'Reported by' },
+    { key: 'problem', header: 'Problem' },
+    { key: 'cost', header: 'Repair cost', align: 'right' },
+    { key: 'date', header: 'Date' },
+  ],
+  bems: [
+    { key: 'number', header: 'WO #' },
+    { key: 'type', header: 'Type' },
+    { key: 'equipment', header: 'Equipment' },
+    { key: 'department', header: 'Department' },
+    { key: 'priority', header: 'Priority' },
+    { key: 'status', header: 'Status' },
+    { key: 'engineer', header: 'Engineer' },
+    { key: 'date', header: 'Date' },
+  ],
+  departments: [
+    { key: 'name', header: 'Department' },
+    { key: 'code', header: 'Code' },
+    { key: 'head', header: 'Head' },
+    { key: 'location', header: 'Location' },
+    { key: 'fee', header: 'Consult fee', align: 'right' },
+    { key: 'active', header: 'Active' },
+  ],
+  suppliers: [
+    { key: 'name', header: 'Supplier' },
+    { key: 'contact', header: 'Contact' },
+    { key: 'phone', header: 'Phone' },
+    { key: 'gst', header: 'GST' },
+    { key: 'outstanding', header: 'Outstanding', align: 'right' },
+    { key: 'creditDays', header: 'Credit days' },
+    { key: 'active', header: 'Active' },
+  ],
+  documents: [
+    { key: 'title', header: 'Title' },
+    { key: 'category', header: 'Category' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'patientId', header: 'UHID' },
+    { key: 'uploadedBy', header: 'Uploaded by' },
+    { key: 'date', header: 'Date' },
+  ],
   employee: [
     { key: 'name', header: 'Name' },
     { key: 'email', header: 'Email' },
@@ -201,20 +334,117 @@ const DETAIL_COLUMNS = {
     { key: 'ip', header: 'IP' },
     { key: 'date', header: 'Date' },
   ],
+  changes: [
+    { key: 'number', header: 'Request #' },
+    { key: 'category', header: 'Category' },
+    { key: 'title', header: 'Title' },
+    { key: 'status', header: 'Status' },
+    { key: 'priority', header: 'Priority' },
+    { key: 'requestedBy', header: 'Requested by' },
+    { key: 'reviewedBy', header: 'Reviewed by' },
+    { key: 'date', header: 'Date' },
+  ],
+  chat: [
+    { key: 'date', header: 'When' },
+    { key: 'user', header: 'User' },
+    { key: 'role', header: 'Role' },
+    { key: 'channel', header: 'Channel' },
+    { key: 'body', header: 'Message' },
+  ],
   system: [],
+  stock: [
+    { key: 'date', header: 'When' },
+    { key: 'medicine', header: 'Medicine' },
+    { key: 'type', header: 'Type' },
+    { key: 'batch', header: 'Batch' },
+    { key: 'qty', header: 'Qty', align: 'right' },
+    { key: 'before', header: 'Before', align: 'right' },
+    { key: 'after', header: 'After', align: 'right' },
+    { key: 'value', header: 'Value', align: 'right' },
+    { key: 'user', header: 'User' },
+    { key: 'remarks', header: 'Remarks' },
+  ],
+  facility: [
+    { key: 'room', header: 'Room' },
+    { key: 'ward', header: 'Ward' },
+    { key: 'type', header: 'Type' },
+    { key: 'status', header: 'Status' },
+    { key: 'patient', header: 'Patient' },
+    { key: 'dailyRate', header: 'Daily rate', align: 'right' },
+    { key: 'floor', header: 'Floor' },
+  ],
+  catalog: [
+    { key: 'name', header: 'Test / profile' },
+    { key: 'category', header: 'Category' },
+    { key: 'sample', header: 'Sample' },
+    { key: 'price', header: 'Price', align: 'right' },
+    { key: 'gst', header: 'GST %' },
+    { key: 'active', header: 'Active' },
+  ],
+  notifications: [
+    { key: 'date', header: 'When' },
+    { key: 'type', header: 'Type' },
+    { key: 'title', header: 'Title' },
+    { key: 'message', header: 'Message' },
+    { key: 'recipient', header: 'Recipient' },
+    { key: 'read', header: 'Read' },
+  ],
 };
+
+const DETAIL_TITLES = {
+  trail: 'Activity register',
+  patient: 'Patient registration register',
+  op: 'OP visit register',
+  ip: 'IP admission register',
+  appointment: 'Appointment register',
+  doctor: 'Doctor activity register',
+  pharmacy: 'Medicine-wise Profit / Loss',
+  inventory: 'Low-stock register',
+  stock: 'Stock movement register',
+  prescription: 'Prescription register',
+  billing: 'Bill register',
+  payment: 'Payment mode register',
+  laboratory: 'Laboratory order register',
+  radiology: 'Radiology order register',
+  bed: 'Bed occupancy register',
+  facility: 'Room register',
+  nurse: 'Medication administration register',
+  ot: 'Operation theatre register',
+  insurance: 'Insurance claim register',
+  shift: 'Shift settlement register',
+  assets: 'Equipment master register',
+  complaints: 'Equipment complaint register',
+  bems: 'BME work-order register',
+  departments: 'Department master',
+  suppliers: 'Supplier register',
+  catalog: 'Lab / test tariff register',
+  documents: 'Document register',
+  'user-activity': 'User login register',
+  employee: 'Staff register',
+  security: 'Security event register',
+  changes: 'Change-request register',
+  chat: 'Staff chat register',
+  notifications: 'Notification register',
+};
+
+const STATUS_FILTER_SECTIONS = new Set([
+  'op', 'ip', 'appointment', 'billing', 'laboratory', 'radiology', 'prescription',
+  'complaints', 'bems', 'changes', 'shift', 'assets', 'stock', 'facility',
+]);
 
 const MONEY_KEYS = new Set([
   'revenue', 'amount', 'total', 'paid', 'due', 'discount', 'charges', 'approved', 'dailyRate',
-  'cost', 'profit',
+  'cost', 'profit', 'fee', 'outstanding', 'collected', 'price', 'value',
 ]);
 const DATE_KEYS = new Set([
-  'date', 'lastLogin', 'registeredAt', 'administeredAt', 'scheduledDate',
+  'date', 'lastLogin', 'registeredAt', 'administeredAt', 'scheduledDate', 'discharge', 'closedAt',
 ]);
 const RIGHT_ALIGN_KEYS = new Set([
   ...MONEY_KEYS, 'qty', 'count', 'opCount', 'ipCount', 'bills', 'labCount', 'rxCount',
   'currentStock', 'minimumStock', 'reorderLevel', 'quantity', 'failedLoginAttempts', 'margin',
+  'items', 'creditDays', 'before', 'after', 'gst', 'beds', 'available', 'floor', 'rating',
 ]);
+const WRAP_KEYS = new Set(['description', 'body', 'problem', 'message', 'remarks', 'title']);
 
 const presetRange = (id) => {
   const now = new Date();
@@ -321,10 +551,14 @@ function BreakdownPanel({ rows }) {
   );
 }
 
-function DetailTable({ columns, rows, title = 'Detail register' }) {
+function DetailTable({ columns, rows, title = 'Detail register', total }) {
   if (!columns?.length) return null;
+  const shown = rows?.length || 0;
+  const subtitle = total != null
+    ? `${shown} of ${Number(total).toLocaleString('en-IN')} record(s)`
+    : `${shown} record(s)`;
   return (
-    <Panel title={title} subtitle={`${rows?.length || 0} record(s)`} flush>
+    <Panel title={title} subtitle={subtitle} flush>
       {!rows?.length ? (
         <p className="audit-empty">No records for this period</p>
       ) : (
@@ -351,7 +585,7 @@ function DetailTable({ columns, rows, title = 'Detail register' }) {
                       ? (row[c.key] >= 0 ? 'is-pos' : 'is-neg')
                       : '';
                     return (
-                      <td key={c.key} className={`${right ? 'is-right' : ''} ${profitTone}`}>
+                      <td key={c.key} className={`${right ? 'is-right' : ''} ${profitTone} ${WRAP_KEYS.has(c.key) ? 'is-wrap' : ''}`}>
                         {formatCell(c.key, row[c.key])}
                       </td>
                     );
@@ -363,6 +597,52 @@ function DetailTable({ columns, rows, title = 'Detail register' }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+function ExceptionStrip({ items }) {
+  if (!items?.length) return null;
+  return (
+    <div className="audit-exceptions">
+      <p className="audit-exceptions__title">Exception register · items needing review</p>
+      <div className="audit-exceptions__grid">
+        {items.map((ex) => (
+          <div key={ex.key} className={`audit-ex audit-ex--${ex.severity || 'ok'}`}>
+            <span>{ex.label}</span>
+            <strong>{Number(ex.value || 0).toLocaleString('en-IN')}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RegisterTables({ registers }) {
+  if (!registers?.length) return null;
+  return registers.map((reg) => (
+    <DetailTable
+      key={reg.id || reg.title}
+      columns={reg.columns || []}
+      rows={reg.rows || []}
+      title={reg.title || 'Register'}
+    />
+  ));
+}
+
+function AuditPager({ meta, page, onPage }) {
+  if (!meta?.pages || meta.pages <= 1) return null;
+  return (
+    <div className="audit-pager">
+      <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+        Previous
+      </button>
+      <span>
+        Page {meta.page || page} of {meta.pages} · {(meta.total || 0).toLocaleString('en-IN')} records
+      </span>
+      <button type="button" disabled={page >= meta.pages} onClick={() => onPage(page + 1)}>
+        Next
+      </button>
+    </div>
   );
 }
 
@@ -436,6 +716,7 @@ function MedicinePnlCard({ pnl }) {
 }
 
 export default function ReportsPage() {
+  const { branding } = useBranding();
   const [section, setSection] = useState('executive');
   const [preset, setPreset] = useState('thisMonth');
   const [applied, setApplied] = useState(() => {
@@ -443,26 +724,66 @@ export default function ReportsPage() {
     return { from, to };
   });
   const [draft, setDraft] = useState(applied);
+  const [detailSearch, setDetailSearch] = useState('');
+  const [qDebounced, setQDebounced] = useState('');
+  const [trailModule, setTrailModule] = useState('');
+  const [trailAction, setTrailAction] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQDebounced(detailSearch.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [detailSearch]);
 
   const handlePreset = (id) => {
     setPreset(id);
     const [from, to] = presetRange(id);
     setDraft({ from, to });
     setApplied({ from, to });
+    setPage(1);
   };
 
   const applyCustom = () => {
     setPreset('custom');
     setApplied(draft);
+    setPage(1);
+  };
+
+  const selectSection = (id) => {
+    setSection(id);
+    setPage(1);
+    setDetailSearch('');
+    setQDebounced('');
+    setTrailModule('');
+    setTrailAction('');
+    setStatusFilter('');
   };
 
   const { data, isLoading, isFetching, refetch, error } = useQuery({
-    queryKey: ['auditReport', section, applied.from, applied.to],
-    queryFn: () => reportsApi.getAuditSection(section, applied),
+    queryKey: ['auditReport', section, applied.from, applied.to, qDebounced, trailModule, trailAction, statusFilter, page],
+    queryFn: () => reportsApi.getAuditSection(section, {
+      ...applied,
+      q: qDebounced || undefined,
+      module: section === 'trail' ? trailModule || undefined : undefined,
+      action: section === 'trail' ? trailAction || undefined : undefined,
+      status: statusFilter || undefined,
+      page,
+      limit: 50,
+    }),
     placeholderData: keepPreviousData,
   });
 
   const columns = DETAIL_COLUMNS[section] || [];
+  const visibleDetails = useMemo(() => {
+    const rows = data?.details || [];
+    if (section === 'trail' || data?.meta?.serverSearch || !detailSearch.trim()) return rows;
+    const q = detailSearch.trim().toLowerCase();
+    return rows.filter((row) => Object.values(row).some((v) => String(v ?? '').toLowerCase().includes(q)));
+  }, [data, detailSearch, section]);
   const sectionMeta = ALL_SECTIONS.find((s) => s.id === section);
   const groupTitle = NAV_GROUPS.find((g) => g.items.some((i) => i.id === section))?.title;
 
@@ -501,10 +822,11 @@ export default function ReportsPage() {
     <div className="audit-shell space-y-3">
       <header className="audit-masthead">
         <div>
-          <p className="audit-masthead__eyebrow">Sri Sanjeevi Hospital · Governance</p>
+          <p className="audit-masthead__eyebrow">{branding?.hospitalName || 'Hospital'} · Governance</p>
           <h1 className="audit-masthead__title">Audit Reports</h1>
           <p className="audit-masthead__sub">
-            Institutional performance, clinical operations, pharmacy P&amp;L, and compliance controls
+            Corporate control pack — every operational, clinical, financial and facility register,
+            plus a full activity trail and exception board for management review
           </p>
         </div>
         <div className="audit-masthead__meta">
@@ -577,7 +899,7 @@ export default function ReportsPage() {
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setSection(id)}
+                    onClick={() => selectSection(id)}
                     className={`audit-rail__item ${section === id ? 'is-active' : ''}`}
                   >
                     <Icon size={13} strokeWidth={2} />
@@ -614,9 +936,11 @@ export default function ReportsPage() {
             </div>
           ) : (
             <>
+              {section === 'executive' && <ExceptionStrip items={data?.exceptions || []} />}
               {section === 'executive' && <ExecutiveScorecard kpis={data?.kpis || []} />}
               {section === 'pharmacy' && <MedicinePnlCard pnl={data?.pnl} />}
               {section !== 'executive' && <KpiGrid items={data?.kpis || []} />}
+              {section !== 'executive' && <ExceptionStrip items={data?.exceptions || []} />}
 
               <div className="audit-split">
                 <BreakdownPanel rows={data?.breakdown || []} />
@@ -631,11 +955,65 @@ export default function ReportsPage() {
                 )}
               </div>
 
+              {section !== 'executive' && section !== 'system' && (
+                <div className="audit-filters">
+                  <div className="audit-filters__search">
+                    <Search size={14} />
+                    <input
+                      type="search"
+                      value={detailSearch}
+                      onChange={(e) => setDetailSearch(e.target.value)}
+                      placeholder={section === 'trail' ? 'Search action, module, description, IP…' : 'Search this register…'}
+                    />
+                  </div>
+                  {section === 'trail' && (
+                    <>
+                      <label className="audit-filters__field">
+                        <Filter size={12} />
+                        <select
+                          value={trailModule}
+                          onChange={(e) => { setTrailModule(e.target.value); setPage(1); }}
+                        >
+                          <option value="">All modules</option>
+                          {(data?.meta?.modules || []).map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="audit-filters__field">
+                        <select
+                          value={trailAction}
+                          onChange={(e) => { setTrailAction(e.target.value); setPage(1); }}
+                        >
+                          <option value="">All actions</option>
+                          {(data?.meta?.actions || []).map((a) => (
+                            <option key={a} value={a}>{a}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  )}
+                  {STATUS_FILTER_SECTIONS.has(section) && (
+                    <label className="audit-filters__field">
+                      <input
+                        type="text"
+                        value={statusFilter}
+                        onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                        placeholder={section === 'stock' ? 'Movement type' : 'Status'}
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
+
               <DetailTable
                 columns={columns}
-                rows={data?.details || []}
-                title={section === 'pharmacy' ? 'Medicine-wise Profit / Loss' : 'Detail register'}
+                rows={visibleDetails}
+                title={DETAIL_TITLES[section] || 'Detail register'}
+                total={data?.meta?.total}
               />
+              <AuditPager meta={data?.meta} page={page} onPage={setPage} />
+              <RegisterTables registers={data?.registers || []} />
             </>
           )}
         </div>

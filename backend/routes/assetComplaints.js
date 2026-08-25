@@ -8,8 +8,10 @@ const {
   getComplaintDashboard,
 } = require('../controllers/assetComplaintController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('biomedical'));
 
 const VIEW = authorizeAnyPermission('VIEW_ASSET_COMPLAINTS', 'CREATE_ASSET_COMPLAINT', 'MANAGE_ASSET_COMPLAINTS');
 const CREATE = authorizeAnyPermission('CREATE_ASSET_COMPLAINT', 'MANAGE_ASSET_COMPLAINTS');

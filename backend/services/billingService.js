@@ -6,11 +6,11 @@ const Prescription = require('../models/Prescription');
 const Medicine = require('../models/Medicine');
 const Bill = require('../models/Bill');
 const Bed = require('../models/Bed');
+const { EMERGENCY_SURCHARGE, resolveOpConsultationFee } = require('../utils/opConsultationFee');
 
 const ADMISSION_FEE = 500;
 const NURSING_CHARGE_PER_NOTE = 200;
 const REGISTRATION_FEE = 100;
-const EMERGENCY_SURCHARGE = 300;
 const DOCTOR_ROUND_FEE = 500;
 
 const daysBetween = (start, end) => {
@@ -94,18 +94,22 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
   const opVisits = await OPRegistration.find({
     patient: patientId,
     status: { $in: ['completed', 'consultation_completed', 'in_consultation', 'sent_to_pharmacy', 'pharmacy_completed', 'sent_to_lab', 'admitted', 'discharged'] },
-    ...notBilledFilter,
+    $or: [
+      { bill: { $exists: false } },
+      { bill: null },
+      { 'serviceUsages.0': { $exists: true } },
+    ],
   })
-    .populate('doctor', 'name consultationFee specialization')
+    .populate('doctor', 'name consultationFee followUpFee specialization')
     .populate('department', 'name consultationFee')
     .sort('-tokenDate');
 
   for (const op of opVisits) {
-    if (isBilled(billedRefs, 'OPRegistration', op._id)) continue;
+    const consultAlreadyBilled = isBilled(billedRefs, 'OPRegistration', op._id);
 
+    if (!consultAlreadyBilled) {
     const isFollowUp = op.appointmentType === 'followup';
-    const baseFee = op.doctor?.consultationFee || op.department?.consultationFee || 300;
-    const fee = isFollowUp ? Math.round(baseFee * 0.5) : baseFee;
+    const fee = resolveOpConsultationFee(op.doctor, op.department, op.appointmentType);
 
     if (!primaryDoctor && op.doctor) primaryDoctor = op.doctor;
     if (!primaryDepartment && op.department) primaryDepartment = op.department;
@@ -134,6 +138,7 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
         referenceModel: 'OPRegistration',
       }));
     }
+    } // consultation line already billed at OP registration
 
     // ── OP equipment / procedure usage (ECG, Nebulizer, dressing, injections, etc.) ──
     // Logged via opController.addServiceUsage. Each entry is its own billable line,
@@ -146,6 +151,7 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
       Procedure: 'Procedure',
       Nursing: 'Nursing',
       Injection: 'Procedure',
+      Laboratory: 'Laboratory',
       Other: 'Miscellaneous',
     };
     for (const usage of op.serviceUsages || []) {
@@ -528,8 +534,13 @@ exports.markSourcesAsBilled = async (items, billId) => {
     }
   });
 
+  const bill = billId ? await Bill.findById(billId).select('billType').lean() : null;
+  // Reception consult slip lives on OPRegistration.bill. Pharmacy/lab bills
+  // also tag OPRegistration on some lines — never overwrite that pointer.
+  const setOpBill = bill?.billType === 'op';
+
   await Promise.all([
-    opIds.size && OPRegistration.updateMany({ _id: { $in: [...opIds] } }, { bill: billId }),
+    setOpBill && opIds.size && OPRegistration.updateMany({ _id: { $in: [...opIds] } }, { bill: billId }),
     labIds.size && LabTest.updateMany({ _id: { $in: [...labIds] } }, { bill: billId }),
     rxIds.size && Prescription.updateMany({ _id: { $in: [...rxIds] } }, { bill: billId }),
     ipIds.size && IPAdmission.updateMany({ _id: { $in: [...ipIds] } }, { $addToSet: { bills: billId } }),
@@ -554,7 +565,7 @@ exports.unmarkSourcesAsBilled = async (items, billId) => {
   });
 
   const updates = [
-    opIds.length && OPRegistration.updateMany({ _id: { $in: opIds } }, { $unset: { bill: 1 } }),
+    opIds.length && billId && OPRegistration.updateMany({ _id: { $in: opIds }, bill: billId }, { $unset: { bill: 1 } }),
     labIds.length && LabTest.updateMany({ _id: { $in: labIds } }, { $unset: { bill: 1 } }),
     rxIds.length && Prescription.updateMany({ _id: { $in: rxIds } }, { $unset: { bill: 1 } }),
   ];

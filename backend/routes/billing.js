@@ -20,10 +20,10 @@ const {
   getStaffReport,
 } = require('../controllers/billingController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
-const advancedResults = require('../middleware/advancedResults');
-const Bill = require('../models/Bill');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('billing'));
 
 // Permission-driven guards. Super Admin always passes (bypassed inside the
 // middleware). Every other user's access now comes from their *actual*
@@ -39,7 +39,7 @@ const CANCEL_BILL = authorizeAnyPermission('CANCEL_BILL');
 const VIEW_BILLING_REPORTS = authorizeAnyPermission('VIEW_BILLING_REPORTS', 'VIEW_BILLING');
 const VIEW_PENDING_DISCHARGE = authorizeAnyPermission('VIEW_PENDING_DISCHARGE', 'VIEW_BILLING');
 
-router.get('/stats', VIEW_BILLING_REPORTS, getBillingStats);
+router.get('/stats', VIEW_BILLING, getBillingStats);
 router.get('/revenue-report', VIEW_BILLING_REPORTS, getRevenueReport);
 router.get('/pending-discharge', VIEW_PENDING_DISCHARGE, getPendingDischarge);
 // Loading a patient's unbilled charges is step one of creating a bill, so
@@ -54,11 +54,7 @@ router.get('/report/monthly', VIEW_BILLING_REPORTS, getMonthlyReport);
 router.get('/report/staff', VIEW_BILLING_REPORTS, getStaffReport);
 
 router.route('/')
-  .get(VIEW_BILLING, advancedResults(Bill, [
-    { path: 'patient', select: 'patientId name phone' },
-    { path: 'doctor', select: 'name' },
-    { path: 'department', select: 'name' },
-  ]), getBills)
+  .get(VIEW_BILLING, getBills)
   .post(CREATE_BILLING, createBill);
 
 router.route('/:id')

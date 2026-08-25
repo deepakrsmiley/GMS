@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 /**
@@ -169,5 +170,7 @@ assetSchema.index({ category: 1 });
 assetSchema.index({ nextPmDate: 1 });
 assetSchema.index({ nextCalibrationDate: 1 });
 assetSchema.index({ riskClass: 1 });
+
+applyOrganizationScope(assetSchema);
 
 module.exports = mongoose.model('Asset', assetSchema);

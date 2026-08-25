@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router({ mergeParams: true });
 const ctrl = require('../controllers/patientProfileController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('patients'));
 
 const VIEW_PROFILE = authorizeAnyPermission(
   'VIEW_PATIENT_PROFILE',

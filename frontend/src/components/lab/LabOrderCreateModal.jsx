@@ -8,9 +8,12 @@ import {
   LAB_TYPES,
   LAB_PROFILE_OPTIONS,
   LAB_PROFILES,
+  OTHER_PROFILE,
   expandProfilesToTests,
   getProfileMeta,
-  profilesForType,
+  profilesForTypeWithOther,
+  findMatchingProfile,
+  buildOtherLabTests,
 } from '../../constants/labProfiles';
 import '../../styles/labOrder.css';
 
@@ -101,7 +104,8 @@ export default function LabOrderCreateModal({
   }, [patientSearch, isAppend]);
 
   const availableProfiles = useMemo(() => {
-    if (mode === 'request' && labType) return profilesForType(labType).filter((n) => n !== 'Custom / Manual');
+    if (labType === 'Other') return [OTHER_PROFILE];
+    if (mode === 'request' && labType) return profilesForTypeWithOther(labType);
     return LAB_PROFILE_OPTIONS;
   }, [mode, labType]);
 
@@ -121,30 +125,63 @@ export default function LabOrderCreateModal({
     });
   };
 
+  const otherEnabled = selectedProfiles.includes(OTHER_PROFILE) || labType === 'Other';
+
+  const otherBuilt = useMemo(
+    () => customRows
+      .filter((r) => r.testName.trim())
+      .map((r) => buildOtherLabTests(r.testName, r.price, { priceMap, testMaster: priceList })),
+    [customRows, priceMap, priceList],
+  );
+
   const { tests, totalAmount } = useMemo(() => {
-    const expanded = expandProfilesToTests(selectedProfiles, profilePrices);
+    const matchedFromOther = otherEnabled
+      ? otherBuilt.filter((b) => b.matched).map((b) => b.profileName)
+      : [];
+    const catalogProfiles = selectedProfiles.filter((p) => p !== OTHER_PROFILE);
+    const prices = { ...profilePrices };
+    if (otherEnabled) {
+      customRows.forEach((row) => {
+        const built = buildOtherLabTests(row.testName, row.price, { priceMap, testMaster: priceList });
+        if (built.matched) {
+          prices[built.profileName] = Number(row.price) || prices[built.profileName] || built.totalAmount;
+        }
+      });
+    }
+    const expanded = expandProfilesToTests(
+      [...new Set([...catalogProfiles, ...matchedFromOther])],
+      prices,
+    );
     let testsOut = expanded.tests;
     let total = expanded.totalAmount;
-    if (selectedProfiles.includes('Custom / Manual')) {
-      const customs = customRows
-        .filter((r) => r.testName.trim())
-        .map((r) => ({ testName: r.testName.trim(), price: Number(r.price) || 0 }));
-      testsOut = [...testsOut, ...customs];
-      total += customs.reduce((s, t) => s + t.price, 0);
+    if (otherEnabled) {
+      otherBuilt.filter((b) => !b.matched).forEach((b) => {
+        testsOut = [...testsOut, ...b.tests];
+        total += b.totalAmount;
+      });
     }
     return { tests: testsOut, totalAmount: total };
-  }, [selectedProfiles, profilePrices, customRows]);
+  }, [selectedProfiles, profilePrices, customRows, otherEnabled, otherBuilt, priceMap, priceList]);
 
   const saveMut = useMutation({
     mutationFn: async () => {
       if (!isAppend && !patientId) throw new Error('Select a patient');
-      if (!tests.length) throw new Error('Select at least one lab package or custom test');
+      if (!tests.length) throw new Error('Select at least one lab package or Other lab');
+      const namedOther = customRows.filter((r) => r.testName.trim());
+      if (otherEnabled && namedOther.some((r) => r.price === '' || r.price == null)) {
+        throw new Error('Enter the price for the Other lab');
+      }
 
-      const profiles = selectedProfiles.filter((p) => p !== 'Custom / Manual');
+      const catalogProfiles = selectedProfiles.filter((p) => p !== OTHER_PROFILE);
+      const matchedProfiles = otherEnabled
+        ? otherBuilt.filter((b) => b.matched).map((b) => b.profileName)
+        : [];
+      const unmatched = otherEnabled ? otherBuilt.filter((b) => !b.matched) : [];
+      const profiles = [...new Set([...catalogProfiles, ...matchedProfiles, ...unmatched.map((b) => b.profileName)])].filter(Boolean);
       const payload = {
         patient: patientId || appendTo?.patient?._id || appendTo?.patient,
         profiles,
-        testProfile: profiles.join(' + ') || (selectedProfiles.includes('Custom / Manual') ? 'Custom / Manual' : ''),
+        testProfile: profiles.join(' + ') || (otherEnabled ? 'Other' : ''),
         tests,
         totalAmount,
         sampleType,
@@ -247,14 +284,15 @@ export default function LabOrderCreateModal({
               </div>
               <div className="lo-section__body">
                 <div className="lo-type-grid">
-                  {LAB_TYPES.filter((t) => t !== 'Other').map((t) => (
+                  {LAB_TYPES.map((t) => (
                     <button
                       key={t}
                       type="button"
                       className={`lo-type-chip ${labType === t ? 'is-active' : ''}`}
                       onClick={() => {
                         setLabType(t);
-                        setSelectedProfiles([]);
+                        setSelectedProfiles(t === 'Other' ? [OTHER_PROFILE] : []);
+                        if (t === 'Other') setCustomRows(emptyCustom());
                       }}
                     >
                       <FlaskConical size={14} />
@@ -271,7 +309,7 @@ export default function LabOrderCreateModal({
             <div className="lo-section">
               <div className="lo-section__head">
                 <span className="lo-section__title">
-                  {mode === 'request' ? '2 · Packages' : 'Lab packages'}
+                  {labType === 'Other' ? '2 · Other lab' : mode === 'request' ? '2 · Packages' : 'Lab packages'}
                 </span>
                 <span className="lo-section__meta">{selectedProfiles.length} selected</span>
               </div>
@@ -285,20 +323,29 @@ export default function LabOrderCreateModal({
                     >
                       All
                     </button>
-                    {LAB_TYPES.filter((t) => t !== 'Other').map((t) => (
+                    {LAB_TYPES.map((t) => (
                       <button
                         key={t}
                         type="button"
                         className={`lo-type-chip sm ${labType === t ? 'is-active' : ''}`}
-                        onClick={() => setLabType(labType === t ? '' : t)}
+                        onClick={() => {
+                          const next = labType === t ? '' : t;
+                          setLabType(next);
+                          if (next === 'Other') setSelectedProfiles((prev) => (
+                            prev.includes(OTHER_PROFILE) ? prev : [...prev, OTHER_PROFILE]
+                          ));
+                        }}
                       >
                         {t}
                       </button>
                     ))}
                   </div>
                 )}
+                {labType !== 'Other' && (
                 <div className="lo-profiles">
-                  {(labType ? availableProfiles : LAB_PROFILE_OPTIONS).map((name) => {
+                  {(labType ? availableProfiles : LAB_PROFILE_OPTIONS)
+                    .filter((name) => name !== OTHER_PROFILE)
+                    .map((name) => {
                     const checked = selectedProfiles.includes(name);
                     const meta = LAB_PROFILES[name];
                     const count = meta?.tests?.length || 0;
@@ -316,7 +363,7 @@ export default function LabOrderCreateModal({
                             {count ? ` · ${count} params` : ''}
                           </span>
                         </span>
-                        {checked && name !== 'Custom / Manual' && (
+                        {checked && (
                           <span className="lo-profile__price">
                             ₹
                             <input
@@ -332,40 +379,93 @@ export default function LabOrderCreateModal({
                     );
                   })}
                 </div>
+                )}
 
-                {selectedProfiles.includes('Custom / Manual') && (
+                <label className={`lo-profile lo-other-toggle ${otherEnabled ? 'is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={otherEnabled}
+                    onChange={() => {
+                      if (labType === 'Other') return;
+                      toggleProfile(OTHER_PROFILE);
+                    }}
+                  />
+                  <span className="lo-profile__body">
+                    <span className="lo-profile__name">Other</span>
+                    <span className="lo-profile__meta">Lab not in the list — type name and price, report format fills in automatically</span>
+                  </span>
+                </label>
+
+                {otherEnabled && (
                   <div className="lo-custom">
-                    {customRows.map((row, i) => (
-                      <div key={i} className="lo-custom__row">
-                        <input
-                          className="lo-field"
-                          placeholder="Test name"
-                          value={row.testName}
-                          onChange={(e) => {
-                            const next = [...customRows];
-                            next[i] = { ...next[i], testName: e.target.value };
-                            setCustomRows(next);
-                          }}
-                        />
-                        <input
-                          className="lo-field"
-                          type="number"
-                          placeholder="₹"
-                          value={row.price}
-                          onChange={(e) => {
-                            const next = [...customRows];
-                            next[i] = { ...next[i], price: e.target.value };
-                            setCustomRows(next);
-                          }}
-                        />
-                      </div>
-                    ))}
+                    {customRows.map((row, i) => {
+                      const built = row.testName.trim()
+                        ? buildOtherLabTests(row.testName, row.price, { priceMap, testMaster: priceList })
+                        : null;
+                      return (
+                        <div key={i} className="lo-other-card">
+                          <div className="lo-custom__row lo-custom__row--other">
+                            <input
+                              className="lo-field"
+                              placeholder="Lab / test name"
+                              value={row.testName}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const next = [...customRows];
+                                const match = findMatchingProfile(value);
+                                const master = priceList.find((t) => String(t.name).toLowerCase() === value.trim().toLowerCase());
+                                const autoPrice = match ? priceMap[match] : master?.price;
+                                const priceEmpty = next[i].price === '' || next[i].price == null;
+                                next[i] = {
+                                  ...next[i],
+                                  testName: value,
+                                  price: priceEmpty && autoPrice != null && autoPrice !== '' ? autoPrice : next[i].price,
+                                };
+                                setCustomRows(next);
+                              }}
+                            />
+                            <input
+                              className="lo-field"
+                              type="number"
+                              min="0"
+                              placeholder="Price ₹"
+                              value={row.price}
+                              onChange={(e) => {
+                                const next = [...customRows];
+                                next[i] = { ...next[i], price: e.target.value };
+                                setCustomRows(next);
+                              }}
+                            />
+                          </div>
+                          {built?.tests?.length > 0 && (
+                            <div className="lo-format">
+                              <p className="lo-format__title">
+                                Report format
+                                {built.matched ? ` · matched ${built.profileName}` : ' · auto'}
+                              </p>
+                              <ul>
+                                {built.tests.map((t) => (
+                                  <li key={`${t.profileName}-${t.testName}`}>
+                                    <strong>{t.testName}</strong>
+                                    {(t.unit || t.normalRange) && (
+                                      <span>
+                                        {[t.unit, t.normalRange].filter(Boolean).join(' · ')}
+                                      </span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                     <button
                       type="button"
                       className="lo-link-btn"
                       onClick={() => setCustomRows([...customRows, { testName: '', price: '' }])}
                     >
-                      + Custom row
+                      + Add another other lab
                     </button>
                   </div>
                 )}

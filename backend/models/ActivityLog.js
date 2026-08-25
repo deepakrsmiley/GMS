@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const activityLogSchema = new mongoose.Schema({
   // Optional so unknown-email login failures can still be audited
@@ -16,5 +17,7 @@ const activityLogSchema = new mongoose.Schema({
 activityLogSchema.index({ user: 1 });
 activityLogSchema.index({ module: 1 });
 activityLogSchema.index({ createdAt: -1 });
+
+applyOrganizationScope(activityLogSchema);
 
 module.exports = mongoose.model('ActivityLog', activityLogSchema);

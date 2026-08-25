@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const brandingSchema = new mongoose.Schema({
   hospitalName: { type: String, trim: true, default: 'Your Hospital Name' },
@@ -72,5 +73,7 @@ const brandingSchema = new mongoose.Schema({
 
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
+
+applyOrganizationScope(brandingSchema);
 
 module.exports = mongoose.model('Branding', brandingSchema);

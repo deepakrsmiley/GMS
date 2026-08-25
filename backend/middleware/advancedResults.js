@@ -1,6 +1,8 @@
 const escapeRegex = (str) =>
   String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const { orgFilter } = require('./tenant');
+
 /** Substring search filters by model (avoids fragile MongoDB $text for UX search boxes). */
 const buildSearchFilter = (modelName, rawSearch) => {
   const term = String(rawSearch || '').trim();
@@ -20,27 +22,36 @@ const buildSearchFilter = (modelName, rawSearch) => {
     };
   }
 
-  // Fallback for models that already define a text index
   return { $text: { $search: term } };
 };
+
+const TENANT_QUERY_KEYS = ['organizationId', 'organization_id', 'orgId'];
 
 const advancedResults = (model, populate) => async (req, res, next) => {
   let query;
   const reqQuery = { ...req.query };
-  const removeFields = ['select', 'sort', 'page', 'limit', 'search'];
+  const removeFields = ['select', 'sort', 'page', 'limit', 'search', ...TENANT_QUERY_KEYS];
   removeFields.forEach((p) => delete reqQuery[p]);
 
   let queryStr = JSON.stringify(reqQuery);
   queryStr = queryStr.replace(/\b(gt|gte|lt|lte|in)\b/g, (m) => `$${m}`);
 
   const baseFilter = JSON.parse(queryStr);
+  TENANT_QUERY_KEYS.forEach((key) => {
+    delete baseFilter[key];
+  });
+
   const searchFilter = req.query.search
     ? buildSearchFilter(model.modelName, req.query.search)
     : null;
 
-  const findFilter = searchFilter
-    ? { $and: [baseFilter, searchFilter] }
-    : baseFilter;
+  const tenantFilter = model.modelName === 'User'
+    ? require('./tenant').userOrgFilter(req)
+    : orgFilter(req);
+
+  const clauses = [tenantFilter, baseFilter];
+  if (searchFilter) clauses.push(searchFilter);
+  const findFilter = { $and: clauses };
 
   query = model.find(findFilter);
 

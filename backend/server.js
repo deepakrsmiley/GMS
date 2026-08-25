@@ -15,6 +15,8 @@ const morgan = require('morgan');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/error');
 const logger = require('./utils/logger');
+const { stripClientOrganizationId } = require('./middleware/tenant');
+const { attachSocketOrganization } = require('./middleware/socketAuth');
 
 // Route files
 const auth = require('./routes/auth');
@@ -72,6 +74,8 @@ const io = new Server(server, {
 
 app.set('io', io);
 
+attachSocketOrganization(io);
+
 // Security
 app.use(helmet());
 app.use(mongoSanitize());
@@ -88,6 +92,7 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(cookieParser());
+app.use('/api', stripClientOrganizationId);
 
 // CORS
 app.use(cors(corsOptions));
@@ -97,28 +102,12 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Socket.IO
-io.on('connection', (socket) => {
-  logger.info(`Socket connected: ${socket.id}`);
-
-  socket.on('join:room', (room) => {
-    socket.join(room);
-  });
-
-  socket.on('doctor:available', (data) => {
-    io.emit('doctor:status', data);
-  });
-
-  socket.on('disconnect', () => {
-    logger.info(`Socket disconnected: ${socket.id}`);
-  });
-});
-
 // ==========================
 // API ROUTES
 // ==========================
 
 app.use('/api/auth', auth);
+app.use('/api/organizations', require('./routes/organizations'));
 app.use('/api/patients', patients);
 app.use('/api/patients/:id/profile', patientProfile);
 app.use('/api/op', op);

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const bmeVendorSchema = new mongoose.Schema({
@@ -37,5 +38,7 @@ bmeVendorSchema.pre('save', async function (next) {
   }
   next();
 });
+
+applyOrganizationScope(bmeVendorSchema);
 
 module.exports = mongoose.model('BmeVendor', bmeVendorSchema);

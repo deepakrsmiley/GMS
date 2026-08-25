@@ -19,6 +19,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import { getSocket } from '../services/socket';
 import { format } from 'date-fns';
 import { hasPermission } from '../constants/permissions';
+import { isHospitalModuleEnabledForUser } from '../constants/hospitalModules';
 
 const fetchDashboard = () => api.get('/dashboard/stats').then((r) => r.data.data);
 const fetchDeptAnalytics = () => api.get('/dashboard/department-analytics').then((r) => r.data.data);
@@ -44,12 +45,12 @@ const DEPT_COLORS = [
 ];
 
 const QUICK_ACTIONS = [
-  { label: 'Add Patient', icon: UserRoundPlus, to: '/patients', color: 'text-blue-600 bg-blue-50' },
-  { label: 'New Appointment', icon: CalendarPlus, to: '/appointments', color: 'text-green-600 bg-green-50' },
-  { label: 'Admit Patient (IP)', icon: BedDouble, to: '/ip-admissions', color: 'text-emerald-600 bg-emerald-50' },
-  { label: 'Add Prescription', icon: FileSpreadsheet, to: '/pharmacy?tab=prescriptions', color: 'text-orange-600 bg-orange-50' },
-  { label: 'Lab Test', icon: FlaskConical, to: '/lab', color: 'text-teal-600 bg-teal-50' },
-  { label: 'New Invoice', icon: Receipt, to: '/billing', color: 'text-indigo-600 bg-indigo-50' },
+  { label: 'Add Patient', icon: UserRoundPlus, to: '/patients', color: 'text-blue-600 bg-blue-50', module: 'patients' },
+  { label: 'New Appointment', icon: CalendarPlus, to: '/appointments', color: 'text-green-600 bg-green-50', module: 'appointments' },
+  { label: 'Admit Patient (IP)', icon: BedDouble, to: '/ip-admissions', color: 'text-emerald-600 bg-emerald-50', module: 'ip' },
+  { label: 'Add Prescription', icon: FileSpreadsheet, to: '/pharmacy?tab=prescriptions', color: 'text-orange-600 bg-orange-50', module: 'pharmacy' },
+  { label: 'Lab Test', icon: FlaskConical, to: '/lab', color: 'text-teal-600 bg-teal-50', module: 'lab' },
+  { label: 'New Invoice', icon: Receipt, to: '/billing', color: 'text-indigo-600 bg-indigo-50', module: 'billing' },
 ];
 
 export default function DashboardPage() {
@@ -64,7 +65,9 @@ export default function DashboardPage() {
   const { data, isLoading, refetch } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboard, refetchInterval: 30000 });
   const { data: deptAnalytics } = useQuery({ queryKey: ['deptAnalytics'], queryFn: fetchDeptAnalytics });
   const { data: departments } = useQuery({ queryKey: ['allDepartments'], queryFn: fetchDepartments });
-  const canViewBills = hasPermission(user, 'VIEW_BILLING');
+  const canViewBills = hasPermission(user, 'VIEW_BILLING') && isHospitalModuleEnabledForUser(user, 'billing');
+  const hasMod = (id) => isHospitalModuleEnabledForUser(user, id);
+  const quickActions = QUICK_ACTIONS.filter((qa) => hasMod(qa.module));
   const { data: recentBills } = useQuery({ queryKey: ['recentBills'], queryFn: fetchRecentBills, enabled: canViewBills });
 
   useEffect(() => {
@@ -154,6 +157,7 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          {quickActions.length > 0 && (
           <div className="relative" ref={quickMenuRef}>
             <button
               onClick={() => setShowQuickMenu((v) => !v)}
@@ -163,7 +167,7 @@ export default function DashboardPage() {
             </button>
             {showQuickMenu && (
               <div className="absolute right-0 top-12 w-56 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-50 overflow-hidden py-2">
-                {QUICK_ACTIONS.map((qa) => (
+                {quickActions.map((qa) => (
                   <button
                     key={qa.label}
                     onClick={() => { setShowQuickMenu(false); navigate(qa.to); }}
@@ -176,27 +180,28 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
 
       {/* Primary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-        <KpiCard title="Total Patients" value={(d.totalPatients || 0).toLocaleString()} icon={Users} color="blue" subtitle="All registered patients" />
-        <KpiCard title="OP Consultations" value={d.todayOP || 0} icon={Stethoscope} color="teal" subtitle="Today" />
-        <KpiCard title="IP Admissions" value={d.todayIP || 0} icon={UserPlus} color="purple" subtitle="New admissions today" />
-        <KpiCard title="Active IP Patients" value={d.totalIP || 0} icon={Bed} color="indigo" subtitle="Currently admitted" />
-        <KpiCard title="Total Revenue (Today)" value={`₹${((d.todayRevenue || 0) / 1000).toFixed(1)}K`} icon={IndianRupee} color="green" subtitle="Collected today" />
+        {hasMod('patients') && <KpiCard title="Total Patients" value={(d.totalPatients || 0).toLocaleString()} icon={Users} color="blue" subtitle="All registered patients" />}
+        {hasMod('op') && <KpiCard title="OP Consultations" value={d.todayOP || 0} icon={Stethoscope} color="teal" subtitle="Today" />}
+        {hasMod('ip') && <KpiCard title="IP Admissions" value={d.todayIP || 0} icon={UserPlus} color="purple" subtitle="New admissions today" />}
+        {hasMod('ip') && <KpiCard title="Active IP Patients" value={d.totalIP || 0} icon={Bed} color="indigo" subtitle="Currently admitted" />}
+        {hasMod('billing') && <KpiCard title="Total Revenue (Today)" value={`₹${((d.todayRevenue || 0) / 1000).toFixed(1)}K`} icon={IndianRupee} color="green" subtitle="Collected today" />}
       </div>
 
       {/* Secondary KPI Cards */}
       <div className="space-y-3">
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Pharmacy & Infrastructure</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-          <KpiCard title="Pharmacy Sales" value={`₹${(d.todayPharmacySales?.total || 0).toLocaleString()}`} icon={Pill} color="green" subtitle={`${d.todayPharmacySales?.count || 0} sales today`} />
+          {hasMod('pharmacy') && <KpiCard title="Pharmacy Sales" value={`₹${(d.todayPharmacySales?.total || 0).toLocaleString()}`} icon={Pill} color="green" subtitle={`${d.todayPharmacySales?.count || 0} sales today`} />}
           <KpiCard title="Total Doctors" value={d.totalDoctors || 0} icon={Stethoscope} color="blue" subtitle="Active doctors" />
           <KpiCard title="Departments" value={d.totalDepartments || 0} icon={Building2} color="purple" subtitle="Configured dept" />
-          <KpiCard title="Total Assets" value={d.totalAssets || 0} icon={Package} color="indigo" subtitle="Hospital assets" />
-          <KpiCard title="Assets Under Repair" value={d.assetsUnderRepair || 0} icon={Wrench} color="red" subtitle="Need maintenance" />
+          {hasMod('biomedical') && <KpiCard title="Total Assets" value={d.totalAssets || 0} icon={Package} color="indigo" subtitle="Hospital assets" />}
+          {hasMod('biomedical') && <KpiCard title="Assets Under Repair" value={d.assetsUnderRepair || 0} icon={Wrench} color="red" subtitle="Need maintenance" />}
         </div>
       </div>
 

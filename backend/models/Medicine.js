@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const batchSchema = new mongoose.Schema({
   batchNumber: { type: String, required: true },
@@ -61,5 +62,7 @@ medicineSchema.index({ category: 1 });
 medicineSchema.index({ manufacturer: 1 });
 medicineSchema.index({ 'batches.manufacturer': 1 });
 medicineSchema.index({ isActive: 1, 'batches.expiryDate': 1 });
+
+applyOrganizationScope(medicineSchema);
 
 module.exports = mongoose.model('Medicine', medicineSchema);

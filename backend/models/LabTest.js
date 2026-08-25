@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const labResultSchema = new mongoose.Schema({
   testName: String,
@@ -60,6 +61,8 @@ const labTestSchema = new mongoose.Schema({
     testName: { type: String, required: true },
     profileName: String, // e.g. "CBC (Complete Blood Count)" — for result grouping
     price: Number,
+    unit: String,
+    normalRange: String,
     status: {
       type: String,
       enum: ['pending', 'collected', 'processing', 'completed', 'cancelled'],
@@ -125,6 +128,8 @@ labTestSchema.index({ status: 1 });
 labTestSchema.index({ labType: 1 });
 labTestSchema.index({ orderSource: 1, status: 1, createdAt: -1 });
 labTestSchema.index({ createdAt: -1 });
+
+applyOrganizationScope(labTestSchema);
 
 module.exports = mongoose.model('LabTest', labTestSchema);
 module.exports.LAB_TYPES = LAB_TYPES;

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const stockMovementSchema = new mongoose.Schema({
   medicine: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine', required: true, index: true },
@@ -27,5 +28,7 @@ const stockMovementSchema = new mongoose.Schema({
 stockMovementSchema.index({ transactionDate: -1 });
 stockMovementSchema.index({ medicine: 1, transactionDate: -1 });
 stockMovementSchema.index({ type: 1, transactionDate: -1 });
+
+applyOrganizationScope(stockMovementSchema);
 
 module.exports = mongoose.model('StockMovement', stockMovementSchema);

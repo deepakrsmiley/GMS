@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,16 +9,20 @@ import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { hasPermission } from '../constants/permissions';
+import { useBranding } from '../hooks/useBranding';
 import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
+import OPPaperTemplate from '../components/op/OPPaperTemplate';
 
 export default function DoctorConsultationPage() {
   const { opId } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useSelector((s) => s.auth);
+  const { branding } = useBranding();
   const canOrderLab = hasPermission(user, 'CREATE_LAB_ORDER');
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canLogServices = hasPermission(user, 'CREATE_SERVICE_USAGE');
+  const [printData, setPrintData] = useState(null);
 
   const [diagnosis, setDiagnosis] = useState('');
   const [notes, setNotes] = useState('');
@@ -47,7 +52,7 @@ export default function DoctorConsultationPage() {
     enabled: !!patientId,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (op) {
       setDiagnosis(op.diagnosis || '');
       setNotes(op.consultationNotes || '');
@@ -57,6 +62,37 @@ export default function DoctorConsultationPage() {
       if (op.vitals) setVitals((prev) => ({ ...prev, ...op.vitals }));
     }
   }, [op]);
+
+  useEffect(() => {
+    if (!printData) return undefined;
+
+    let cancelled = false;
+    const handleAfterPrint = () => {
+      setPrintData(null);
+      navigate('/op-queue');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    const runPrint = async () => {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const root = document.getElementById('op-paper-print-root');
+      const img = root?.querySelector('img.op-logo');
+      if (img && !img.complete) {
+        await Promise.race([
+          new Promise((res) => { img.onload = res; img.onerror = res; }),
+          new Promise((res) => setTimeout(res, 1200)),
+        ]);
+      }
+      if (!cancelled) window.print();
+    };
+
+    const timer = setTimeout(runPrint, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, [printData, navigate]);
 
   const startMut = useMutation({
     mutationFn: () => api.put(`/op/${opId}/status`, { status: 'in_consultation' }),
@@ -87,10 +123,28 @@ export default function DoctorConsultationPage() {
         status: 'sent_to_pharmacy',
       });
     },
-    onSuccess: () => {
-      toast.success('Consultation saved and sent to pharmacy');
+    onSuccess: async () => {
+      toast.success('Consultation saved');
       qc.invalidateQueries(['opQueue']);
-      navigate('/op-queue');
+      try {
+        const r = await api.get(`/op/${opId}`);
+        const saved = r?.data?.data || op;
+        setPrintData({
+          branding,
+          op: {
+            ...saved,
+            vitals: { ...(saved.vitals || {}), ...vitals },
+            labs: [],
+            pharmacyMedicines: [],
+            serviceUsages: [],
+          },
+        });
+      } catch {
+        setPrintData({
+          branding,
+          op: { ...op, vitals, labs: [], pharmacyMedicines: [], serviceUsages: [] },
+        });
+      }
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
   });
@@ -232,6 +286,12 @@ export default function DoctorConsultationPage() {
         isOpen={showServices}
         onClose={() => setShowServices(false)}
       />
+
+      {printData &&
+        createPortal(
+          <OPPaperTemplate branding={printData.branding || branding} op={printData.op} />,
+          document.body,
+        )}
     </div>
   );
 }

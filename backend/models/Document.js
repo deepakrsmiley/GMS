@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 // Additive model for Section 16 (Document History) of the Patient 360 EMR.
 // Stores metadata + file URL (Cloudinary or any storage) for lifetime patient documents.
@@ -25,6 +26,8 @@ const documentSchema = new mongoose.Schema({
 
 documentSchema.index({ patient: 1, category: 1 });
 documentSchema.index({ createdAt: -1 });
+
+applyOrganizationScope(documentSchema);
 
 const DocumentModel = mongoose.model('Document', documentSchema);
 DocumentModel.CATEGORIES = DOCUMENT_CATEGORIES;

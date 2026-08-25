@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { getServices, createService, updateService, deleteService } = require('../controllers/serviceMasterController');
 const { protect, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(protect);
+router.use(requireHospitalModule('op', 'ip', 'billing'));
 
 const VIEW_SERVICES = authorizeAnyPermission(
   'MANAGE_SERVICES',

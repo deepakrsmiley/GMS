@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const bmeCalibrationSchema = new mongoose.Schema({
@@ -43,5 +44,7 @@ bmeCalibrationSchema.pre('save', async function (next) {
 bmeCalibrationSchema.index({ equipment: 1 });
 bmeCalibrationSchema.index({ nextCalibrationDate: 1 });
 bmeCalibrationSchema.index({ status: 1 });
+
+applyOrganizationScope(bmeCalibrationSchema);
 
 module.exports = mongoose.model('BmeCalibration', bmeCalibrationSchema);

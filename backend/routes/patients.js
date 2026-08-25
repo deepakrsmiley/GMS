@@ -9,10 +9,12 @@ const {
   getPatientStats
 } = require('../controllers/patientController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 const advancedResults = require('../middleware/advancedResults');
 const Patient = require('../models/Patient');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('patients'));
 
 // Permission-driven guards (see backend/config/permissions.js -> 'Patients'
 // group). Super Admin always passes; everyone else is checked against their

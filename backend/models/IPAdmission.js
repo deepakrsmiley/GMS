@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const nursingNoteSchema = new mongoose.Schema({
   note: String,
@@ -233,5 +234,7 @@ ipAdmissionSchema.index({ patient: 1 });
 ipAdmissionSchema.index({ doctor: 1 });
 ipAdmissionSchema.index({ status: 1 });
 ipAdmissionSchema.index({ admissionDate: -1 });
+
+applyOrganizationScope(ipAdmissionSchema);
 
 module.exports = mongoose.model('IPAdmission', ipAdmissionSchema);

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 // Hospital-configurable rate list for bedside IP services/equipment usage
 // (Nebulizer, Ventilator, Oxygen/O2, Injection administration, Dressing, etc.)
@@ -24,5 +25,7 @@ const serviceMasterSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 serviceMasterSchema.index({ category: 1 });
+
+applyOrganizationScope(serviceMasterSchema);
 
 module.exports = mongoose.model('ServiceMaster', serviceMasterSchema);

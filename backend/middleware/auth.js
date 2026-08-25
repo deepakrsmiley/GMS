@@ -2,10 +2,20 @@ const jwt = require("jsonwebtoken");
 const asyncHandler = require("../utils/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 const User = require("../models/User");
+const logger = require("../utils/logger");
 const { resolveEffectivePermissions } = require("../config/permissions");
 const { normalizeRole, rolesMatch, isSuperAdmin } = require("../utils/roles");
+const { resolveOrganizationContext } = require("./tenant");
+const {
+  bindOrganizationContext,
+  setRequestOrganizationContext,
+} = require("./tenantContext");
 
-// Authenticate user middleware
+const isJwtError = (err) =>
+  err?.name === "JsonWebTokenError" ||
+  err?.name === "TokenExpiredError" ||
+  err?.name === "NotBeforeError";
+
 const authenticateUser = asyncHandler(async (req, res, next) => {
   let token;
   if (
@@ -13,7 +23,7 @@ const authenticateUser = asyncHandler(async (req, res, next) => {
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
-  } else if (req.cookies?.token) {
+  } else if (req.cookies?.token && req.cookies.token !== "none") {
     token = req.cookies.token;
   }
 
@@ -21,41 +31,77 @@ const authenticateUser = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Not authorized to access this route", 401));
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Support both decoded.userId and decoded.id
-    const userId = decoded.userId || decoded.id;
-
-    const user = await User.findById(userId).populate("department");
-    if (!user || !user.isActive) {
-      return next(new ErrorResponse("User not found or inactive", 401));
-    }
-
-    // Check account locking
-    if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
-      return next(
-        new ErrorResponse(
-          "Account is locked. Please contact administrator.",
-          401,
-        ),
-      );
-    }
-
-    // Verify token version (forces logout if password changed)
-    const currentTokenVersion = decoded.tokenVersion || 0;
-    const userTokenVersion = user.tokenVersion || 0;
-    if (currentTokenVersion < userTokenVersion) {
-      return next(
-        new ErrorResponse("Session expired, please login again", 401),
-      );
-    }
-
-    req.user = user;
-    next();
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
   } catch (err) {
+    logger.warn(`JWT verify failed (${err.name}): ${req.originalUrl}`);
     return next(new ErrorResponse("Not authorized, token failed", 401));
   }
+
+  const userId = decoded.userId || decoded.id;
+  const user = await User.findById(userId)
+    .select("-password -profilePhoto -resetPasswordOTP -resetPasswordToken")
+    .setOptions({ skipOrganizationFilter: true });
+
+  if (!user || !user.isActive) {
+    return next(new ErrorResponse("User not found or inactive", 401));
+  }
+
+  if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
+    return next(
+      new ErrorResponse(
+        "Account is locked. Please contact administrator.",
+        401,
+      ),
+    );
+  }
+
+  const currentTokenVersion = decoded.tokenVersion || 0;
+  const userTokenVersion = user.tokenVersion || 0;
+  if (currentTokenVersion < userTokenVersion) {
+    return next(
+      new ErrorResponse("Session expired, please login again", 401),
+    );
+  }
+
+  if (user.department) {
+    try {
+      await user.populate({
+        path: "department",
+        select: "name code",
+        options: { skipOrganizationFilter: true },
+      });
+    } catch (err) {
+      logger.warn(`Auth department populate skipped: ${err.message}`);
+    }
+  }
+
+  // Hospital tenancy is taken from the user record, never from a client JWT claim.
+  req.authToken = {
+    userId: decoded.userId || decoded.id,
+    role: decoded.role,
+    tokenVersion: decoded.tokenVersion,
+    activeOrganizationId: isSuperAdmin(user.role)
+      ? decoded.activeOrganizationId
+      : undefined,
+  };
+  req.user = user;
+
+  let context;
+  try {
+    context = await resolveOrganizationContext(user, req.authToken);
+  } catch (err) {
+    if (err instanceof ErrorResponse || err.statusCode) return next(err);
+    if (isJwtError(err)) {
+      return next(new ErrorResponse("Not authorized, token failed", 401));
+    }
+    logger.error(`Organization context failed: ${err.message}`);
+    return next(err);
+  }
+  setRequestOrganizationContext(req, context);
+
+  await bindOrganizationContext(context, res, next);
 });
 
 const authorizeRoles =
@@ -79,7 +125,6 @@ const authorizeRoles =
 const resolveUserPermissions = (user) =>
   resolveEffectivePermissions(normalizeRole(user.role), user.permissions);
 
-// Authorize permissions middleware (ALL listed codes required)
 const authorizePermissions =
   (...requiredPermissions) =>
   (req, res, next) => {
@@ -104,11 +149,6 @@ const authorizePermissions =
     next();
   };
 
-/**
- * Allow if user has ANY of the listed permissions (or '*').
- * Specific codes are required — MANAGE_PHARMACY is not a silent bypass for
- * EDIT_MEDICINE / batch / stock actions (those must be listed or granted).
- */
 const authorizeAnyPermission =
   (...requiredPermissions) =>
   (req, res, next) => {
@@ -131,7 +171,6 @@ const authorizeAnyPermission =
     next();
   };
 
-// Aliases for compatibility with existing codebase
 const protect = authenticateUser;
 const authorize = authorizeRoles;
 

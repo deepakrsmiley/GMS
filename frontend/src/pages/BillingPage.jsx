@@ -2,21 +2,24 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
   import { useSelector } from 'react-redux';
   import {
-    Plus, Printer, Search, Receipt, Pill, X, Eye,
+    Printer, Search, Receipt, Pill, Eye,
     Stethoscope, FlaskConical, Bed, Package, User,
-    RefreshCw, ChevronDown, ChevronUp, Edit3, History, Trash2,
+    RefreshCw, ChevronDown, ChevronUp, Edit3, Trash2,
+    FileText, Wallet, Hourglass, AlertCircle, MoreVertical,
+    Download, Calendar, Filter, Plus,
   } from 'lucide-react';
   import toast from 'react-hot-toast';
   import api from '../services/api';
   import { hasPermission } from '../constants/permissions';
   import Modal from '../components/common/Modal';
-  import DataTable from '../components/common/DataTable';
   import InvoicePrint from '../components/billing/InvoicePrint';
   import InvoiceDetailPanel from '../components/billing/InvoiceDetailPanel';
   import {
     flattenMedicineBatchOptions,
     formatBatchExpiry,
   } from '../utils/medicineBatches';
+  import { useBranding } from '../hooks/useBranding';
+  import { SYSTEM_NAME } from '../constants/branding';
   import '../styles/billing.css';
 
   const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
@@ -42,6 +45,86 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   };
 
   const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtTime = (d) => (d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—');
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+  const formatDoctor = (name) => {
+    if (!name) return '—';
+    const cleaned = String(name).replace(/^(dr\.?\s*)+/i, '').trim();
+    return cleaned ? `Dr. ${cleaned}` : '—';
+  };
+  const typeBadge = (type) => {
+    if (type === 'ip') return { cls: 'bl-type--ip', label: 'IP' };
+    if (type === 'pharmacy') return { cls: 'bl-type--ph', label: 'PH' };
+    if (type === 'lab') return { cls: 'bl-type--lab', label: 'LAB' };
+    return { cls: '', label: 'OP' };
+  };
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const dateBounds = (preset, customFrom, customTo) => {
+    const today = startOfDay(new Date());
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    if (preset === 'yesterday') {
+      const y = new Date(today); y.setDate(y.getDate() - 1);
+      return { from: y, to: today };
+    }
+    if (preset === '7d') {
+      const f = new Date(today); f.setDate(f.getDate() - 6);
+      return { from: f, to: tomorrow };
+    }
+    if (preset === '30d') {
+      const f = new Date(today); f.setDate(f.getDate() - 29);
+      return { from: f, to: tomorrow };
+    }
+    if (preset === 'custom') {
+      const from = customFrom ? startOfDay(new Date(`${customFrom}T00:00:00`)) : today;
+      let to = tomorrow;
+      if (customTo) {
+        to = startOfDay(new Date(`${customTo}T00:00:00`));
+        to.setDate(to.getDate() + 1);
+      }
+      return { from, to };
+    }
+    if (preset === 'previous') return { from: null, to: today };
+    return { from: today, to: tomorrow };
+  };
+
+  function Donut({ paid, pending, overdue, cancelled, total }) {
+    const parts = [
+      { v: paid, c: '#22c55e' },
+      { v: pending, c: '#f97316' },
+      { v: overdue, c: '#ef4444' },
+      { v: cancelled, c: '#8b5cf6' },
+    ];
+    const sum = parts.reduce((s, p) => s + p.v, 0) || 1;
+    let acc = 0;
+    const segs = parts.map((p) => {
+      const start = acc / sum;
+      acc += p.v;
+      return { ...p, start, end: acc / sum };
+    });
+    const arc = (a, b) => {
+      const r = 36;
+      const s = 2 * Math.PI * a - Math.PI / 2;
+      const e = 2 * Math.PI * b - Math.PI / 2;
+      const x1 = 50 + r * Math.cos(s);
+      const y1 = 50 + r * Math.sin(s);
+      const x2 = 50 + r * Math.cos(e);
+      const y2 = 50 + r * Math.sin(e);
+      const large = b - a > 0.5 ? 1 : 0;
+      return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
+    };
+    return (
+      <svg width="110" height="110" viewBox="0 0 100 100" aria-hidden>
+        <circle cx="50" cy="50" r="36" fill="none" stroke="#eef2f7" strokeWidth="10" />
+        {segs.filter((p) => p.v > 0).map((p) => (
+          p.end - p.start >= 0.999
+            ? <circle key={p.c} cx="50" cy="50" r="36" fill="none" stroke={p.c} strokeWidth="10" />
+            : <path key={p.c} d={arc(p.start, p.end)} fill="none" stroke={p.c} strokeWidth="10" strokeLinecap="butt" />
+        ))}
+        <text x="50" y="48" textAnchor="middle" fontSize="16" fontWeight="800" fill="#0f172a">{total}</text>
+        <text x="50" y="62" textAnchor="middle" fontSize="7" fill="#94a3b8">Total Bills</text>
+      </svg>
+    );
+  }
 
   // ── Mirrors backend CATEGORY_TYPE_MAP so manually-added charges get the
   // correct `type` for stock/audit logic without extra round-trips.
@@ -93,7 +176,19 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
   export default function BillingPage() {
     const { user } = useSelector((s) => s.auth);
+    const { branding } = useBranding();
     const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(10);
+    const [mainTab, setMainTab] = useState('op');
+    const [tableTab, setTableTab] = useState('today');
+    const [datePreset, setDatePreset] = useState('today');
+    const [customFrom, setCustomFrom] = useState('');
+    const [customTo, setCustomTo] = useState('');
+    const [deptFilter, setDeptFilter] = useState('');
+    const [typeFilter, setTypeFilter] = useState('');
+    const [showMoreFilters, setShowMoreFilters] = useState(false);
+    const [openMenuId, setOpenMenuId] = useState(null);
+    const [departments, setDepartments] = useState([]);
     const [showCreate, setShowCreate] = useState(false);
     const [showDetail, setShowDetail] = useState(null);
     const [showPayment, setShowPayment] = useState(null);
@@ -137,13 +232,28 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     });
     // ─────────────────────────────────────────────────────────────────────────
     const qc = useQueryClient();
+    const canCreate = hasPermission(user, 'CREATE_BILLING');
+    const canPay = hasPermission(user, 'PAY_BILL');
+    const canCancel = hasPermission(user, 'CANCEL_BILL');
+
+    const range = useMemo(() => {
+      if (tableTab === 'previous' && datePreset === 'today') return dateBounds('previous');
+      return dateBounds(datePreset, customFrom, customTo);
+    }, [datePreset, customFrom, customTo, tableTab]);
+
+    const listBillType = typeFilter || (mainTab === 'ip' ? 'ip' : mainTab === 'op' ? 'op' : 'all');
 
     const { data, isLoading } = useQuery({
-      queryKey: ['bills', page, search, statusFilter],
+      queryKey: ['bills', page, limit, search, statusFilter, listBillType, deptFilter, range.from?.toISOString(), range.to?.toISOString(), mainTab],
+      enabled: mainTab !== 'discharge',
       queryFn: () => {
-        const params = new URLSearchParams({ page, limit: 20 });
-        if (search) params.set('billNumber', search);
+        const params = new URLSearchParams({ page, limit });
+        if (search) params.set('search', search);
         if (statusFilter) params.set('status', statusFilter);
+        if (listBillType && listBillType !== 'all') params.set('billType', listBillType);
+        if (deptFilter) params.set('department', deptFilter);
+        if (range.from) params.set('from', range.from.toISOString());
+        if (range.to) params.set('to', range.to.toISOString());
         return api.get(`/billing?${params}`).then((r) => r.data);
       },
     });
@@ -156,16 +266,25 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     const { data: pendingDischarge, isError: pendingDischargeError, isFetching: pendingDischargeLoading } = useQuery({
       queryKey: ['pendingDischarge'],
       queryFn: () => api.get('/billing/pending-discharge').then((r) => r.data.data || []),
-      enabled: showCreate || showDischarge,
       retry: 1,
     });
+
+    const dischargeRows = useMemo(() => {
+      const q = search.trim().toLowerCase();
+      const rows = pendingDischarge || [];
+      if (!q) return rows;
+      return rows.filter((d) => {
+        const hay = `${d.patient?.name || ''} ${d.patient?.patientId || ''} ${d.patient?.phone || ''} ${d.admissionNumber || ''}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }, [pendingDischarge, search]);
 
     const [chargeMeta, setChargeMeta] = useState({ doctor: null, department: null, patientType: null });
 
     const loadPatientCharges = useCallback(async (patientId) => {
       setLoadingCharges(true);
       try {
-        const { data } = await api.get(`/billing/patient/${patientId}/charges`);
+        const { data } = await api.get(`/billing/patient/${patientId}/charges?billType=ip`);
         const rawCharges = (data.data.charges || []).map((c) => ({ ...c, included: c.included !== false }));
         setCharges(mergeConsultationCharges(rawCharges, data.data.doctor));
         setChargeMeta({ doctor: data.data.doctor, department: data.data.department, patientType: data.data.patientType });
@@ -178,12 +297,26 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     }, []);
 
     useEffect(() => {
+      api.get('/departments').then((r) => setDepartments(r.data.data || [])).catch(() => {});
+    }, []);
+
+    useEffect(() => {
       if (patientSearch.length >= 2) {
         api.get(`/patients/search?q=${patientSearch}`).then((r) => setPatients(r.data.data || []));
       } else {
         setPatients([]);
       }
     }, [patientSearch]);
+
+    useEffect(() => {
+      setPage(1);
+    }, [search, statusFilter, listBillType, deptFilter, datePreset, tableTab, mainTab, customFrom, customTo, limit]);
+
+    useEffect(() => {
+      const close = () => setOpenMenuId(null);
+      document.addEventListener('click', close);
+      return () => document.removeEventListener('click', close);
+    }, []);
 
     const selectPatient = (p) => {
       if (!p?._id) {
@@ -224,11 +357,17 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const billFromDischargeDetail = () => {
+      if (!canCreate) {
+        toast.error('You do not have permission to create bills');
+        return;
+      }
       if (!dischargeDetail?.patient?._id) {
         toast.error('Patient record is missing — cannot open bill');
         return;
       }
-      selectPatient(dischargeDetail.patient);
+      const patient = dischargeDetail.patient;
+      resetCreateForm();
+      selectPatient(patient);
       closeDischargeModals();
       setShowCreate(true);
     };
@@ -410,6 +549,15 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setMedResults([]);
       setNewCharge({ category: 'Miscellaneous', description: '', quantity: 1, unitPrice: '', gstPercent: 0 });
       setShowEditBill(true);
+    };
+
+    const startEditFromList = async (bill) => {
+      try {
+        const full = await api.get(`/billing/${bill._id}`).then((r) => r.data.data);
+        openEditBill(full);
+      } catch {
+        toast.error('Unable to load bill for editing');
+      }
     };
 
     useEffect(() => {
@@ -699,153 +847,545 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       createMut.mutate(payload);
     };
 
-    const columns = [
-      {
-        key: 'billNumber',
-        header: 'Invoice #',
-        render: (r) => (
-          <button type="button" onClick={() => setShowDetail(r._id)} className="bl-inv">
-            {r.billNumber}
-          </button>
-        ),
-      },
-      {
-        key: 'uhid',
-        header: 'UHID',
-        render: (r) => (
-          <span className="bl-uhid" title="Patient ID from registration">
-            {r.patient?.patientId || '—'}
-          </span>
-        ),
-      },
-      {
-        key: 'patient',
-        header: 'Patient',
-        render: (r) => <p className="bl-patient">{r.patient?.name || '—'}</p>,
-      },
-      {
-        key: 'billType',
-        header: 'Type',
-        render: (r) => <span className="bl-type">{r.billType || 'unified'}</span>,
-      },
-      {
-        key: 'totalAmount',
-        header: 'Total',
-        render: (r) => <span className="bl-amt">{fmt(r.totalAmount)}</span>,
-      },
-      {
-        key: 'dueAmount',
-        header: 'Due',
-        render: (r) => (
-          <span className={`bl-due ${r.dueAmount > 0 ? 'bl-due--warn' : 'bl-due--ok'}`}>
-            {fmt(r.dueAmount)}
-          </span>
-        ),
-      },
-      {
-        key: 'status',
-        header: 'Status',
-        render: (r) => (
-          <span className={`bl-status ${STATUS_CLASS[r.status] || 'bl-status--draft'}`}>
-            {r.status}
-          </span>
-        ),
-      },
-      {
-        key: 'actions',
-        header: 'Actions',
-        render: (r) => (
-          <div className="bl-actions">
-            <button type="button" onClick={() => setShowDetail(r._id)} title="View" className="bl-icon-btn">
-              <Eye size={14} />
-            </button>
-            <button type="button" onClick={() => openPrintPreview(r._id)} title="Print Preview" className="bl-icon-btn">
-              <Printer size={14} />
-            </button>
-          </div>
-        ),
-      },
-    ];
+    const generateIpBill = (row) => {
+      if (!canCreate) {
+        toast.error('You do not have permission to create bills');
+        return;
+      }
+      if (!row?.patient?._id) {
+        toast.error('Patient record is missing — cannot open bill');
+        return;
+      }
+      resetCreateForm();
+      selectPatient(row.patient);
+      closeDischargeModals();
+      setShowCreate(true);
+    };
+
+    const isDischargeTab = mainTab === 'discharge';
+    const bills = data?.data || [];
+    const tableRows = isDischargeTab
+      ? dischargeRows.slice((page - 1) * limit, page * limit)
+      : bills;
+    const totalCount = isDischargeTab ? dischargeRows.length : (data?.total || 0);
+    const pageCount = isDischargeTab
+      ? Math.max(1, Math.ceil((dischargeRows.length || 0) / limit) || 1)
+      : (data?.pages || 1);
+    const showingFrom = totalCount === 0 ? 0 : (page - 1) * limit + 1;
+    const showingTo = Math.min(page * limit, totalCount);
+    const stats = statsData || {};
+    const summary = stats.summary || {};
+    const pageNumbers = (() => {
+      if (pageCount <= 7) return Array.from({ length: pageCount }, (_, i) => i + 1);
+      const set = new Set([1, pageCount, page, page - 1, page + 1]);
+      return [...set].filter((n) => n >= 1 && n <= pageCount).sort((a, b) => a - b);
+    })();
+
+    const exportRows = () => {
+      const rows = isDischargeTab
+        ? [
+          ['Admission No', 'Patient', 'UHID', 'Phone', 'Department', 'Doctor', 'Status', 'Est. Amount'],
+          ...dischargeRows.map((d) => [
+            d.admissionNumber || '',
+            d.patient?.name || '',
+            d.patient?.patientId || '',
+            d.patient?.phone || '',
+            d.department?.name || '',
+            d.doctor?.name || '',
+            d.admissionStatus || '',
+            d.estimatedTotal || 0,
+          ]),
+        ]
+        : [
+          ['Bill No', 'Date', 'Patient', 'UHID', 'Phone', 'Type', 'Department', 'Doctor', 'Time', 'Amount', 'Paid', 'Due', 'Status'],
+          ...bills.map((r) => [
+            r.billNumber || '',
+            r.createdAt || '',
+            r.patient?.name || '',
+            r.patient?.patientId || '',
+            r.patient?.phone || '',
+            r.billType || '',
+            r.department?.name || '',
+            r.doctor?.name || '',
+            r.createdAt || '',
+            r.totalAmount || 0,
+            r.paidAmount || 0,
+            r.dueAmount || 0,
+            r.status || '',
+          ]),
+        ];
+      const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = isDischargeTab ? 'pending-discharge.csv' : 'bills.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const openMainTab = (tab) => {
+      setMainTab(tab);
+      setOpenMenuId(null);
+      if (tab === 'previous') {
+        setTableTab('previous');
+        setDatePreset('today');
+      } else if (tab !== 'discharge') {
+        setTableTab('today');
+      }
+    };
 
     return (
-      <div className="bl-shell space-y-4">
-        <header className="bl-masthead">
+      <div className="bl-shell">
+        <header className="bl-head">
           <div>
-            <p className="bl-masthead__eyebrow">Finance · Invoicing</p>
-            <h1 className="bl-masthead__title">Unified Billing</h1>
-            <p className="bl-masthead__meta">OP, IP, Lab, Pharmacy &amp; other consolidated invoices</p>
-          </div>
-          <div className="bl-masthead__actions">
-            <button
-              type="button"
-              onClick={() => { setDischargeDetail(null); setShowDischarge(true); }}
-              className="bl-btn bl-btn--ghost"
-            >
-              <Bed size={14} /> Pending Discharge
-              {pendingDischarge?.length > 0 && (
-                <span className="bl-btn__count">{pendingDischarge.length}</span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => { resetCreateForm(); setShowCreate(true); }}
-              className="bl-btn bl-btn--primary"
-            >
-              <Plus size={14} /> IP Billing
-            </button>
+            <h1>Billing</h1>
+            <p>Manage OP, IP and all hospital billing from one place.</p>
           </div>
         </header>
 
-        {statsData && (
-          <div className="bl-kpis">
-            <div className="bl-kpi bl-kpi--ok">
-              <p className="bl-kpi__label">Today&apos;s Revenue</p>
-              <p className="bl-kpi__value">{fmt(statsData.todayRevenue)}</p>
-            </div>
-            <div className="bl-kpi bl-kpi--accent">
-              <p className="bl-kpi__label">Month Revenue</p>
-              <p className="bl-kpi__value">{fmt(statsData.monthRevenue)}</p>
-            </div>
-            <div className="bl-kpi bl-kpi--warn">
-              <p className="bl-kpi__label">Pending Bills</p>
-              <p className="bl-kpi__value">{statsData.pendingBills}</p>
-            </div>
-            <div className="bl-kpi">
-              <p className="bl-kpi__label">Today&apos;s Bills</p>
-              <p className="bl-kpi__value">{statsData.totalBills}</p>
-            </div>
-          </div>
-        )}
-
-        <section className="bl-panel">
-          <div className="bl-toolbar">
-            <div className="bl-search">
-              <Search size={15} />
-              <input
-                type="search"
-                placeholder="Search invoice number…"
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              />
-            </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              className="bl-select"
+        <nav className="bl-tabs">
+          {[
+            { key: 'op', label: 'OP Billing' },
+            { key: 'ip', label: 'IP Billing' },
+            { key: 'discharge', label: 'Pending Discharge' },
+            { key: 'previous', label: 'Previous Bills' },
+          ].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              className={`bl-tab${mainTab === t.key ? ' is-on' : ''}`}
+              onClick={() => openMainTab(t.key)}
             >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="bl-kpis">
+          <button type="button" className="bl-kpi" onClick={() => { openMainTab('op'); setTableTab('today'); setDatePreset('today'); setStatusFilter(''); }}>
+            <span className="bl-kpi-ico bl-kpi-ico--blue"><FileText size={18} /></span>
+            <span>
+              <p className="bl-kpi-label">Today&apos;s Bills</p>
+              <p className="bl-kpi-value">{stats.totalBills || 0}</p>
+              <p className="bl-kpi-sub">{fmt(stats.todayBillsAmount)}</p>
+            </span>
+          </button>
+          <button type="button" className="bl-kpi" onClick={() => { openMainTab('op'); setTableTab('today'); setDatePreset('today'); setStatusFilter('paid'); setShowMoreFilters(true); }}>
+            <span className="bl-kpi-ico bl-kpi-ico--green"><Wallet size={18} /></span>
+            <span>
+              <p className="bl-kpi-label">Today&apos;s Collection</p>
+              <p className="bl-kpi-value">{fmt(stats.todayCollection || stats.todayRevenue)}</p>
+              <p className="bl-kpi-sub">Received</p>
+            </span>
+          </button>
+          <button type="button" className="bl-kpi" onClick={() => { openMainTab(mainTab === 'ip' ? 'ip' : 'op'); setDatePreset('30d'); setTableTab('today'); setStatusFilter('pending'); setShowMoreFilters(true); }}>
+            <span className="bl-kpi-ico bl-kpi-ico--orange"><Hourglass size={18} /></span>
+            <span>
+              <p className="bl-kpi-label">Pending Bills</p>
+              <p className="bl-kpi-value">{stats.pendingBills || 0}</p>
+              <p className="bl-kpi-sub">{fmt(stats.pendingAmount)}</p>
+            </span>
+          </button>
+          <button type="button" className="bl-kpi" onClick={() => { openMainTab(mainTab === 'ip' ? 'ip' : 'op'); setTableTab('previous'); setDatePreset('today'); setStatusFilter('pending'); setShowMoreFilters(true); }}>
+            <span className="bl-kpi-ico bl-kpi-ico--red"><AlertCircle size={18} /></span>
+            <span>
+              <p className="bl-kpi-label">Overdue Bills</p>
+              <p className="bl-kpi-value">{stats.overdueBills || 0}</p>
+              <p className="bl-kpi-sub">{fmt(stats.overdueAmount)}</p>
+            </span>
+          </button>
+          <button type="button" className="bl-kpi" onClick={() => openMainTab('discharge')}>
+            <span className="bl-kpi-ico bl-kpi-ico--purple"><Bed size={18} /></span>
+            <span>
+              <p className="bl-kpi-label">Pending Discharge</p>
+              <p className="bl-kpi-value">{stats.pendingDischarge || pendingDischarge?.length || 0}</p>
+              <p className="bl-kpi-sub">{fmt(stats.pendingDischargeAmount)}</p>
+            </span>
+          </button>
+        </div>
+
+        <div className="bl-filters">
+          <div className="bl-search">
+            <Search size={15} />
+            <input
+              type="search"
+              placeholder="Search by Name, Phone, UHID or Bill No..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="bl-chips">
+            {[
+              { key: 'today', label: 'Today' },
+              { key: 'yesterday', label: 'Yesterday' },
+              { key: '7d', label: 'Last 7 Days' },
+              { key: '30d', label: 'Last 30 Days' },
+              { key: 'custom', label: 'Custom Date' },
+            ].map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className={`bl-chip${datePreset === c.key ? ' is-on' : ''}`}
+                onClick={() => {
+                  setDatePreset(c.key);
+                  if (c.key === 'today') setTableTab('today');
+                }}
+              >
+                {c.key === 'custom' && <Calendar size={13} />}
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {datePreset === 'custom' && (
+            <div className="bl-custom-dates">
+              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            </div>
+          )}
+          <select className="bl-select" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+            <option value="">All Departments</option>
+            {departments.map((d) => (
+              <option key={d._id} value={d._id}>{d.name}</option>
+            ))}
+          </select>
+          <select className="bl-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <option value="">All Types</option>
+            <option value="op">OP</option>
+            <option value="ip">IP</option>
+            <option value="pharmacy">Pharmacy</option>
+            <option value="lab">Lab</option>
+          </select>
+          <button type="button" className="bl-more" onClick={() => setShowMoreFilters((v) => !v)}>
+            <Filter size={14} /> More Filters
+          </button>
+          {(showMoreFilters || statusFilter) && (
+            <select className="bl-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All Status</option>
               {['pending', 'partial', 'paid', 'cancelled'].map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
-            <p className="bl-toolbar__hint">
-              Page {page}{data?.pages ? ` of ${data.pages}` : ''}
-            </p>
-          </div>
-          <div className="bl-table-wrap">
-            <DataTable columns={columns} data={data?.data || []} loading={isLoading} page={page} pages={data?.pages || 1} onPageChange={setPage} />
-          </div>
-        </section>
+          )}
+        </div>
+
+        <div className="bl-layout">
+          <section className="bl-panel">
+            <div className="bl-panel-bar">
+              {isDischargeTab ? (
+                <h2 className="bl-subtab is-on" style={{ cursor: 'default' }}>Pending Discharge</h2>
+              ) : (
+                <div className="bl-subtabs">
+                  <button
+                    type="button"
+                    className={`bl-subtab${tableTab === 'today' ? ' is-on' : ''}`}
+                    onClick={() => { setTableTab('today'); setDatePreset('today'); }}
+                  >
+                    Today&apos;s Bills
+                  </button>
+                  <button
+                    type="button"
+                    className={`bl-subtab${tableTab === 'previous' ? ' is-on' : ''}`}
+                    onClick={() => setTableTab('previous')}
+                  >
+                    Previous Bills
+                  </button>
+                </div>
+              )}
+              <div className="bl-panel-tools">
+                <button type="button" className="bl-tool" onClick={exportRows}>
+                  <Download size={14} /> Export
+                </button>
+              </div>
+            </div>
+
+            <div className="bl-table-wrap">
+              {isDischargeTab ? (
+                pendingDischargeLoading && !pendingDischarge ? (
+                  <p className="bl-empty">Loading pending discharge…</p>
+                ) : pendingDischargeError ? (
+                  <p className="bl-empty">Could not load pending discharge.</p>
+                ) : tableRows.length === 0 ? (
+                  <p className="bl-empty">No pending discharge patients.</p>
+                ) : (
+                  <table className="bl-table">
+                    <thead>
+                      <tr>
+                        <th>Admission No.</th>
+                        <th>Patient Details</th>
+                        <th>Type</th>
+                        <th>Department</th>
+                        <th>Doctor</th>
+                        <th>Admitted</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableRows.map((d) => (
+                        <tr key={d.admissionId}>
+                          <td>
+                            <button type="button" className="bl-inv" onClick={() => { setShowDischarge(true); openDischargePatientDetail(d); }}>
+                              {d.admissionNumber || '—'}
+                            </button>
+                            <span className="bl-date">{fmtDate(d.admissionDate)}</span>
+                          </td>
+                          <td>
+                            <div className="bl-pname">{d.patient?.name || '—'}</div>
+                            <div className="bl-pmeta">{d.patient?.patientId || '—'} · {d.patient?.phone || '—'}</div>
+                          </td>
+                          <td><span className="bl-type bl-type--ip">IP</span></td>
+                          <td>{d.department?.name || '—'}</td>
+                          <td>{formatDoctor(d.doctor?.name)}</td>
+                          <td>{fmtTime(d.admissionDate)}</td>
+                          <td><span className="bl-due bl-due--warn">{fmt(d.estimatedTotal)}</span></td>
+                          <td>
+                            <span className={`bl-status ${d.admissionStatus === 'admitted' ? 'bl-status--paid' : 'bl-status--pending'}`}>
+                              {d.admissionStatus === 'admitted' ? 'Admitted' : 'Pending'}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="bl-actions">
+                              <button type="button" className="bl-icon-btn" title="View" onClick={() => { setShowDischarge(true); openDischargePatientDetail(d); }}>
+                                <Eye size={14} />
+                              </button>
+                              <div>
+                                <button
+                                  type="button"
+                                  className="bl-icon-btn"
+                                  onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === d.admissionId ? null : d.admissionId); }}
+                                >
+                                  <MoreVertical size={14} />
+                                </button>
+                                {openMenuId === d.admissionId && (
+                                  <div className="bl-menu" onClick={(e) => e.stopPropagation()}>
+                                    <button type="button" onClick={() => { setOpenMenuId(null); setShowDischarge(true); openDischargePatientDetail(d); }}>
+                                      <Eye size={14} /> View details
+                                    </button>
+                                    {canCreate && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); generateIpBill(d); }}>
+                                        <FileText size={14} /> Generate bill
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              ) : isLoading ? (
+                <p className="bl-empty">Loading bills…</p>
+              ) : tableRows.length === 0 ? (
+                <p className="bl-empty">No bills found for the selected filters.</p>
+              ) : (
+                <table className="bl-table">
+                  <thead>
+                    <tr>
+                      <th>Bill No.</th>
+                      <th>Patient Details</th>
+                      <th>Type</th>
+                      <th>Department</th>
+                      <th>Doctor</th>
+                      <th>Bill Time</th>
+                      <th>Amount</th>
+                      <th>Paid</th>
+                      <th>Due</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map((r) => {
+                      const badge = typeBadge(r.billType);
+                      return (
+                        <tr key={r._id}>
+                          <td>
+                            <button type="button" className="bl-inv" onClick={() => setShowDetail(r._id)}>{r.billNumber}</button>
+                            <span className="bl-date">{fmtDate(r.createdAt)}</span>
+                          </td>
+                          <td>
+                            <div className="bl-pname">{r.patient?.name || '—'}</div>
+                            <div className="bl-pmeta">{r.patient?.patientId || '—'} · {r.patient?.phone || '—'}</div>
+                          </td>
+                          <td><span className={`bl-type ${badge.cls}`}>{badge.label}</span></td>
+                          <td>{r.department?.name || '—'}</td>
+                          <td>{formatDoctor(r.doctor?.name)}</td>
+                          <td>{fmtTime(r.createdAt)}</td>
+                          <td><span className="bl-amt">{fmt(r.totalAmount)}</span></td>
+                          <td><span className="bl-paid">{fmt(r.paidAmount)}</span></td>
+                          <td><span className={`bl-due ${r.dueAmount > 0 ? 'bl-due--warn' : 'bl-due--ok'}`}>{fmt(r.dueAmount)}</span></td>
+                          <td>
+                            <span className={`bl-status ${STATUS_CLASS[r.status] || 'bl-status--draft'}`}>{r.status}</span>
+                          </td>
+                          <td>
+                            <div className="bl-actions">
+                              <button type="button" className="bl-icon-btn" title="View" onClick={() => setShowDetail(r._id)}>
+                                <Eye size={14} />
+                              </button>
+                              <div>
+                                <button
+                                  type="button"
+                                  className="bl-icon-btn"
+                                  onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === r._id ? null : r._id); }}
+                                >
+                                  <MoreVertical size={14} />
+                                </button>
+                                {openMenuId === r._id && (
+                                  <div className="bl-menu" onClick={(e) => e.stopPropagation()}>
+                                    <button type="button" onClick={() => { setOpenMenuId(null); openPrintPreview(r._id); }}>
+                                      <Printer size={14} /> Print preview
+                                    </button>
+                                    {canPay && r.dueAmount > 0 && r.status !== 'cancelled' && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); setShowPayment(r); }}>
+                                        <Wallet size={14} /> Record payment
+                                      </button>
+                                    )}
+                                    {canEditBill(r) && (
+                                      <button type="button" onClick={() => { setOpenMenuId(null); startEditFromList(r); }}>
+                                        <Edit3 size={14} /> Edit bill
+                                      </button>
+                                    )}
+                                    {canCancel && r.status !== 'cancelled' && (
+                                      <button
+                                        type="button"
+                                        className="is-danger"
+                                        onClick={() => {
+                                          setOpenMenuId(null);
+                                          if (window.confirm('Cancel this bill?')) cancelMut.mutate(r._id);
+                                        }}
+                                      >
+                                        <Trash2 size={14} /> Cancel bill
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="bl-pager">
+              <span className="bl-pager-count">
+                Showing {showingFrom} to {showingTo} of {totalCount} {isDischargeTab ? 'patients' : 'bills'}
+              </span>
+              <div>
+                <button type="button" className="bl-page" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹</button>
+                {pageNumbers.map((n, i) => (
+                  <span key={n}>
+                    {i > 0 && n - pageNumbers[i - 1] > 1 && <span className="bl-page" style={{ border: 'none', cursor: 'default' }}>…</span>}
+                    <button type="button" className={`bl-page${page === n ? ' is-on' : ''}`} onClick={() => setPage(n)}>{n}</button>
+                  </span>
+                ))}
+                <button type="button" className="bl-page" disabled={page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>›</button>
+              </div>
+              <label className="bl-pager-right">
+                <select className="bl-select" value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={{ minWidth: 90, height: 32 }}>
+                  {[10, 20, 50].map((n) => <option key={n} value={n}>{n} / page</option>)}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <aside className="bl-side">
+            <div className="bl-card">
+              <div className="bl-card-head">
+                <h3 className="bl-card-title">Pending Discharge</h3>
+                <button type="button" className="bl-link" onClick={() => openMainTab('discharge')}>View All</button>
+              </div>
+              {pendingDischargeLoading && !pendingDischarge?.length ? (
+                <p className="bl-empty" style={{ padding: 12 }}>Loading…</p>
+              ) : !(pendingDischarge || []).length ? (
+                <p className="bl-empty" style={{ padding: 12 }}>No pending discharges.</p>
+              ) : (
+                <>
+                  {(pendingDischarge || []).slice(0, 5).map((d) => (
+                    <button
+                      key={d.admissionId}
+                      type="button"
+                      className="bl-pd"
+                      onClick={() => { setShowDischarge(true); openDischargePatientDetail(d); }}
+                    >
+                      <div className="bl-pd-top">
+                        <span className="bl-inv">{d.admissionNumber}</span>
+                        <span className="bl-pd-amt">{fmt(d.estimatedTotal)}</span>
+                      </div>
+                      <div className="bl-pd-name">{d.patient?.name || '—'}</div>
+                      <div className="bl-pd-room">
+                        {d.bed?.bedNumber ? `Bed ${d.bed.bedNumber}` : '—'}
+                        {d.department?.name ? ` · ${d.department.name}` : ''}
+                      </div>
+                    </button>
+                  ))}
+                  <div className="bl-pd-foot">
+                    <span>{(pendingDischarge || []).length} patients</span>
+                    <span>{fmt((pendingDischarge || []).reduce((s, d) => s + (Number(d.estimatedTotal) || 0), 0))}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="bl-card">
+              <div className="bl-card-head">
+                <h3 className="bl-card-title">Today&apos;s Summary</h3>
+              </div>
+              <div className="bl-summary">
+                <Donut
+                  paid={summary.paid?.count || 0}
+                  pending={summary.pending?.count || 0}
+                  overdue={summary.overdue?.count || 0}
+                  cancelled={summary.cancelled?.count || 0}
+                  total={stats.totalBills || 0}
+                />
+                <div className="bl-legend">
+                  <div className="bl-leg">
+                    <span className="bl-dot" style={{ background: '#22c55e' }} />
+                    <div>
+                      <strong>Paid · {summary.paid?.count || 0}</strong>
+                      <span>{fmt(summary.paid?.total)}</span>
+                    </div>
+                  </div>
+                  <div className="bl-leg">
+                    <span className="bl-dot" style={{ background: '#f97316' }} />
+                    <div>
+                      <strong>Pending · {summary.pending?.count || 0}</strong>
+                      <span>{fmt(summary.pending?.total)}</span>
+                    </div>
+                  </div>
+                  <div className="bl-leg">
+                    <span className="bl-dot" style={{ background: '#ef4444' }} />
+                    <div>
+                      <strong>Overdue · {summary.overdue?.count || 0}</strong>
+                      <span>{fmt(summary.overdue?.total)}</span>
+                    </div>
+                  </div>
+                  <div className="bl-leg">
+                    <span className="bl-dot" style={{ background: '#8b5cf6' }} />
+                    <div>
+                      <strong>Cancelled · {summary.cancelled?.count || 0}</strong>
+                      <span>{fmt(summary.cancelled?.total)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <footer className="bl-foot">
+          <span>© {new Date().getFullYear()} {branding.systemName || SYSTEM_NAME}. All rights reserved.</span>
+          <span>Version 2.0.0</span>
+        </footer>
 
         {/* UNIFIED BILLING MODAL */}
         <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); resetCreateForm(); }} title="IP Billing — Create Bill" size="full">
@@ -1477,7 +2017,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                  <button type="button" onClick={billFromDischargeDetail} className="btn-primary flex-1 justify-center">
+                  <button type="button" onClick={billFromDischargeDetail} className="btn-primary flex-1 justify-center" disabled={!canCreate}>
                     Open IP Billing with these charges
                   </button>
                   <button

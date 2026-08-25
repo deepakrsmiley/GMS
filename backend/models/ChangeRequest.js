@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 /**
  * Staff change / edit requests reviewed by Super Admin (or Admin).
@@ -66,5 +67,7 @@ const changeRequestSchema = new mongoose.Schema({
 changeRequestSchema.index({ status: 1, createdAt: -1 });
 changeRequestSchema.index({ requestedBy: 1, createdAt: -1 });
 changeRequestSchema.index({ category: 1 });
+
+applyOrganizationScope(changeRequestSchema);
 
 module.exports = mongoose.model('ChangeRequest', changeRequestSchema);

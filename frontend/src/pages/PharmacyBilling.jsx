@@ -1,12 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Printer, RefreshCw, FileBarChart2 } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Printer, RefreshCw, FileBarChart2, Search, Download, Filter } from 'lucide-react';
 import '../styles/pharmacyBillingReports.css';
 
 const API = '/api/billing';
 
 const fmt = (n) =>
   `₹${(+n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Date().toLocaleDateString('en-CA');
+const yesterday = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString('en-CA');
+};
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem('hms_token');
@@ -20,15 +25,10 @@ const authFetch = (url, options = {}) => {
   });
 };
 
-const SHIFT_LABELS = {
-  morning: 'Morning  7AM - 7PM',
-  night: 'Night  7PM - 7AM',
-};
-
-function ShiftBadge({ shift }) {
-  const key = shift === 'night' ? 'night' : 'morning';
-  const label = key === 'morning' ? 'Morning 7AM–7PM' : 'Night 7PM–7AM';
-  return <span className={`pbr-badge pbr-badge--${key}`}>{label}</span>;
+function ModeBadge({ mode }) {
+  const key = String(mode || '').toLowerCase();
+  const label = key === 'upi' ? 'UPI' : key ? key : '—';
+  return <span className={`pbr-mode pbr-mode--${key || 'other'}`}>{label}</span>;
 }
 
 function openPrintWindow(title, html) {
@@ -44,7 +44,13 @@ function openPrintWindow(title, html) {
       .pbr-pos{color:#047857;font-weight:700}.pbr-neg{color:#b91c1c;font-weight:700}
       .pbr-badge{display:inline-block;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;border:1px solid #e2e8f0}
       .pbr-summary{display:flex;gap:20px;background:#0b1f3a;color:#fff;padding:12px 16px;margin-bottom:14px}
-      .pbr-shift-card{border:1px solid #e2e8f0;padding:12px;margin-bottom:12px}
+      .pbr-mode{display:inline-block;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;border-radius:10px}
+      .pbr-mode--cash{background:#dcfce7;color:#15803d}
+      .pbr-mode--card{background:#dbeafe;color:#1d4ed8}
+      .pbr-mode--upi{background:#ede9fe;color:#6d28d9}
+      .no-print{display:none !important}
+      .print-only{display:table-row-group}
+      .print-only.pbr-summary,.pbr-summary.print-only{display:flex}
       @media print{button{display:none}}
     </style></head><body>${html}</body></html>`);
   win.document.close();
@@ -54,20 +60,10 @@ function openPrintWindow(title, html) {
 
 export default function PharmacyBilling() {
   const [tab, setTab] = useState('shift');
-  const [stats, setStats] = useState(null);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const r = await authFetch(`${API}/stats`);
-      const d = await r.json();
-      setStats(d.data || d);
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => { fetchStats(); }, [fetchStats]);
+  const [headerStats, setHeaderStats] = useState(null);
 
   const TABS = [
-    { id: 'shift', label: 'Shift Report' },
+    { id: 'shift', label: 'Sales Report' },
     { id: 'daily', label: 'Daily' },
     { id: 'weekly', label: 'Weekly' },
     { id: 'monthly', label: 'Monthly' },
@@ -79,21 +75,23 @@ export default function PharmacyBilling() {
       <header className="pbr-masthead">
         <div>
           <div className="pbr-masthead__eyebrow">Pharmacy · Finance</div>
-          <h1 className="pbr-masthead__title">Pharmacy Billing Reports</h1>
-          <p className="pbr-masthead__sub">Shift-wise account settlement · Daily / Weekly / Monthly collections</p>
+          <h1 className="pbr-masthead__title">Pharmacy Sales Reports</h1>
+          <p className="pbr-masthead__sub">Only amounts paid in Billing for pharmacy / medicines — unpaid bills are not included</p>
         </div>
-        {stats && (
+        {headerStats && (
           <div className="pbr-masthead__kpis">
             <div className="pbr-kpi">
-              <div className="pbr-kpi__value">{stats.totalBills ?? stats.today?.totalBills ?? '—'}</div>
-              <div className="pbr-kpi__label">Today Bills</div>
+              <div className="pbr-kpi__value">{headerStats.totalBills ?? 0}</div>
+              <div className="pbr-kpi__label">Bills</div>
             </div>
             <div className="pbr-kpi">
-              <div className="pbr-kpi__value">{fmt(stats.todayRevenue ?? stats.today?.totalPaid ?? 0)}</div>
-              <div className="pbr-kpi__label">Collected</div>
+              <div className="pbr-kpi__value">{fmt(headerStats.totalPaid ?? 0)}</div>
+              <div className="pbr-kpi__label">Paid in Billing</div>
             </div>
             <div className="pbr-kpi">
-              <div className="pbr-kpi__value pbr-kpi__value--warn">{fmt(stats.today?.totalDue ?? 0)}</div>
+              <div className={`pbr-kpi__value ${(headerStats.totalDue || 0) > 0 ? 'pbr-kpi__value--warn' : ''}`}>
+                {fmt(headerStats.totalDue ?? 0)}
+              </div>
               <div className="pbr-kpi__label">Due</div>
             </div>
           </div>
@@ -114,7 +112,7 @@ export default function PharmacyBilling() {
       </nav>
 
       <div className="pbr-body">
-        {tab === 'shift' && <ShiftReport />}
+        {tab === 'shift' && <ShiftReport onSummary={setHeaderStats} />}
         {tab === 'daily' && <DailyReport />}
         {tab === 'weekly' && <WeeklyReport />}
         {tab === 'monthly' && <MonthlyReport />}
@@ -124,228 +122,287 @@ export default function PharmacyBilling() {
   );
 }
 
-function ShiftReport() {
+function ShiftReport({ onSummary }) {
+  const [preset, setPreset] = useState('today');
   const [date, setDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const printRef = useRef();
+
+  const applyPreset = (id) => {
+    setPreset(id);
+    if (id === 'today') setDate(today());
+    if (id === 'yesterday') setDate(yesterday());
+  };
 
   const load = async () => {
     setLoading(true);
     setError(null);
-    setData(null);
+    setPage(1);
     try {
       const r = await authFetch(`${API}/report/shift?date=${date}`);
       const d = await r.json();
+      if (!r.ok) throw new Error(d.message || 'Failed to load sales report');
       setData(d);
     } catch (e) {
-      setError(e.message || 'Failed to load shift report');
+      setError(e.message || 'Failed to load sales report');
+      setData(null);
     }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, [date]);
 
-  const shifts = (() => {
-    if (!data) return [];
-    if (Array.isArray(data.shifts)) return data.shifts;
-    if (data.data && Array.isArray(data.data.shifts)) return data.data.shifts;
-    if (Array.isArray(data.data)) return data.data;
-    return [];
-  })();
-
+  const bills = data?.bills || data?.data?.bills || [];
   const summary = data?.summary ?? data?.data?.summary ?? {};
 
-  const handlePrint = () => openPrintWindow(`Shift Report - ${date}`, printRef.current?.innerHTML || '');
+  useEffect(() => {
+    if (onSummary && data?.summary) onSummary(data.summary);
+  }, [data, onSummary]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return bills;
+    return bills.filter((b) =>
+      [b.billNumber, b.patientName, b.patientId, b.phone, b.billedByName, b.paymentMode]
+        .some((v) => String(v || '').toLowerCase().includes(q)),
+    );
+  }, [bills, search]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageSafe = Math.min(page, pages);
+  const paged = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+
+  const handlePrint = () => openPrintWindow(`Pharmacy Sales Report - ${date}`, printRef.current?.innerHTML || '');
+
+  const handleExport = () => {
+    const cols = ['Bill No', 'Patient', 'UHID', 'Mobile', 'Time', 'Items', 'Amount', 'Discount', 'Paid', 'Mode', 'Created By', 'Status'];
+    const lines = [
+      cols.join(','),
+      ...filtered.map((b) => [
+        b.billNumber,
+        `"${String(b.patientName || '').replace(/"/g, '""')}"`,
+        b.patientId || '',
+        b.phone || '',
+        b.createdAt ? new Date(b.createdAt).toLocaleString('en-IN') : '',
+        b.items ?? 0,
+        b.totalAmount ?? 0,
+        b.discount ?? 0,
+        b.paidAmount ?? 0,
+        b.paymentMode || '',
+        `"${String(b.billedByName || '').replace(/"/g, '""')}"`,
+        b.status || '',
+      ].join(',')),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pharmacy-sales-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div>
       <div className="pbr-toolbar">
+        <div className="pbr-presets">
+          {[
+            { id: 'today', label: 'Today' },
+            { id: 'yesterday', label: 'Yesterday' },
+            { id: 'custom', label: 'Custom Date' },
+          ].map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`pbr-preset ${preset === p.id ? 'is-active' : ''}`}
+              onClick={() => applyPreset(p.id)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <div className="pbr-field">
-          <label>Select Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <label>Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => { setPreset('custom'); setDate(e.target.value); }}
+          />
         </div>
         <button type="button" className="pbr-btn pbr-btn--primary" onClick={load}>
-          <RefreshCw size={14} /> Load Shift Report
+          <Filter size={14} /> View Report
         </button>
-        {data && shifts.length > 0 && (
-          <button type="button" className="pbr-btn pbr-btn--print" onClick={handlePrint}>
-            <Printer size={14} /> Print / Save PDF
-          </button>
+        {bills.length > 0 && (
+          <>
+            <button type="button" className="pbr-btn pbr-btn--print" onClick={handlePrint}>
+              <Printer size={14} /> Print all bills
+            </button>
+            <button type="button" className="pbr-btn pbr-btn--ghost" onClick={handleExport}>
+              <Download size={14} /> Export Report
+            </button>
+          </>
         )}
       </div>
 
-      {loading && <div className="pbr-loading">Loading shift report…</div>}
+      {loading && <div className="pbr-loading">Loading pharmacy sales…</div>}
       {error && <div className="pbr-alert pbr-alert--error">Error: {error}</div>}
 
-      {data && shifts.length === 0 && !loading && (
-        <div className="pbr-alert pbr-alert--warn">No shift data found for {date}.</div>
-      )}
-
-      {data && shifts.length > 0 && (
-        <div ref={printRef}>
-          <div className="pbr-report-title">
-            <h1>Pharmacy Shift Report</h1>
-            <p>
-              Date:{' '}
-              <strong>
-                {new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-              </strong>
-              {' · '}Generated: <strong>{new Date().toLocaleTimeString('en-IN')}</strong>
-            </p>
+      {data && !loading && (
+        <>
+          <div className="pbr-stat-grid">
+            <div className="pbr-stat"><div className="pbr-stat__value">{summary.totalBills ?? 0}</div><div className="pbr-stat__label">Total Bills</div></div>
+            <div className="pbr-stat"><div className="pbr-stat__value">{fmt(summary.totalAmount ?? 0)}</div><div className="pbr-stat__label">Total Amount</div></div>
+            <div className="pbr-stat"><div className="pbr-stat__value pbr-pos">{fmt(summary.totalPaid ?? 0)}</div><div className="pbr-stat__label">Paid in Billing</div></div>
+            <div className="pbr-stat"><div className="pbr-stat__value">{fmt(summary.totalDiscount ?? 0)}</div><div className="pbr-stat__label">Discount</div></div>
+            <div className="pbr-stat"><div className="pbr-stat__value">{summary.totalItems ?? 0}</div><div className="pbr-stat__label">Total Items Sold</div></div>
           </div>
 
-          <div className="pbr-summary">
-            <div className="pbr-summary__item">
-              <div className="pbr-summary__value">{summary.totalBills ?? 0}</div>
-              <div className="pbr-summary__label">Total Bills</div>
-            </div>
-            <div className="pbr-summary__item">
-              <div className="pbr-summary__value">{fmt(summary.totalAmount ?? 0)}</div>
-              <div className="pbr-summary__label">Total Amount</div>
-            </div>
-            <div className="pbr-summary__item">
-              <div className="pbr-summary__value pbr-summary__value--pos">{fmt(summary.totalPaid ?? 0)}</div>
-              <div className="pbr-summary__label">Collected</div>
-            </div>
-            <div className="pbr-summary__item">
-              <div className="pbr-summary__value pbr-summary__value--neg">{fmt(summary.totalDue ?? 0)}</div>
-              <div className="pbr-summary__label">Pending</div>
+          <div className="pbr-settle pbr-settle--modes">
+            <div className="pbr-settle__title">Collections by payment mode</div>
+            <div className="pbr-settle__row">
+              <div className="pbr-settle__item"><div className="val">{fmt(summary.cashAmount ?? 0)}</div><div className="lbl">Cash</div></div>
+              <div className="pbr-settle__item"><div className="val">{fmt(summary.upiAmount ?? 0)}</div><div className="lbl">UPI</div></div>
+              <div className="pbr-settle__item"><div className="val">{fmt(summary.cardAmount ?? 0)}</div><div className="lbl">Card</div></div>
+              <div className="pbr-settle__item"><div className="val val--pos">{fmt(summary.totalPaid ?? 0)}</div><div className="lbl">Total Collected</div></div>
+              <div className="pbr-settle__item"><div className="val val--neg">{fmt(summary.totalDue ?? 0)}</div><div className="lbl">Pending</div></div>
             </div>
           </div>
 
-          <div className="pbr-shift-grid">
-            {['morning', 'night'].map((shiftKey) => {
-              const s = shifts.find((x) => x._id === shiftKey) || {
-                _id: shiftKey, totalBills: 0, totalAmount: 0, totalPaid: 0, totalDue: 0,
-                cashAmount: 0, upiAmount: 0, cardAmount: 0,
-              };
-              return (
-                <div key={shiftKey} className={`pbr-shift-card pbr-shift-card--${shiftKey}`}>
-                  <div className="pbr-shift-card__head">
-                    <ShiftBadge shift={shiftKey} />
-                    <span className="pbr-shift-card__time">
-                      {shiftKey === 'morning' ? '07:00 AM – 07:00 PM' : '07:00 PM – 07:00 AM'}
-                    </span>
-                  </div>
-                  <div className="pbr-shift-card__stats">
-                    <div>
-                      <div className="pbr-mini-stat__value">{s.totalBills}</div>
-                      <div className="pbr-mini-stat__label">Bills</div>
-                    </div>
-                    <div>
-                      <div className="pbr-mini-stat__value">{fmt(s.totalAmount)}</div>
-                      <div className="pbr-mini-stat__label">Total</div>
-                    </div>
-                    <div>
-                      <div className="pbr-mini-stat__value pbr-mini-stat__value--pos">{fmt(s.totalPaid)}</div>
-                      <div className="pbr-mini-stat__label">Collected</div>
-                    </div>
-                    <div>
-                      <div className={`pbr-mini-stat__value ${s.totalDue > 0 ? 'pbr-mini-stat__value--neg' : 'pbr-mini-stat__value--pos'}`}>
-                        {fmt(s.totalDue)}
-                      </div>
-                      <div className="pbr-mini-stat__label">Due</div>
-                    </div>
-                  </div>
-                  <div className="pbr-shift-card__modes">
-                    <span>Cash: <strong>{fmt(s.cashAmount)}</strong></span>
-                    <span>UPI: <strong>{fmt(s.upiAmount)}</strong></span>
-                    <span>Card: <strong>{fmt(s.cardAmount)}</strong></span>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="pbr-table-tools no-print">
+            <div className="pbr-search">
+              <Search size={14} />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder="Search by Bill No., Patient, Mobile…"
+              />
+            </div>
+            <span className="pbr-table-count">Bill Details ({filtered.length})</span>
           </div>
 
-          {['morning', 'night'].map((shiftKey) => {
-            const s = shifts.find((x) => x._id === shiftKey);
-            if (!s || !s.bills?.length) return null;
-            return (
-              <section key={shiftKey} className="pbr-panel">
-                <div className="pbr-panel__head">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <ShiftBadge shift={shiftKey} />
-                    <span className="pbr-panel__title">
-                      {s.totalBills} Bills · Collected {fmt(s.totalPaid)} · Due {fmt(s.totalDue)}
-                    </span>
-                  </div>
-                </div>
-                <div className="pbr-panel__body">
-                  <div className="pbr-table-wrap">
-                    <table className="pbr-table">
-                      <thead>
-                        <tr>
-                          {['#', 'Bill No', 'UHID', 'Patient', 'Time', 'Total', 'Paid', 'Due', 'Mode', 'Billed By'].map((h) => (
-                            <th key={h}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {s.bills.map((b, i) => (
-                          <tr key={b._id || i}>
-                            <td>{i + 1}</td>
-                            <td className="pbr-strong">{b.billNumber}</td>
-                            <td className="pbr-mono">{b.patientId || '—'}</td>
-                            <td>{b.patientName || '—'}</td>
-                            <td>
-                              {new Date(b.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                            </td>
-                            <td className="pbr-strong">{fmt(b.totalAmount)}</td>
-                            <td className="pbr-pos">{fmt(b.paidAmount)}</td>
-                            <td className={b.dueAmount > 0 ? 'pbr-neg' : 'pbr-pos'}>{fmt(b.dueAmount)}</td>
-                            <td>{b.paymentMode?.toUpperCase() || '—'}</td>
-                            <td>{b.billedByName || '—'}</td>
-                          </tr>
+          <div ref={printRef}>
+            <div className="pbr-report-title">
+              <h1>Pharmacy Sales Report</h1>
+              <p>
+                Date:{' '}
+                <strong>
+                  {new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                </strong>
+                {' · '}Paid collections 12:00 AM – 11:59 PM
+                {' · '}Generated: <strong>{new Date().toLocaleTimeString('en-IN')}</strong>
+              </p>
+            </div>
+
+            <div className="pbr-summary print-only">
+              <div className="pbr-summary__item"><div className="pbr-summary__value">{summary.totalBills ?? 0}</div><div className="pbr-summary__label">Bills</div></div>
+              <div className="pbr-summary__item"><div className="pbr-summary__value">{fmt(summary.totalAmount ?? 0)}</div><div className="pbr-summary__label">Amount</div></div>
+              <div className="pbr-summary__item"><div className="pbr-summary__value">{fmt(summary.totalPaid ?? 0)}</div><div className="pbr-summary__label">Paid in Billing</div></div>
+              <div className="pbr-summary__item"><div className="pbr-summary__value">{fmt(summary.totalDiscount ?? 0)}</div><div className="pbr-summary__label">Discount</div></div>
+              <div className="pbr-summary__item"><div className="pbr-summary__value">{summary.totalItems ?? 0}</div><div className="pbr-summary__label">Items</div></div>
+            </div>
+
+            <section className="pbr-panel">
+              <div className="pbr-panel__body">
+                <div className="pbr-table-wrap">
+                  <table className="pbr-table">
+                    <thead>
+                      <tr>
+                        {['#', 'Bill No.', 'Patient Name', 'Mobile', 'Bill Time', 'Items', 'Amount', 'Discount', 'Paid', 'Payment Mode', 'Created By'].map((h) => (
+                          <th key={h}>{h}</th>
                         ))}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={5}>Shift Total</td>
-                          <td>{fmt(s.totalAmount)}</td>
-                          <td className="pbr-pos">{fmt(s.totalPaid)}</td>
-                          <td className="pbr-neg">{fmt(s.totalDue)}</td>
-                          <td colSpan={2} />
+                      </tr>
+                    </thead>
+                    <tbody className="no-print">
+                      {paged.length === 0 ? (
+                        <tr><td colSpan={11} className="pbr-empty">No paid pharmacy collections for this date</td></tr>
+                      ) : paged.map((b, i) => (
+                        <tr key={b.id || i} className={b.cancelled ? 'is-cancelled' : ''}>
+                          <td>{(pageSafe - 1) * pageSize + i + 1}</td>
+                          <td className="pbr-strong">{b.billNumber}</td>
+                          <td>{b.patientName || '—'}</td>
+                          <td className="pbr-mono">{b.phone || '—'}</td>
+                          <td>
+                            {b.createdAt
+                              ? new Date(b.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </td>
+                          <td>{b.items ?? 0}</td>
+                          <td className="pbr-strong">{fmt(b.totalAmount)}</td>
+                          <td>{fmt(b.discount)}</td>
+                          <td className="pbr-pos">{fmt(b.paidAmount)}</td>
+                          <td><ModeBadge mode={b.paymentMode} /></td>
+                          <td>{b.billedByName || '—'}</td>
                         </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-
-                  <div className="pbr-settle">
-                    <div className="pbr-settle__title">Account Settlement — {SHIFT_LABELS[shiftKey]}</div>
-                    <div className="pbr-settle__row">
-                      <div className="pbr-settle__item">
-                        <div className="val">{fmt(s.cashAmount)}</div>
-                        <div className="lbl">Cash</div>
-                      </div>
-                      <div className="pbr-settle__item">
-                        <div className="val">{fmt(s.upiAmount)}</div>
-                        <div className="lbl">UPI</div>
-                      </div>
-                      <div className="pbr-settle__item">
-                        <div className="val">{fmt(s.cardAmount)}</div>
-                        <div className="lbl">Card</div>
-                      </div>
-                      <div className="pbr-settle__item">
-                        <div className="val val--pos">{fmt(s.totalPaid)}</div>
-                        <div className="lbl">Total Collected</div>
-                      </div>
-                      <div className="pbr-settle__item">
-                        <div className="val val--neg">{fmt(s.totalDue)}</div>
-                        <div className="lbl">Total Pending</div>
-                      </div>
-                    </div>
-                  </div>
+                      ))}
+                    </tbody>
+                    <tbody className="print-only">
+                      {filtered.map((b, i) => (
+                        <tr key={`p-${b.id || i}`} className={b.cancelled ? 'is-cancelled' : ''}>
+                          <td>{i + 1}</td>
+                          <td className="pbr-strong">{b.billNumber}</td>
+                          <td>{b.patientName || '—'}</td>
+                          <td className="pbr-mono">{b.phone || '—'}</td>
+                          <td>
+                            {b.createdAt
+                              ? new Date(b.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </td>
+                          <td>{b.items ?? 0}</td>
+                          <td className="pbr-strong">{fmt(b.totalAmount)}</td>
+                          <td>{fmt(b.discount)}</td>
+                          <td className="pbr-pos">{fmt(b.paidAmount)}</td>
+                          <td><ModeBadge mode={b.paymentMode} /></td>
+                          <td>{b.billedByName || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={5}>Grand total ({filtered.length} bills)</td>
+                        <td>{filtered.reduce((s, b) => s + (b.cancelled ? 0 : (b.items || 0)), 0)}</td>
+                        <td>{fmt(summary.totalAmount)}</td>
+                        <td>{fmt(summary.totalDiscount)}</td>
+                        <td className="pbr-pos">{fmt(summary.totalPaid)}</td>
+                        <td colSpan={2} />
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-              </section>
-            );
-          })}
+              </div>
+            </section>
+          </div>
 
-          {shifts.every((s) => !s.bills?.length) && (
-            <div className="pbr-empty">No pharmacy bills found for {date}</div>
+          {filtered.length > 0 && (
+            <div className="pbr-pager no-print">
+              <span>
+                Showing {(pageSafe - 1) * pageSize + 1} to {Math.min(pageSafe * pageSize, filtered.length)} of {filtered.length} entries
+              </span>
+              <div className="pbr-pager__btns">
+                <button type="button" disabled={pageSafe <= 1} onClick={() => setPage(pageSafe - 1)}>Previous</button>
+                <span>Page {pageSafe} of {pages}</span>
+                <button type="button" disabled={pageSafe >= pages} onClick={() => setPage(pageSafe + 1)}>Next</button>
+              </div>
+              <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n} / page</option>
+                ))}
+              </select>
+            </div>
           )}
-        </div>
+
+          <div className="pbr-footer-bar no-print">
+            <span>Grand Total <strong>{fmt(summary.totalAmount)}</strong></span>
+            <span>Paid in Billing <strong>{fmt(summary.totalPaid)}</strong></span>
+            <span>Total Discount <strong>{fmt(summary.totalDiscount)}</strong></span>
+            <span>Total Items <strong>{summary.totalItems ?? 0}</strong></span>
+          </div>
+        </>
       )}
     </div>
   );
@@ -569,7 +626,7 @@ function StaffReport() {
       {grouped && (
         <div ref={printRef}>
           <div className="pbr-report-title">
-            <h2>Staff / Pharmacist Shift Settlement</h2>
+            <h2>Staff / Pharmacist Settlement</h2>
             <p>{from} to {to}</p>
           </div>
 
@@ -620,18 +677,14 @@ function StaffReport() {
                   <table className="pbr-table">
                     <thead>
                       <tr>
-                        {['Shift', 'Timing', 'Bills', 'Total Billed', 'Collected', 'Due', 'Cash', 'UPI', 'Card'].map((h) => (
+                        {['Bills', 'Total Billed', 'Collected', 'Due', 'Cash', 'UPI', 'Card'].map((h) => (
                           <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((r, i) => {
-                        const shift = r._id?.shift || r.shift;
-                        return (
+                      {rows.map((r, i) => (
                           <tr key={i}>
-                            <td><ShiftBadge shift={shift} /></td>
-                            <td>{shift === 'morning' ? '7AM–7PM' : '7PM–7AM'}</td>
                             <td>{r.totalBills}</td>
                             <td className="pbr-strong">{fmt(r.totalAmount)}</td>
                             <td className="pbr-pos">{fmt(r.totalPaid)}</td>
@@ -640,8 +693,7 @@ function StaffReport() {
                             <td>{fmt(r.upiCollected)}</td>
                             <td>{fmt(r.cardCollected || 0)}</td>
                           </tr>
-                        );
-                      })}
+                      ))}
                     </tbody>
                   </table>
                 </div>

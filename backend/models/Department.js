@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const departmentSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
@@ -11,5 +12,7 @@ const departmentSchema = new mongoose.Schema({
   consultationFee: { type: Number, default: 200 },
   color: { type: String, default: '#4F46E5' },
 }, { timestamps: true });
+
+applyOrganizationScope(departmentSchema);
 
 module.exports = mongoose.model('Department', departmentSchema);

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
   const BILL_CATEGORIES = ['Consultation', 'Pharmacy', 'Laboratory', 'Admission', 'Room', 'ICU', 'Procedure', 'Nursing', 'Miscellaneous'];
   const BILL_ITEM_TYPES = ['consultation', 'procedure', 'medicine', 'lab', 'room', 'nursing', 'admission', 'other'];
@@ -151,4 +152,6 @@ const mongoose = require('mongoose');
   billSchema.index({ createdAt: -1 });
   billSchema.index({ billType: 1, createdAt: -1 });
 
-  module.exports = mongoose.model('Bill', billSchema);
+  applyOrganizationScope(billSchema);
+
+module.exports = mongoose.model('Bill', billSchema);

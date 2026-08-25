@@ -17,7 +17,12 @@ exports.getDepartments = asyncHandler(async (req, res) => {
   // Attach doctor count
   const withCounts = await Promise.all(
     departments.map(async (dept) => {
-      const doctorCount = await User.countDocuments({ department: dept._id, role: 'Doctor', isActive: true });
+      const doctorCount = await User.countDocuments({
+        department: dept._id,
+        role: 'Doctor',
+        isActive: true,
+        ...require('../middleware/tenant').userOrgFilter(req),
+      });
       return { ...dept.toObject(), doctorCount };
     })
   );
@@ -68,7 +73,10 @@ exports.deleteDepartment = asyncHandler(async (req, res, next) => {
   const department = await Department.findById(req.params.id);
   if (!department) return next(new ErrorResponse('Department not found', 404));
   // Check if any doctors linked
-  const doctorCount = await User.countDocuments({ department: req.params.id });
+  const doctorCount = await User.countDocuments({
+    department: req.params.id,
+    ...require('../middleware/tenant').userOrgFilter(req),
+  });
   if (doctorCount > 0) {
     return next(new ErrorResponse(`Cannot delete department with ${doctorCount} linked doctor(s). Reassign them first.`, 400));
   }

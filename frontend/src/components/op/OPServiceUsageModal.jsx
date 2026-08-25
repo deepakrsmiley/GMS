@@ -7,12 +7,13 @@ import api from '../../services/api';
 import Modal from '../common/Modal';
 
 const CHARGE_TYPE_LABEL = { per_use: 'per use', per_hour: 'per hour', per_day: 'per day' };
-const CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Other'];
+const CATEGORIES = ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Laboratory', 'Other'];
 const CATEGORY_BADGE = {
   Equipment: 'bg-purple-50 text-purple-700 border-purple-200',
   Procedure: 'bg-blue-50 text-blue-700 border-blue-200',
   Nursing: 'bg-teal-50 text-teal-700 border-teal-200',
   Injection: 'bg-amber-50 text-amber-700 border-amber-200',
+  Laboratory: 'bg-sky-50 text-sky-700 border-sky-200',
   Other: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
@@ -123,7 +124,7 @@ export default function OPServiceUsageModal({ registration, isOpen, onClose }) {
     <Modal isOpen={isOpen} onClose={onClose} title={`Services / Equipment - Token ${activeRegistration?.tokenNumber || registration.tokenNumber}`} size="lg">
     <div className="p-6">
       <p className="text-xs text-slate-500 mb-4">
-        Log procedures, lab-related charges, and machine / equipment usage for this OP visit. Entries are billed automatically.
+        Log procedures, lab charges, injections, and machine / equipment usage for this visit. Type a name and amount, or pick from the rate list.
       </p>
       <form onSubmit={handleSubmit} className="mb-5 pb-5 border-b border-gray-100">
         {!loadingRates && serviceOptions.length === 0 && (

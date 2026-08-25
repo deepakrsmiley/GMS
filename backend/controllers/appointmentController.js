@@ -84,7 +84,8 @@ exports.createAppointment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Patient, doctor and appointment date are required', 400));
   }
 
-  const doctorUser = await User.findById(doctor).select('department name');
+  const { userOrgFilter } = require('../middleware/tenant');
+  const doctorUser = await User.findOne({ _id: doctor, ...userOrgFilter(req) }).select('department name');
   if (!doctorUser) return next(new ErrorResponse('Doctor not found', 404));
 
   const dayStart = startOfDay(appointmentDate);

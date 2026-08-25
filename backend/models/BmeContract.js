@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 const Counter = require('./Counter');
 
 const bmeContractSchema = new mongoose.Schema({
@@ -38,5 +39,7 @@ bmeContractSchema.pre('save', async function (next) {
 
 bmeContractSchema.index({ endDate: 1 });
 bmeContractSchema.index({ type: 1, status: 1 });
+
+applyOrganizationScope(bmeContractSchema);
 
 module.exports = mongoose.model('BmeContract', bmeContractSchema);

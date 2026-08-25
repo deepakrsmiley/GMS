@@ -12,10 +12,12 @@ const {
 } = require('../controllers/supplierController');
 
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 const advancedResults = require('../middleware/advancedResults');
 const Supplier = require('../models/Supplier');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('pharmacy'));
 
 const VIEW_SUPPLIERS = authorizeAnyPermission('MANAGE_SUPPLIERS', 'MANAGE_PHARMACY', 'VIEW_PHARMACY');
 const MANAGE_SUPPLIERS = authorizeAnyPermission('MANAGE_SUPPLIERS', 'MANAGE_PHARMACY');

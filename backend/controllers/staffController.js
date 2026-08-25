@@ -3,6 +3,8 @@ const ErrorResponse = require('../utils/errorResponse');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 const { sanitizePermissions } = require('../config/permissions');
+const { isSuperAdmin } = require('../utils/roles');
+const { userOrgFilter, getRequestOrganizationId } = require('../middleware/tenant');
 
 // Helper to write audit logs
 const createAuditLog = async (userId, action, description, req) => {
@@ -14,6 +16,7 @@ const createAuditLog = async (userId, action, description, req) => {
       description,
       ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1',
       userAgent: req.headers['user-agent'] || 'Unknown',
+      organizationId: req.organizationId || undefined,
     });
   } catch (err) {
     // silent fail
@@ -25,7 +28,7 @@ exports.getStaff = asyncHandler(async (req, res) => {
 });
 
 exports.getStaffMember = asyncHandler(async (req, res, next) => {
-  const staff = await User.findById(req.params.id).populate('department');
+  const staff = await User.findOne({ _id: req.params.id, ...userOrgFilter(req) }).populate('department');
   if (!staff) return next(new ErrorResponse('Staff member not found', 404));
   res.status(200).json({ success: true, data: staff });
 });
@@ -49,11 +52,25 @@ const sanitizeStaffBody = (body) => {
   return body;
 };
 
-exports.createStaff = asyncHandler(async (req, res) => {
+exports.createStaff = asyncHandler(async (req, res, next) => {
+  delete req.body.organizationId;
   if (req.body.permissions !== undefined) {
     req.body.permissions = sanitizePermissions(req.body.permissions) || [];
   }
   sanitizeStaffBody(req.body);
+
+  if (!isSuperAdmin(req.user.role) && isSuperAdmin(req.body.role)) {
+    return next(new ErrorResponse('Hospital users cannot create a GMS Super Admin', 403));
+  }
+
+  const organizationId = getRequestOrganizationId(req);
+  if (!isSuperAdmin(req.body.role)) {
+    if (organizationId) {
+      req.body.organizationId = organizationId;
+    } else if (!req.tenant?.legacyUnscoped) {
+      return next(new ErrorResponse('Organization context is required to create hospital staff', 400));
+    }
+  }
 
   const staff = await User.create(req.body);
   
@@ -67,10 +84,15 @@ exports.createStaff = asyncHandler(async (req, res) => {
 
 exports.updateStaff = asyncHandler(async (req, res, next) => {
   if (req.body.password) delete req.body.password;
+  delete req.body.organizationId;
   sanitizeStaffBody(req.body);
 
-  const existingStaff = await User.findById(req.params.id);
+  const existingStaff = await User.findOne({ _id: req.params.id, ...userOrgFilter(req) });
   if (!existingStaff) return next(new ErrorResponse('Staff member not found', 404));
+
+  if (!isSuperAdmin(req.user.role) && isSuperAdmin(req.body.role)) {
+    return next(new ErrorResponse('Hospital users cannot promote a user to GMS Super Admin', 403));
+  }
   
   const oldRole = existingStaff.role;
   const newRole = req.body.role;
@@ -80,7 +102,11 @@ exports.updateStaff = asyncHandler(async (req, res, next) => {
     req.body.permissions = sanitizePermissions(req.body.permissions) || [];
   }
 
-  const staff = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate('department');
+  const staff = await User.findOneAndUpdate(
+    { _id: req.params.id, ...userOrgFilter(req) },
+    req.body,
+    { new: true, runValidators: true },
+  ).populate('department');
 
   // Log role changes and other updates
   if (req.user) {
@@ -97,7 +123,7 @@ exports.updateStaff = asyncHandler(async (req, res, next) => {
 });
 
 exports.toggleStaffStatus = asyncHandler(async (req, res, next) => {
-  const staff = await User.findById(req.params.id);
+  const staff = await User.findOne({ _id: req.params.id, ...userOrgFilter(req) });
   if (!staff) return next(new ErrorResponse('Staff member not found', 404));
   staff.isActive = !staff.isActive;
   await staff.save({ validateBeforeSave: false });
@@ -110,7 +136,7 @@ exports.toggleStaffStatus = asyncHandler(async (req, res, next) => {
 });
 
 exports.deleteStaff = asyncHandler(async (req, res, next) => {
-  const staff = await User.findById(req.params.id);
+  const staff = await User.findOne({ _id: req.params.id, ...userOrgFilter(req) });
   if (!staff) return next(new ErrorResponse('Staff member not found', 404));
 
   if (req.user && String(req.user._id) === String(staff._id)) {
@@ -136,10 +162,10 @@ exports.deleteStaff = asyncHandler(async (req, res, next) => {
 });
 
 exports.getDoctors = asyncHandler(async (req, res) => {
-  const filter = { role: { $in: ['Doctor', 'doctor'] }, isActive: true };
+  const filter = { role: { $in: ['Doctor', 'doctor'] }, isActive: true, ...userOrgFilter(req) };
   if (req.query.department) filter.department = req.query.department;
   const doctors = await User.find(filter)
     .select('name specialization department qualification consultationFee followUpFee morningSessionStart morningSessionEnd eveningSessionStart eveningSessionEnd availability')
-    .populate('department', 'name');
+    .populate('department', 'name consultationFee');
   res.status(200).json({ success: true, data: doctors });
 });

@@ -6,10 +6,12 @@ const {
   addServiceUsage, updateServiceUsage, deleteServiceUsage,
 } = require('../controllers/opController');
 const { protect, authorizePermissions, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 const advancedResults = require('../middleware/advancedResults');
 const OPRegistration = require('../models/OPRegistration');
 
 router.use(protect);
+router.use(requireHospitalModule('op'));
 
 // Permission-driven access — controlled per-user via Users & Access checkboxes.
 router.get('/queue', authorizeAnyPermission('VIEW_OP_QUEUE', 'VIEW_QUEUE_DISPLAY'), getTodaysQueue);

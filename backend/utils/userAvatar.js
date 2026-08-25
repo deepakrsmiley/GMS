@@ -49,6 +49,16 @@ const serializeUser = (userDoc) => {
     : { ...userDoc };
   u.avatar = toAvatarDataUri(userDoc);
   u.permissions = resolveEffectivePermissions(normalizeRole(u.role), u.permissions);
+  if (u.organizationId && typeof u.organizationId === 'object' && u.organizationId._id) {
+    u.organization = {
+      _id: u.organizationId._id,
+      name: u.organizationId.name,
+      code: u.organizationId.code,
+      status: u.organizationId.status,
+      logo: u.organizationId.logo || '',
+    };
+    u.organizationId = u.organizationId._id;
+  }
   delete u.profilePhoto;
   delete u.password;
   delete u.resetPasswordOTP;

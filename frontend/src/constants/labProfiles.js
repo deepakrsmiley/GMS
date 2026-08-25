@@ -385,9 +385,63 @@ export const LAB_PROFILES = {
 };
 
 export const LAB_PROFILE_OPTIONS = Object.keys(LAB_PROFILES);
+export const OTHER_PROFILE = 'Custom / Manual';
 
 export const profilesForType = (labType) =>
   LAB_PROFILE_OPTIONS.filter((name) => LAB_PROFILES[name]?.labType === labType);
+
+/** Catalog packages for a type, plus Other at the end so missing tests can be typed in. */
+export const profilesForTypeWithOther = (labType) => {
+  if (!labType || labType === 'Other') return [OTHER_PROFILE];
+  return [
+    ...profilesForType(labType).filter((n) => n !== OTHER_PROFILE),
+    OTHER_PROFILE,
+  ];
+};
+
+export const findMatchingProfile = (query) => {
+  const q = String(query || '').trim().toLowerCase();
+  if (q.length < 2) return null;
+  const names = LAB_PROFILE_OPTIONS.filter((n) => n !== OTHER_PROFILE);
+  return names.find((n) => n.toLowerCase() === q)
+    || names.find((n) => n.toLowerCase().startsWith(q))
+    || names.find((n) => n.toLowerCase().includes(q))
+    || null;
+};
+
+/** Build billable + report rows for an Other / unlisted lab. */
+export const buildOtherLabTests = (name, price = 0, extras = {}) => {
+  const trimmed = String(name || '').trim();
+  const amount = Number(price) || 0;
+  if (!trimmed) return { profileName: '', matched: false, tests: [], totalAmount: 0 };
+
+  const matchedProfile = findMatchingProfile(trimmed);
+  if (matchedProfile) {
+    const p = amount || Number(extras.priceMap?.[matchedProfile]) || 0;
+    const expanded = expandProfilesToTests([matchedProfile], { [matchedProfile]: p });
+    return {
+      profileName: matchedProfile,
+      matched: true,
+      tests: expanded.tests,
+      totalAmount: expanded.totalAmount || p,
+    };
+  }
+
+  const master = (extras.testMaster || []).find(
+    (t) => String(t.name || '').toLowerCase() === trimmed.toLowerCase(),
+  );
+  const p = amount || Number(master?.price) || 0;
+  return {
+    profileName: trimmed,
+    matched: false,
+    tests: [
+      { testName: trimmed, price: p, profileName: trimmed, unit: '', normalRange: '' },
+      { testName: 'Findings', price: 0, profileName: trimmed, unit: '', normalRange: '' },
+      { testName: 'Impression', price: 0, profileName: trimmed, unit: '', normalRange: '' },
+    ],
+    totalAmount: p,
+  };
+};
 
 export const getProfileTests = (profileName) => {
   const p = LAB_PROFILES[profileName];
@@ -434,6 +488,8 @@ export const expandProfilesToTests = (profileNames, priceByProfile = {}) => {
           testName: row.testName,
           price: idx === 0 ? price : 0,
           profileName: name,
+          unit: row.unit || '',
+          normalRange: row.normalRange || '',
         });
       });
     }

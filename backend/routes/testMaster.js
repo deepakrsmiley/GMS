@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { getTests, lookupTest, createTest, updateTest, deleteTest } = require('../controllers/testMasterController');
 const { protect, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(protect);
+router.use(requireHospitalModule('lab'));
 
 const VIEW_TESTS = authorizeAnyPermission(
   'VIEW_LAB',

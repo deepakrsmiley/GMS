@@ -1,5 +1,8 @@
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const { getContextOrganizationId, getOrganizationContext } = require('../middleware/tenantContext');
+const { orgRoom, toIdString } = require('../middleware/tenant');
+const { isSuperAdmin } = require('./roles');
 
 const serialize = (doc) => ({
   _id: doc._id,
@@ -26,14 +29,25 @@ const emitToUser = (io, userId, payload) => {
   io.to(`user:${userId}`).emit('notification', payload);
 };
 
-const emitToRole = (io, role, payload) => {
+const emitToRole = (io, role, payload, organizationId) => {
   if (!io || !role) return;
+  if (isSuperAdmin(role)) {
+    io.to('role:Super Admin').emit('notification', payload);
+    return;
+  }
+  if (organizationId) {
+    io.to(orgRoom.role(organizationId, role)).emit('notification', payload);
+    return;
+  }
   io.to(`role:${role}`).emit('notification', payload);
 };
 
-/**
- * Persist + live-push a notification to one user.
- */
+const resolveNotifyOrganizationId = (reqOrIo, explicit) => {
+  if (explicit) return explicit;
+  if (reqOrIo?.organizationId) return reqOrIo.organizationId;
+  return getContextOrganizationId();
+};
+
 const notifyUser = async (reqOrIo, {
   userId,
   title,
@@ -45,6 +59,7 @@ const notifyUser = async (reqOrIo, {
 } = {}) => {
   try {
     if (!userId || !title || !message) return null;
+    const organizationId = resolveNotifyOrganizationId(reqOrIo);
     const doc = await Notification.create({
       title,
       message,
@@ -53,6 +68,7 @@ const notifyUser = async (reqOrIo, {
       link,
       relatedId: relatedId ? String(relatedId) : undefined,
       relatedModel,
+      organizationId: organizationId || undefined,
     });
     const payload = serialize(doc);
     emitToUser(getIo(reqOrIo), userId, payload);
@@ -62,9 +78,6 @@ const notifyUser = async (reqOrIo, {
   }
 };
 
-/**
- * Notify many user ids (deduped).
- */
 const notifyUsers = async (reqOrIo, { userIds = [], ...rest } = {}) => {
   const unique = [...new Set((userIds || []).map(String).filter(Boolean))];
   const out = [];
@@ -75,10 +88,38 @@ const notifyUsers = async (reqOrIo, { userIds = [], ...rest } = {}) => {
   return out;
 };
 
-/**
- * Find active staff by role(s) and notify each personally (so mark-read works).
- * Also emits to role rooms for users who are online but not yet in DB fan-out race.
- */
+const staffRecipientFilter = (roles, organizationId) => {
+  const ctx = getOrganizationContext();
+  const hospitalRoles = roles.filter((r) => !isSuperAdmin(r));
+  const includeSuperAdmin = roles.some((r) => isSuperAdmin(r));
+
+  if (organizationId) {
+    const clauses = [];
+    if (hospitalRoles.length) {
+      clauses.push({ role: { $in: hospitalRoles }, organizationId });
+    }
+    if (includeSuperAdmin) {
+      clauses.push({ role: 'Super Admin' });
+    }
+    if (!clauses.length) return { _id: null };
+    return { isActive: true, $or: clauses };
+  }
+
+  if (ctx?.legacyUnscoped) {
+    return {
+      isActive: true,
+      role: { $in: roles },
+      $or: [{ organizationId: { $exists: false } }, { organizationId: null }],
+    };
+  }
+
+  if (includeSuperAdmin && !hospitalRoles.length) {
+    return { isActive: true, role: 'Super Admin' };
+  }
+
+  return { isActive: true, role: { $in: roles }, _id: null };
+};
+
 const notifyRoles = async (reqOrIo, {
   roles = [],
   title,
@@ -88,10 +129,12 @@ const notifyRoles = async (reqOrIo, {
   relatedId,
   relatedModel,
   excludeUserId,
+  organizationId: explicitOrgId,
 } = {}) => {
   try {
     if (!roles.length || !title || !message) return [];
-    const filter = { role: { $in: roles }, isActive: true };
+    const organizationId = resolveNotifyOrganizationId(reqOrIo, explicitOrgId);
+    const filter = staffRecipientFilter(roles, organizationId);
     if (excludeUserId) filter._id = { $ne: excludeUserId };
 
     const users = await User.find(filter).select('_id role').lean();
@@ -108,13 +151,13 @@ const notifyRoles = async (reqOrIo, {
         link,
         relatedId: relatedId ? String(relatedId) : undefined,
         relatedModel,
+        organizationId: organizationId || undefined,
       });
       const payload = serialize(doc);
       emitToUser(io, u._id, payload);
       out.push(payload);
     }
 
-    // If no matching users in DB, still ping role rooms for live clients
     if (!users.length) {
       for (const role of roles) {
         emitToRole(io, role, {
@@ -125,7 +168,7 @@ const notifyRoles = async (reqOrIo, {
           relatedId,
           relatedModel,
           createdAt: new Date(),
-        });
+        }, organizationId);
       }
     }
 
@@ -135,7 +178,6 @@ const notifyRoles = async (reqOrIo, {
   }
 };
 
-/** Pharmacy stock-risk helpers */
 const DAYS_NEAR_EXPIRY = 30;
 
 const notifyPharmacyStockRisk = async (reqOrIo, medicine, { batchNumber, expiryDate } = {}) => {
@@ -193,4 +235,5 @@ module.exports = {
   notifyPharmacyStockRisk,
   serialize,
   DAYS_NEAR_EXPIRY,
+  toIdString,
 };

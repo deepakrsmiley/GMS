@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const shiftSchema = new mongoose.Schema({
   shiftName: {
@@ -35,5 +36,7 @@ const shiftSchema = new mongoose.Schema({
 shiftSchema.index({ status: 1 });
 shiftSchema.index({ openedBy: 1, status: 1 });
 shiftSchema.index({ openedAt: -1 });
+
+applyOrganizationScope(shiftSchema);
 
 module.exports = mongoose.model('Shift', shiftSchema);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -93,7 +94,12 @@ const buildResultFields = (labOrder) => {
     if (usedIdx.has(idx)) return;
     const profileName = t.profileName || profileNames.find((p) => getProfileTests(p).some((m) => m.testName === t.testName)) || profileNames[0] || 'Other';
     const meta = getTestMeta(t.testName, getProfileTests(profileName));
-    pushRow(t, profileName, meta);
+    pushRow(t, profileName, {
+      unit: t.unit || meta.unit,
+      normalRange: t.normalRange || meta.normalRange,
+      criticalLow: meta.criticalLow,
+      criticalHigh: meta.criticalHigh,
+    });
   });
 
   return fields;
@@ -214,13 +220,44 @@ export default function LabPage() {
 
   const handlePrint = async (test) => {
     try {
-      const full = await api.get(`/lab/${test._id}`).then((r) => r.data.data);
+      const id = test?._id || test?.id;
+      const full = await api.get(`/lab/${id}`).then((r) => r.data.data);
       setPrintData({ branding: brandingData, labTest: full });
-      setTimeout(() => window.print(), 150);
     } catch {
       toast.error('Could not load report for print');
     }
   };
+
+  useEffect(() => {
+    if (!printData) return undefined;
+
+    let cancelled = false;
+    const handleAfterPrint = () => setPrintData(null);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    const runPrint = async () => {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const root = document.getElementById('lab-report-print-root');
+      const imgs = root ? Array.from(root.querySelectorAll('img')) : [];
+      await Promise.all(
+        imgs.map((img) => {
+          if (img.complete) return Promise.resolve();
+          return Promise.race([
+            new Promise((res) => { img.onload = res; img.onerror = res; }),
+            new Promise((res) => setTimeout(res, 1200)),
+          ]);
+        }),
+      );
+      if (!cancelled) window.print();
+    };
+
+    const timer = setTimeout(runPrint, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, [printData]);
 
   const statusColors = {
     pending: 'badge-gray',
@@ -600,11 +637,13 @@ export default function LabPage() {
         )}
       </Modal>
 
-      {printData && (
-        <div className="lab-report-print-only">
-          <LabReportTemplate branding={printData.branding} labTest={printData.labTest} />
-        </div>
-      )}
+      {printData &&
+        createPortal(
+          <div className="lab-report-print-only">
+            <LabReportTemplate branding={printData.branding} labTest={printData.labTest} forPrint />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

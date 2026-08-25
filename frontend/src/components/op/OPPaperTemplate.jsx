@@ -3,9 +3,9 @@ import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
 import '../../styles/opPaperPrint.css';
 
 /**
- * OPPaperTemplate — A4 OP consultation / prescription slip.
- * Automatically lists used labs, procedures, machine/equipment, and
- * pharmacy medicines (entered by search) for this OP visit.
+ * OPPaperTemplate — A4 OP consultation pad.
+ * Header + patient + vitals only. The lower area stays blank for handwritten notes.
+ * Consultation fees print on the reception receipt, not on this pad.
  */
 
 function fmtDateTime(value) {
@@ -53,15 +53,6 @@ function Vital({ label, value, unit }) {
       <span className="op-vital-label">{label}</span>
       <span className="op-vital-colon">:</span>
       <span className="op-vital-value">{text}</span>
-    </div>
-  );
-}
-
-function UsedSection({ title, children }) {
-  return (
-    <div className="op-used-block">
-      <div className="op-used-title">{title}</div>
-      {children}
     </div>
   );
 }
@@ -121,52 +112,6 @@ export default function OPPaperTemplate({ branding, op }) {
       ? `${patient.age ?? ''}${patient.age != null && patient.gender ? ' / ' : ''}${(patient.gender || '').toUpperCase()}`
       : '';
 
-  const hasClinical =
-    op?.diagnosis ||
-    op?.chiefComplaint ||
-    op?.examinationFindings ||
-    op?.investigationsAdvised ||
-    op?.consultationNotes;
-
-  const serviceUsages = op?.serviceUsages || [];
-  const procedures = serviceUsages.filter((u) => u.category === 'Procedure');
-  const machines = serviceUsages.filter((u) => u.category === 'Equipment');
-  const otherServices = serviceUsages.filter(
-    (u) => u.category !== 'Procedure' && u.category !== 'Equipment',
-  );
-  const labs = op?.labs || [];
-  const medicines = op?.pharmacyMedicines || [];
-
-  const hasUsedItems =
-    procedures.length > 0 ||
-    machines.length > 0 ||
-    otherServices.length > 0 ||
-    labs.length > 0 ||
-    medicines.length > 0;
-
-  const formatServiceLine = (u) => {
-    const qty = u.quantity > 1 ? ` × ${u.quantity}` : '';
-    const notes = u.notes ? ` (${u.notes})` : '';
-    return `${u.serviceName}${qty}${notes}`;
-  };
-
-  const formatLabLine = (lab) => {
-    const profile = lab.testProfile || lab.labType || 'Lab';
-    const tests = (lab.tests || []).map((t) => t.testName).filter(Boolean);
-    if (tests.length) return `${profile}: ${tests.join(', ')}`;
-    return profile;
-  };
-
-  const formatMedLine = (m, i) => {
-    const drug = m.drugName && m.drugName !== m.name ? ` [${m.drugName}]` : '';
-    const dose = m.dosage ? ` — ${m.dosage}` : '';
-    const freq = m.frequency ? ` ${m.frequency}` : '';
-    const dur = m.duration ? ` × ${m.duration}` : '';
-    const qty = m.quantity ? ` (Qty ${m.quantity})` : '';
-    const instr = m.instructions ? ` — ${m.instructions}` : '';
-    return `${i + 1}. ${m.name}${drug}${dose}${freq}${dur}${qty}${instr}`;
-  };
-
   return (
     <div id="op-paper-print-root" className="op-paper-root">
       <style>{`
@@ -203,7 +148,6 @@ export default function OPPaperTemplate({ branding, op }) {
         }
       `}</style>
 
-      {/* ── Letterhead from Hospital Branding ───────────────────────── */}
       <header className="op-header">
         <div className="op-header-top">
           {logo ? (
@@ -231,7 +175,6 @@ export default function OPPaperTemplate({ branding, op }) {
 
       <div className="op-rule" />
 
-      {/* ── Patient block ───────────────────────────────────────────── */}
       <section className="op-patient">
         <div className="op-patient-grid">
           <div className="op-patient-left">
@@ -252,7 +195,6 @@ export default function OPPaperTemplate({ branding, op }) {
 
       <div className="op-rule" />
 
-      {/* ── Vitals (exact order from sample paper) ──────────────────── */}
       <section className="op-vitals">
         <Vital label="Temp" value={vitals.temperature} unit={vitals.temperature ? '°F' : ''} />
         <Vital label="Weight" value={vitals.weight} unit={vitals.weight ? 'kg' : ''} />
@@ -265,85 +207,8 @@ export default function OPPaperTemplate({ branding, op }) {
 
       <div className="op-rule" />
 
-      {/* ── Clinical notes + auto-listed used services / Rx ─────────── */}
       <section className="op-clinical">
-        {hasClinical ? (
-          <div className="op-clinical-filled">
-            {op.diagnosis && (
-              <div className="op-note"><b>Imp:</b> {op.diagnosis}</div>
-            )}
-            {op.chiefComplaint && (
-              <div className="op-note"><b>c/o</b> {op.chiefComplaint}</div>
-            )}
-            {op.examinationFindings && (
-              <div className="op-note"><b>O/E</b> {op.examinationFindings}</div>
-            )}
-            {op.investigationsAdvised && (
-              <div className="op-note"><b>Adv:</b> {op.investigationsAdvised}</div>
-            )}
-            {op.consultationNotes && (
-              <div className="op-note">{op.consultationNotes}</div>
-            )}
-          </div>
-        ) : !hasUsedItems ? (
-          <div className="op-clinical-blank" />
-        ) : null}
-
-        {hasUsedItems && (
-          <div className="op-used">
-            {labs.length > 0 && (
-              <UsedSection title="Lab">
-                <ol className="op-used-list">
-                  {labs.map((lab) => (
-                    <li key={lab._id || lab.labNumber}>{formatLabLine(lab)}</li>
-                  ))}
-                </ol>
-              </UsedSection>
-            )}
-
-            {procedures.length > 0 && (
-              <UsedSection title="Procedure">
-                <ol className="op-used-list">
-                  {procedures.map((u) => (
-                    <li key={u._id}>{formatServiceLine(u)}</li>
-                  ))}
-                </ol>
-              </UsedSection>
-            )}
-
-            {machines.length > 0 && (
-              <UsedSection title="Machine / Equipment">
-                <ol className="op-used-list">
-                  {machines.map((u) => (
-                    <li key={u._id}>{formatServiceLine(u)}</li>
-                  ))}
-                </ol>
-              </UsedSection>
-            )}
-
-            {otherServices.length > 0 && (
-              <UsedSection title="Other Services">
-                <ol className="op-used-list">
-                  {otherServices.map((u) => (
-                    <li key={u._id}>
-                      <span className="op-used-cat">[{u.category}]</span> {formatServiceLine(u)}
-                    </li>
-                  ))}
-                </ol>
-              </UsedSection>
-            )}
-
-            {medicines.length > 0 && (
-              <UsedSection title="Rx (Medicines)">
-                <ol className="op-used-list op-rx-list">
-                  {medicines.map((m, i) => (
-                    <li key={`${m.name}-${i}`}>{formatMedLine(m, i)}</li>
-                  ))}
-                </ol>
-              </UsedSection>
-            )}
-          </div>
-        )}
+        <div className="op-clinical-blank" />
       </section>
     </div>
   );

@@ -8,8 +8,10 @@ const {
   cancelPrescription 
 } = require('../controllers/prescriptionController');
 const { authenticateUser, authorizeAnyPermission } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(authenticateUser);
+router.use(requireHospitalModule('pharmacy'));
 
 router.route('/')
   .post(authorizeAnyPermission('CREATE_PRESCRIPTION'), createPrescription)

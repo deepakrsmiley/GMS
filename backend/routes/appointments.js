@@ -11,8 +11,10 @@ const {
   getTodayStats,
 } = require('../controllers/appointmentController');
 const { protect, authorizePermissions } = require('../middleware/auth');
+const { requireHospitalModule } = require('../middleware/hospitalModule');
 
 router.use(protect);
+router.use(requireHospitalModule('appointments'));
 
 // Permission-driven access — controlled per-user via Users & Access checkboxes.
 router.get('/stats/today', authorizePermissions('VIEW_APPOINTMENT'), getTodayStats);
