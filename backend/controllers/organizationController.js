@@ -176,9 +176,14 @@ exports.createOrganization = asyncHandler(async (req, res, next) => {
   let admin = null;
   const adminBody = req.body.admin;
   if (adminBody && adminBody.name && adminBody.email && adminBody.password) {
+    const adminEmail = String(adminBody.email).toLowerCase().trim();
+    const taken = await User.findOne({ email: adminEmail, organizationId: org._id });
+    if (taken) {
+      return next(new ErrorResponse('This email is already used by staff in this hospital. Use a different email.', 400));
+    }
     admin = await User.create({
       name: String(adminBody.name).trim(),
-      email: String(adminBody.email).toLowerCase().trim(),
+      email: adminEmail,
       password: adminBody.password,
       phone: adminBody.phone || '',
       role: 'Admin',
@@ -278,9 +283,15 @@ exports.createHospitalAdmin = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Name, email and password are required', 400));
   }
 
+  const adminEmail = String(email).toLowerCase().trim();
+  const taken = await User.findOne({ email: adminEmail, organizationId: org._id });
+  if (taken) {
+    return next(new ErrorResponse('This email is already used by staff in this hospital. Use a different email.', 400));
+  }
+
   const admin = await User.create({
     name: String(name).trim(),
-    email: String(email).toLowerCase().trim(),
+    email: adminEmail,
     password,
     phone: phone || '',
     role: 'Admin',

@@ -5,7 +5,7 @@ const { isSuperAdmin } = require('../utils/roles');
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Name is required'], trim: true },
-  email: { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, match: [/^\S+@\S+\.\S+$/, 'Invalid email'] },
+  email: { type: String, required: [true, 'Email is required'], lowercase: true, match: [/^\S+@\S+\.\S+$/, 'Invalid email'] },
   password: { type: String, required: [true, 'Password is required'], minlength: 6, select: false },
   organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
   lastActiveOrganizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
@@ -13,7 +13,7 @@ const userSchema = new mongoose.Schema({
   department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
   specialization: String,
   phone: String,
-  employeeId: { type: String, unique: true, sparse: true },
+  employeeId: { type: String, trim: true, sparse: true },
   /** Legacy URL / data-URI string (kept for older records) */
   avatar: String,
   /** Profile photo stored in MongoDB as binary */
@@ -81,5 +81,10 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 userSchema.index({ role: 1 });
 userSchema.index({ department: 1 });
 userSchema.index({ organizationId: 1, role: 1 });
+userSchema.index({ organizationId: 1, email: 1 }, { unique: true });
+userSchema.index(
+  { organizationId: 1, employeeId: 1 },
+  { unique: true, partialFilterExpression: { employeeId: { $type: 'string', $gt: '' } } },
+);
 
 module.exports = mongoose.model('User', userSchema);

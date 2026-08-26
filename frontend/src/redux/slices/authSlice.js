@@ -4,11 +4,19 @@ import toast from 'react-hot-toast';
 
 export const login = createAsyncThunk('auth/login', async (credentials, { rejectWithValue }) => {
   try {
-    const { data } = await api.post('/auth/login', credentials);
+    const { data } = await api.post('/auth/login', credentials, { skipErrorToast: true });
     localStorage.setItem('hms_token', data.token);
     return data.data;
   } catch (err) {
-    return rejectWithValue(err.response?.data?.message || 'Login failed');
+    const body = err.response?.data;
+    if (body?.requiresOrganization && Array.isArray(body.hospitals)) {
+      return rejectWithValue({
+        requiresOrganization: true,
+        hospitals: body.hospitals,
+        message: body.message || 'Select your hospital to continue.',
+      });
+    }
+    return rejectWithValue(body?.message || 'Login failed');
   }
 });
 
@@ -46,7 +54,12 @@ const authSlice = createSlice({
     builder
       .addCase(login.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(login.fulfilled, (state, action) => { state.loading = false; state.user = action.payload; toast.success(`Welcome, ${action.payload.name}!`); })
-      .addCase(login.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
+      .addCase(login.rejected, (state, action) => {
+        state.loading = false;
+        state.error = typeof action.payload === 'string'
+          ? action.payload
+          : action.payload?.message || 'Login failed';
+      })
       .addCase(checkAuth.pending, (state) => { if (!state.user) state.loading = true; })
       .addCase(checkAuth.fulfilled, (state, action) => { state.loading = false; state.user = action.payload; })
       .addCase(checkAuth.rejected, (state, action) => {

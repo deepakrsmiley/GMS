@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const departmentSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  code: { type: String, unique: true, uppercase: true },
+  name: { type: String, required: true, trim: true },
+  code: { type: String, uppercase: true, trim: true },
   description: String,
   head: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   location: String,
@@ -14,5 +14,11 @@ const departmentSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 applyOrganizationScope(departmentSchema);
+
+departmentSchema.index({ organizationId: 1, name: 1 }, { unique: true });
+departmentSchema.index(
+  { organizationId: 1, code: 1 },
+  { unique: true, partialFilterExpression: { code: { $type: 'string', $gt: '' } } },
+);
 
 module.exports = mongoose.model('Department', departmentSchema);

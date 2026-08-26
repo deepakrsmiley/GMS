@@ -37,6 +37,33 @@ exports.getStaffMember = asyncHandler(async (req, res, next) => {
 
 const VALID_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+const STAFF_FIELDS = [
+  'name', 'email', 'password', 'role', 'department', 'specialization', 'phone',
+  'employeeId', 'isActive', 'permissions', 'shift', 'qualification', 'experience',
+  'consultationFee', 'followUpFee',
+  'morningSessionStart', 'morningSessionEnd', 'eveningSessionStart', 'eveningSessionEnd',
+  'availability',
+];
+
+const pickStaffFields = (body = {}) => {
+  const out = {};
+  STAFF_FIELDS.forEach((key) => {
+    if (body[key] !== undefined) out[key] = body[key];
+  });
+  if (out.email) out.email = String(out.email).toLowerCase().trim();
+  if (!String(out.employeeId || '').trim()) delete out.employeeId;
+  return out;
+};
+
+const emailTakenInOrg = async (email, organizationId, excludeId) => {
+  if (!email) return null;
+  const filter = { email: String(email).toLowerCase().trim() };
+  if (organizationId) filter.organizationId = organizationId;
+  else filter.$or = [{ organizationId: null }, { organizationId: { $exists: false } }];
+  if (excludeId) filter._id = { $ne: excludeId };
+  return User.findOne(filter).select('_id email').lean();
+};
+
 // Drop malformed entries (e.g. unchecked checkboxes submitting `day: false`)
 // so schema enum validation never rejects the whole save.
 const sanitizeStaffBody = (body) => {
@@ -55,63 +82,85 @@ const sanitizeStaffBody = (body) => {
 };
 
 exports.createStaff = asyncHandler(async (req, res, next) => {
-  delete req.body.organizationId;
-  if (req.body.permissions !== undefined) {
-    req.body.permissions = sanitizePermissions(req.body.permissions) || [];
+  const payload = pickStaffFields(req.body);
+  if (payload.permissions !== undefined) {
+    payload.permissions = sanitizePermissions(payload.permissions) || [];
   }
-  sanitizeStaffBody(req.body);
-  if (req.body.role) req.body.role = normalizeRole(req.body.role);
+  sanitizeStaffBody(payload);
+  if (payload.role) payload.role = normalizeRole(payload.role);
 
-  if (!isSuperAdmin(req.user.role) && isSuperAdmin(req.body.role)) {
+  if (!isSuperAdmin(req.user.role) && isSuperAdmin(payload.role)) {
     return next(new ErrorResponse('Hospital users cannot create a GMS Super Admin', 403));
   }
 
   const organizationId = getRequestOrganizationId(req);
-  if (isSuperAdmin(req.body.role)) {
+  if (isSuperAdmin(payload.role)) {
     const platform = await Organization.findOne({
       $or: [{ kind: KIND_PLATFORM }, { code: PLATFORM_CODE }],
     }).lean();
-    if (platform) req.body.organizationId = platform._id;
+    if (platform) payload.organizationId = platform._id;
   } else if (organizationId) {
-    req.body.organizationId = organizationId;
+    payload.organizationId = organizationId;
   } else if (!req.tenant?.legacyUnscoped) {
     return next(new ErrorResponse('Organization context is required to create hospital staff', 400));
   }
 
-  const staff = await User.create(req.body);
-  
+  const taken = await emailTakenInOrg(payload.email, payload.organizationId);
+  if (taken) {
+    return next(new ErrorResponse(
+      'This email is already used by staff in this hospital. Use a different email.',
+      400,
+    ));
+  }
+
+  const staff = await User.create(payload);
+
   // Log user creation
   if (req.user) {
     await createAuditLog(req.user._id, 'User Creation', `Created staff user ${staff.name} (${staff.role})`, req);
   }
-  
+
   res.status(201).json({ success: true, data: staff });
 });
 
 exports.updateStaff = asyncHandler(async (req, res, next) => {
-  if (req.body.password) delete req.body.password;
-  delete req.body.organizationId;
-  sanitizeStaffBody(req.body);
-  if (req.body.role) req.body.role = normalizeRole(req.body.role);
+  const payload = pickStaffFields(req.body);
+  delete payload.password;
+  sanitizeStaffBody(payload);
+  if (payload.role) payload.role = normalizeRole(payload.role);
 
   const existingStaff = await User.findOne({ _id: req.params.id, ...userOrgFilter(req) });
   if (!existingStaff) return next(new ErrorResponse('Staff member not found', 404));
 
-  if (!isSuperAdmin(req.user.role) && isSuperAdmin(req.body.role)) {
+  if (!isSuperAdmin(req.user.role) && isSuperAdmin(payload.role)) {
     return next(new ErrorResponse('Hospital users cannot promote a user to GMS Super Admin', 403));
   }
-  
+
+  if (payload.email && payload.email !== existingStaff.email) {
+    const taken = await emailTakenInOrg(
+      payload.email,
+      existingStaff.organizationId,
+      existingStaff._id,
+    );
+    if (taken) {
+      return next(new ErrorResponse(
+        'This email is already used by staff in this hospital. Use a different email.',
+        400,
+      ));
+    }
+  }
+
   const oldRole = existingStaff.role;
-  const newRole = req.body.role;
-  const permissionsChanged = req.body.permissions !== undefined;
+  const newRole = payload.role;
+  const permissionsChanged = payload.permissions !== undefined;
 
   if (permissionsChanged) {
-    req.body.permissions = sanitizePermissions(req.body.permissions) || [];
+    payload.permissions = sanitizePermissions(payload.permissions) || [];
   }
 
   const staff = await User.findOneAndUpdate(
     { _id: req.params.id, ...userOrgFilter(req) },
-    req.body,
+    payload,
     { new: true, runValidators: true },
   ).populate('department');
 

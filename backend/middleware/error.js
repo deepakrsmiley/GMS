@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { duplicateKeyField } = require('../utils/duplicateKeyField');
 
 const errorHandler = (err, req, res, next) => {
   let error = { ...err };
@@ -14,12 +15,13 @@ const errorHandler = (err, req, res, next) => {
 
   // Mongoose duplicate key
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue || {})[0] || 'value';
+    const field = duplicateKeyField(err);
     const friendly = {
       patientId: 'Patient ID (UHID) already exists — please try registering again',
-      email: 'Email already exists',
-      employeeId: 'Employee ID already exists',
-      name: 'This name is already on the list. Open the existing item and add stock / update it instead.',
+      email: 'This email is already used by staff in this hospital. Use a different email.',
+      employeeId: 'Employee ID already exists in this hospital',
+      name: 'This name is already on the list for this hospital.',
+      code: 'This code is already used in this hospital.',
       barcode: 'Barcode already used. Open that medicine and add a batch.',
       userId: 'This entry was already saved. Please refresh and try again.',
       user: 'This record is already in the system. Please refresh and try again.',
@@ -28,6 +30,8 @@ const errorHandler = (err, req, res, next) => {
       billNumber: 'This bill number already exists. Please try saving again.',
       admissionNumber: 'This admission number already exists. Please try again.',
       medicine: 'This medicine is already on the list. Open it and add a batch instead.',
+      _id: 'This record already exists. Close the form, refresh, and add a new staff member.',
+      role: 'This hospital can have more than one person in the same role. Refresh and try again with a new email.',
     };
     error.message = friendly[field] || 'This value is already in use. Please change it or refresh and try again.';
     error.statusCode = 400;

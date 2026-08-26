@@ -132,13 +132,43 @@ export default function LoginPage() {
   const [fpConfirm, setFpConfirm] = useState("");
   const [fpShowNew, setFpShowNew] = useState(false);
   const [hintOtp, setHintOtp] = useState(""); // shown when API returns OTP (dev / hospital mode)
+  const [hospitalChoices, setHospitalChoices] = useState([]);
+  const [selectedHospitalId, setSelectedHospitalId] = useState("");
+  const [pendingLogin, setPendingLogin] = useState(null);
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm();
 
-  const onSubmit = (data) => dispatch(login(data));
+  const onSubmit = async (data) => {
+    const payload = { ...data };
+    if (selectedHospitalId) payload.organizationId = selectedHospitalId;
+    const result = await dispatch(login(payload));
+    if (login.rejected.match(result) && result.payload?.requiresOrganization) {
+      setHospitalChoices(result.payload.hospitals || []);
+      setPendingLogin(data);
+      toast.error(result.payload.message || "Select your hospital to continue.");
+      return;
+    }
+    if (login.fulfilled.match(result)) {
+      setHospitalChoices([]);
+      setPendingLogin(null);
+      setSelectedHospitalId("");
+    }
+  };
+
+  const continueWithHospital = async () => {
+    if (!selectedHospitalId || !pendingLogin) {
+      toast.error("Select your hospital");
+      return;
+    }
+    const result = await dispatch(login({ ...pendingLogin, organizationId: selectedHospitalId }));
+    if (login.fulfilled.match(result)) {
+      setHospitalChoices([]);
+      setPendingLogin(null);
+    }
+  };
 
   const resetForgotForm = () => {
     setFpEmail("");
@@ -159,7 +189,9 @@ export default function LoginPage() {
     }
     setFpBusy(true);
     try {
-      const { data } = await api.post("/auth/forgotpassword", { email });
+      const body = { email };
+      if (selectedHospitalId) body.organizationId = selectedHospitalId;
+      const { data } = await api.post("/auth/forgotpassword", body, { skipErrorToast: true });
       if (data.otp) {
         setHintOtp(String(data.otp));
         setFpOtp(String(data.otp));
@@ -169,7 +201,13 @@ export default function LoginPage() {
       toast.success(data.message || "Verification code sent");
       setMode("forgot-reset");
     } catch (err) {
-      toast.error(err.response?.data?.message || "Could not send verification code");
+      const body = err.response?.data;
+      if (body?.requiresOrganization && Array.isArray(body.hospitals)) {
+        setHospitalChoices(body.hospitals);
+        toast.error(body.message || "Select your hospital to continue.");
+      } else {
+        toast.error(body?.message || "Could not send verification code");
+      }
     } finally {
       setFpBusy(false);
     }
@@ -196,6 +234,7 @@ export default function LoginPage() {
         otp: fpOtp.trim(),
         newPassword: fpNewPassword,
         confirmNewPassword: fpConfirm,
+        ...(selectedHospitalId ? { organizationId: selectedHospitalId } : {}),
       });
       toast.success(data.message || "Password changed — sign in with your new password");
       resetForgotForm();
@@ -373,6 +412,34 @@ export default function LoginPage() {
                     }
                   />
 
+                  {hospitalChoices.length > 0 && (
+                    <div className="space-y-2 rounded-xl border border-[#2563EB]/20 bg-[#2563EB]/5 p-3">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Select your hospital
+                      </label>
+                      <select
+                        value={selectedHospitalId}
+                        onChange={(e) => setSelectedHospitalId(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
+                      >
+                        <option value="">Choose hospital…</option>
+                        {hospitalChoices.map((h) => (
+                          <option key={h.organizationId} value={h.organizationId}>
+                            {h.name}{h.code ? ` (${h.code})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={continueWithHospital}
+                        disabled={loading || !selectedHospitalId}
+                        className="w-full rounded-lg bg-[#2563EB] px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                      >
+                        Continue with selected hospital
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex justify-end">
                     <button
                       type="button"
@@ -450,6 +517,24 @@ export default function LoginPage() {
                       Email Address
                     </label>
                   </div>
+
+                  {hospitalChoices.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">Select your hospital</label>
+                      <select
+                        value={selectedHospitalId}
+                        onChange={(e) => setSelectedHospitalId(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm"
+                      >
+                        <option value="">Choose hospital…</option>
+                        {hospitalChoices.map((h) => (
+                          <option key={h.organizationId} value={h.organizationId}>
+                            {h.name}{h.code ? ` (${h.code})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <button
                     type="submit"

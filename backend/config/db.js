@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
+const { ensureTenantUniqueIndexes } = require('../utils/tenantUniqueIndexes');
 
 /** Remove leftover unique indexes on user/userId that reject legitimate inserts. */
 const STALE_UNIQUE_USER_FIELDS = ['user', 'userId', 'createdBy', 'addedBy'];
@@ -39,6 +40,7 @@ const connectDB = async () => {
     });
     logger.info(`MongoDB Connected: ${conn.connection.host}/${conn.connection.name}`);
     await cleanupStaleIndexes();
+    await ensureTenantUniqueIndexes(mongoose, logger);
     return conn;
   } catch (error) {
     logger.error(`MongoDB connection error: ${error.message}`);

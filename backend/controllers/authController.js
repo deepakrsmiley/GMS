@@ -46,7 +46,7 @@ const validatePasswordStrength = (password) => {
 // @access  Public
 exports.login = asyncHandler(async (req, res, next) => {
   logger.info('LOGIN REQUEST received');
-  const { email, password } = req.body;
+  const { email, password, organizationId: loginOrgId } = req.body;
 
   if (!email || !password) {
     logger.warn('LOGIN rejected: missing email or password');
@@ -54,11 +54,11 @@ exports.login = asyncHandler(async (req, res, next) => {
   }
 
   const normalizedEmail = email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail })
+  const matches = await User.find({ email: normalizedEmail })
     .select('+password')
     .populate('organizationId', 'name code status logo enabledModules kind');
 
-  if (!user) {
+  if (!matches.length) {
     logger.warn(`LOGIN failed: user not found for ${normalizedEmail}`);
     await createAuditLog(null, 'Login Failure', 'Unknown email login attempt', req, {
       email: normalizedEmail,
@@ -67,7 +67,89 @@ exports.login = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Invalid credentials', 401));
   }
 
-  // Check if account is locked
+  let candidates = matches;
+  if (loginOrgId) {
+    candidates = matches.filter((u) => {
+      const oid = u.organizationId?._id || u.organizationId;
+      return oid && String(oid) === String(loginOrgId);
+    });
+    if (!candidates.length) {
+      return next(new ErrorResponse('No account found for that email at the selected hospital', 401));
+    }
+  } else if (matches.length > 1) {
+    const hospitals = matches
+      .filter((u) => !isSuperAdmin(u.role) && u.organizationId)
+      .map((u) => ({
+        organizationId: String(u.organizationId._id || u.organizationId),
+        name: u.organizationId.name || 'Hospital',
+        code: u.organizationId.code || '',
+      }));
+    const uniqueHospitals = [...new Map(hospitals.map((h) => [h.organizationId, h])).values()];
+    if (uniqueHospitals.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'This email is used at more than one hospital. Select your hospital to continue.',
+        requiresOrganization: true,
+        hospitals: uniqueHospitals,
+      });
+    }
+    if (uniqueHospitals.length === 1) {
+      candidates = matches.filter((u) => {
+        const oid = u.organizationId?._id || u.organizationId;
+        return oid && String(oid) === uniqueHospitals[0].organizationId;
+      });
+    }
+  }
+
+  const passwordMatches = [];
+  for (const candidate of candidates) {
+    if (await candidate.matchPassword(password)) passwordMatches.push(candidate);
+  }
+
+  if (!passwordMatches.length) {
+    const user = candidates[0];
+    if (user) {
+      if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
+        const timeRemaining = Math.round((user.accountLockedUntil - new Date()) / 60000);
+        logger.warn(`LOGIN failed: locked account ${normalizedEmail}`);
+        return next(new ErrorResponse(`Account is temporarily locked. Try again in ${timeRemaining} minutes.`, 401));
+      }
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= 5) {
+        user.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+        await user.save({ validateBeforeSave: false });
+        await createAuditLog(user._id, 'Account Lockout', 'Account locked due to 5 failed login attempts', req);
+        return next(new ErrorResponse('Account locked due to multiple failed login attempts. Please try again after 15 minutes.', 401));
+      }
+      await user.save({ validateBeforeSave: false });
+      await createAuditLog(user._id, 'Login Failure', 'Incorrect password entered', req);
+      const attemptsLeft = 5 - user.failedLoginAttempts;
+      return next(new ErrorResponse(`Invalid credentials. ${attemptsLeft} attempts remaining.`, 401));
+    }
+    return next(new ErrorResponse('Invalid credentials', 401));
+  }
+
+  if (passwordMatches.length > 1) {
+    const hospitals = passwordMatches
+      .filter((u) => !isSuperAdmin(u.role) && u.organizationId)
+      .map((u) => ({
+        organizationId: String(u.organizationId._id || u.organizationId),
+        name: u.organizationId.name || 'Hospital',
+        code: u.organizationId.code || '',
+      }));
+    const uniqueHospitals = [...new Map(hospitals.map((h) => [h.organizationId, h])).values()];
+    if (uniqueHospitals.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'This email is used at more than one hospital. Select your hospital to continue.',
+        requiresOrganization: true,
+        hospitals: uniqueHospitals,
+      });
+    }
+  }
+
+  const user = passwordMatches[0];
+
   if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
     const timeRemaining = Math.round((user.accountLockedUntil - new Date()) / 60000);
     logger.warn(`LOGIN failed: locked account ${normalizedEmail}`);
@@ -84,31 +166,7 @@ exports.login = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Organization is deactivated. Contact GMS Super Admin.', 401));
   }
 
-  const isMatch = await user.matchPassword(password);
-  logger.info(`LOGIN password match for ${normalizedEmail}: ${isMatch}`);
-
-  if (!isMatch) {
-    // Increment failed login attempts
-    user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-    
-    if (user.failedLoginAttempts >= 5) {
-      user.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 mins lock
-      await user.save({ validateBeforeSave: false });
-      
-      // Log lock event
-      await createAuditLog(user._id, 'Account Lockout', 'Account locked due to 5 failed login attempts', req);
-      
-      return next(new ErrorResponse('Account locked due to multiple failed login attempts. Please try again after 15 minutes.', 401));
-    }
-    
-    await user.save({ validateBeforeSave: false });
-    
-    // Log failed login
-    await createAuditLog(user._id, 'Login Failure', 'Incorrect password entered', req);
-    
-    const attemptsLeft = 5 - user.failedLoginAttempts;
-    return next(new ErrorResponse(`Invalid credentials. ${attemptsLeft} attempts remaining.`, 401));
-  }
+  logger.info(`LOGIN password match for ${normalizedEmail}: true`);
 
   // Reset lock and login attempts on success
   const ip = req.ip || req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || '';
@@ -261,8 +319,14 @@ exports.updateProfile = asyncHandler(async (req, res, next) => {
       return next(new ErrorResponse('Valid email is required', 400));
     }
     if (nextEmail !== user.email) {
-      const taken = await User.findOne({ email: nextEmail, _id: { $ne: user._id } });
-      if (taken) return next(new ErrorResponse('Email already in use', 400));
+      const takenFilter = {
+        email: nextEmail,
+        _id: { $ne: user._id },
+      };
+      if (user.organizationId) takenFilter.organizationId = user.organizationId;
+      else takenFilter.$or = [{ organizationId: null }, { organizationId: { $exists: false } }];
+      const taken = await User.findOne(takenFilter);
+      if (taken) return next(new ErrorResponse('Email already in use at this hospital', 400));
       user.email = nextEmail;
     }
   }
@@ -380,16 +444,44 @@ exports.updatePassword = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/forgotpassword
 // @access  Public
 exports.forgotPassword = asyncHandler(async (req, res, next) => {
-  const { email } = req.body;
+  const { email, organizationId } = req.body;
 
   if (!email) {
     return next(new ErrorResponse('Please provide email address', 400));
   }
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  const normalizedEmail = email.toLowerCase().trim();
+  const matches = await User.find({ email: normalizedEmail })
+    .populate('organizationId', 'name code');
 
-  if (!user) {
+  if (!matches.length) {
     return next(new ErrorResponse('No user found with that email address', 404));
+  }
+
+  let user = matches[0];
+  if (organizationId) {
+    user = matches.find((u) => {
+      const oid = u.organizationId?._id || u.organizationId;
+      return oid && String(oid) === String(organizationId);
+    });
+    if (!user) return next(new ErrorResponse('No user found with that email at the selected hospital', 404));
+  } else if (matches.length > 1) {
+    const hospitals = matches
+      .filter((u) => u.organizationId)
+      .map((u) => ({
+        organizationId: String(u.organizationId._id || u.organizationId),
+        name: u.organizationId.name || 'Hospital',
+        code: u.organizationId.code || '',
+      }));
+    const uniqueHospitals = [...new Map(hospitals.map((h) => [h.organizationId, h])).values()];
+    if (uniqueHospitals.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'This email is used at more than one hospital. Select your hospital to continue.',
+        requiresOrganization: true,
+        hospitals: uniqueHospitals,
+      });
+    }
   }
 
   // Generate 6-digit verification code (OTP)
@@ -445,13 +537,20 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/resetpassword
 // @access  Public
 exports.resetPassword = asyncHandler(async (req, res, next) => {
-  const { email, otp, newPassword, confirmNewPassword } = req.body;
+  const { email, otp, newPassword, confirmNewPassword, organizationId } = req.body;
 
   if (!email || !otp || !newPassword || !confirmNewPassword) {
     return next(new ErrorResponse('Please provide email, verification code, new password and confirmation', 400));
   }
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
+  const normalizedEmail = email.toLowerCase().trim();
+  const matches = await User.find({ email: normalizedEmail }).select('+password');
+  let user = matches[0];
+  if (organizationId) {
+    user = matches.find((u) => u.organizationId && String(u.organizationId) === String(organizationId));
+  } else if (matches.length > 1) {
+    return next(new ErrorResponse('This email is used at more than one hospital. Select your hospital and try again.', 400));
+  }
 
   if (!user) {
     return next(new ErrorResponse('Invalid email address', 400));

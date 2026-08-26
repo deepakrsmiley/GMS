@@ -190,8 +190,8 @@ export default function StaffPage() {
       if (payload.department === '') delete payload.department;
       if (editStaff && !payload.password) delete payload.password;
       return editStaff
-        ? api.put(`/staff/${editStaff._id}`, payload)
-        : api.post('/staff', payload);
+        ? api.put(`/staff/${editStaff._id}`, payload, { skipErrorToast: true })
+        : api.post('/staff', payload, { skipErrorToast: true });
     },
     onSuccess: () => {
       const selfId = currentUser?._id || currentUser?.id;
@@ -381,8 +381,11 @@ export default function StaffPage() {
                 </div>
                 <div>
                   <label className="staff-label">Email *</label>
-                  <input {...register('email', { required: true })} type="email" className="staff-field" />
+                  <input {...register('email', { required: true })} type="email" className="staff-field" placeholder="Unique per hospital" />
                   {errors.email && <p className="staff-error">Email is required</p>}
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Same role (e.g. Admin / Doctor) is fine in every hospital. Email must be unique inside this hospital only.
+                  </p>
                 </div>
                 {!editStaff && (
                   <div>
