@@ -96,7 +96,7 @@ export default function LabOrderCreateModal({
   useEffect(() => {
     if (patientSearch.trim().length < 2 || isAppend) { setPatients([]); return; }
     const t = setTimeout(() => {
-      api.get(`/patients?search=${encodeURIComponent(patientSearch.trim())}&limit=8`)
+      api.get(`/patients/search?q=${encodeURIComponent(patientSearch.trim())}`)
         .then((r) => setPatients(r.data.data || []))
         .catch(() => setPatients([]));
     }, 250);

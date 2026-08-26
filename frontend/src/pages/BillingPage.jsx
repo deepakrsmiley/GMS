@@ -281,10 +281,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
     const [chargeMeta, setChargeMeta] = useState({ doctor: null, department: null, patientType: null });
 
-    const loadPatientCharges = useCallback(async (patientId) => {
+    const loadPatientCharges = useCallback(async (patientId, billType = 'ip') => {
       setLoadingCharges(true);
       try {
-        const { data } = await api.get(`/billing/patient/${patientId}/charges?billType=ip`);
+        const { data } = await api.get(`/billing/patient/${patientId}/charges?billType=${billType}`);
         const rawCharges = (data.data.charges || []).map((c) => ({ ...c, included: c.included !== false }));
         setCharges(mergeConsultationCharges(rawCharges, data.data.doctor));
         setChargeMeta({ doctor: data.data.doctor, department: data.data.department, patientType: data.data.patientType });
@@ -326,7 +326,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setSelectedPatient(p);
       setPatientSearch(`${p.name} (${p.patientId})`);
       setPatients([]);
-      loadPatientCharges(p._id);
+      const chargeBillType = mainTab === 'op' ? 'op' : 'ip';
+      loadPatientCharges(p._id, chargeBillType);
     };
 
     const openDischargePatientDetail = async (row) => {
@@ -823,9 +824,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       }
 
       const payload = {
-        // IP patients get an 'ip' bill so pharmacy users stay within their
-        // allowed scope; everyone else keeps the unified bill type.
-        billType: chargeMeta.patientType === 'ip' ? 'ip' : 'unified',
+        billType: chargeMeta.patientType === 'ip' && mainTab !== 'op' ? 'ip' : mainTab === 'op' ? 'op' : 'unified',
         patient: selectedPatient._id,
         doctor: chargeMeta.doctor?._id,
         department: chargeMeta.department?._id,
@@ -1388,7 +1387,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         </footer>
 
         {/* UNIFIED BILLING MODAL */}
-        <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); resetCreateForm(); }} title="IP Billing — Create Bill" size="full">
+        <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); resetCreateForm(); }} title={mainTab === 'op' ? 'OP Billing — Create Bill' : 'IP Billing — Create Bill'} size="full">
           <div className="flex flex-col lg:flex-row min-h-[75vh]">
             {/* Left: Patient & Charges */}
             <div className="flex-1 p-6 space-y-5 border-r border-gray-200 dark:border-gray-700 overflow-y-auto max-h-[80vh]">

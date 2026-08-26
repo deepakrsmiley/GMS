@@ -9,7 +9,7 @@ router.use(requireHospitalModule('lab'));
 
 // Permission-driven access — controlled per-user via Users & Access checkboxes.
 router.get('/dashboard', authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION'), labController.getLabDashboard);
-router.get('/types', labController.getLabTypes);
+router.get('/types', authorizeAnyPermission('VIEW_LAB', 'CREATE_LAB_ORDER', 'VIEW_NURSE_STATION'), labController.getLabTypes);
 router.get('/ip-medicines', authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION'), labController.getIPMedicinesByTime);
 
 router.route('/')
@@ -18,7 +18,7 @@ router.route('/')
 
 router.put('/:id/add-tests', authorizePermissions('CREATE_LAB_ORDER'), labController.addTestsToLabOrder);
 router.route('/:id')
-  .get(labController.getLabTest);
+  .get(authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION', 'CREATE_LAB_ORDER'), labController.getLabTest);
 
 router.put('/:id/status', authorizePermissions('UPDATE_LAB_ORDER'), labController.updateLabStatus);
 router.put('/:id/results', authorizePermissions('UPDATE_LAB_REPORT'), labController.enterResults);

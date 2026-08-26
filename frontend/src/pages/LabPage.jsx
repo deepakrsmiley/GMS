@@ -110,6 +110,7 @@ export default function LabPage() {
   const { user } = useSelector((s) => s.auth);
   const isLabTech = hasPermission(user, 'UPDATE_LAB_REPORT') || hasPermission(user, 'UPDATE_LAB_ORDER');
   const canCreateOrders = hasPermission(user, 'CREATE_LAB_ORDER');
+  const modalMode = isLabTech ? 'full' : 'request';
 
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
@@ -120,7 +121,10 @@ export default function LabPage() {
   const [showViewResult, setShowViewResult] = useState(null);
   const [printData, setPrintData] = useState(null);
   const [tab, setTab] = useState(searchParams.get('tab') === 'reports' ? 'reports' : 'orders');
-  const [desk, setDesk] = useState(searchParams.get('desk') || 'reception');
+  const [desk, setDesk] = useState(
+    searchParams.get('desk')
+    || (hasPermission(user, 'CREATE_LAB_ORDER') && !isLabTech ? 'reception' : 'lab_desk'),
+  );
   const qc = useQueryClient();
 
   const { register: resReg, handleSubmit: resSubmit, reset: resReset } = useForm();
@@ -178,8 +182,6 @@ export default function LabPage() {
     queryFn: () => api.get('/branding').then((r) => r.data.data),
     staleTime: 1000 * 60 * 5,
   });
-
-  const modalMode = hasPermission(user, 'UPDATE_LAB_REPORT') ? 'full' : 'request';
 
   const openNewOrder = () => {
     setAppendTo(null);

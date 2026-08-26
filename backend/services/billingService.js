@@ -77,6 +77,15 @@ const isOpOnlyPatient = async (patientId) => {
   return ipCount === 0;
 };
 
+/** OP / lab billing must not pull pharmacy prescription lines — those are billed from Pharmacy. */
+const filterChargesForBillType = (charges, billType) => {
+  const mode = billType || 'auto';
+  if (mode === 'op' || mode === 'lab') {
+    return charges.filter((c) => c.category !== 'Pharmacy' && c.type !== 'medicine');
+  }
+  return charges;
+};
+
 exports.getPatientBillableCharges = async (patientId, options = {}) => {
   const patient = await Patient.findById(patientId).select('patientId name age gender phone email');
   if (!patient) return null;
@@ -424,11 +433,14 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
     }));
   }
 
-  const filteredCharges = charges.filter((c) => {
-    if (c.amount <= 0) return false;
-    if (opOnly && isIpCharge(c)) return false;
-    return true;
-  });
+  const filteredCharges = filterChargesForBillType(
+    charges.filter((c) => {
+      if (c.amount <= 0) return false;
+      if (opOnly && isIpCharge(c)) return false;
+      return true;
+    }),
+    billType,
+  );
 
   const summary = filteredCharges.reduce((acc, c) => {
     const key = c.category.toLowerCase();

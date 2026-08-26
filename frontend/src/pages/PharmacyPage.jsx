@@ -83,7 +83,7 @@ async function downloadBillPdf(id, thermal = false, size = "A4") {
   }
 }
 
-function PendingPharmacyPanel({ canDispense }) {
+function PendingPharmacyPanel({ canDispense, canBillPharmacy }) {
   const qc = useQueryClient();
   const [selectedOpId, setSelectedOpId] = useState("");
   const [medQuery, setMedQuery] = useState("");
@@ -245,6 +245,8 @@ function PendingPharmacyPanel({ canDispense }) {
     if (!window.confirm(msg)) return;
     dismissMut.mutate();
   };
+
+  const canSendToBilling = canDispense || canBillPharmacy;
 
   const billMut = useMutation({
     mutationFn: async () => {
@@ -811,11 +813,16 @@ function PendingPharmacyPanel({ canDispense }) {
                 type="button"
                 onClick={() => billMut.mutate()}
                 disabled={
-                  !canDispense ||
+                  !canSendToBilling ||
                   billMut.isPending ||
                   (!items.length && !totals.fee && !manualCharges.length)
                 }
                 className="btn-primary justify-center disabled:opacity-50 order-1 sm:order-2 min-w-[200px]"
+                title={
+                  canSendToBilling
+                    ? undefined
+                    : "You need Dispense prescription or Create billing permission"
+                }
               >
                 <Receipt size={16} />
                 {billMut.isPending ? "Sending…" : "Save & send to billing"}
@@ -866,6 +873,9 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
   const canManageInventory =
     canCreateMedicine || canEditMedicine || canAddStock || canAdjustStock || canEditBatch || canDeleteMedicine;
   const canDispense = hasPermission(user, "DISPENSE_PRESCRIPTION");
+  const canBillPharmacy =
+    hasPermission(user, "CREATE_BILLING")
+    && (hasPermission(user, "CREATE_PRESCRIPTION") || hasPermission(user, "VIEW_PHARMACY"));
   const canRequestMedicineEdit = hasPermission(user, "CREATE_CHANGE_REQUEST");
   const canViewDashboard = canViewPharmacy || canManageInventory;
   const [page, setPage] = useState(1);
@@ -1733,7 +1743,7 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
       )}
 
       {(!masterMode && tab === "prescriptions") && (
-        <PendingPharmacyPanel canDispense={canDispense} />
+        <PendingPharmacyPanel canDispense={canDispense} canBillPharmacy={canBillPharmacy} />
       )}
 
       {(!masterMode && tab === "counter" && canDispense) && (

@@ -54,6 +54,19 @@ describe('resolveEffectivePermissions', () => {
   it('Super Admin gets wildcard', () => {
     assert.deepEqual(resolveEffectivePermissions('Super Admin', []), ['*']);
   });
+
+  it('Receptionist can dispense at pharmacy desk and search patients for lab', () => {
+    const perms = resolveEffectivePermissions('Receptionist', []);
+    assert.ok(perms.includes('DISPENSE_PRESCRIPTION'), 'reception can send pharmacy bills');
+    assert.ok(perms.includes('VIEW_PHARMACY'), 'CREATE_PRESCRIPTION implies VIEW_PHARMACY');
+    assert.ok(perms.includes('CREATE_LAB_ORDER'));
+  });
+
+  it('Lab Technician can look up patients for lab orders', () => {
+    const perms = resolveEffectivePermissions('Lab Technician', []);
+    assert.ok(perms.includes('VIEW_PATIENT'));
+    assert.ok(perms.includes('CREATE_LAB_ORDER'));
+  });
 });
 
 describe('canEditDischargeAfterDischarge', () => {

@@ -18,16 +18,15 @@ router.get('/queue', authorizeAnyPermission('VIEW_OP_QUEUE', 'VIEW_QUEUE_DISPLAY
 router.get('/doctor-queue', authorizeAnyPermission('VIEW_OP_QUEUE', 'CREATE_CONSULTATION'), getDoctorQueue);
 router.get('/patient/:patientId/history', authorizeAnyPermission('VIEW_OP_QUEUE', 'VIEW_PATIENT_PROFILE', 'CREATE_CONSULTATION'), getPatientMedicalHistory);
 router.get('/department-stats', authorizeAnyPermission('VIEW_OP_QUEUE', 'VIEW_DASHBOARD'), getDepartmentStats);
-router.get('/pharmacy-pending', authorizeAnyPermission('VIEW_PHARMACY', 'VIEW_OP_QUEUE'), getPendingPharmacy);
+router.get('/pharmacy-pending', authorizeAnyPermission('VIEW_PHARMACY', 'VIEW_OP_QUEUE', 'CREATE_PRESCRIPTION', 'VIEW_PRESCRIPTION'), getPendingPharmacy);
 router.route('/').get(authorizePermissions('VIEW_OP_QUEUE'), advancedResults(OPRegistration, [
   { path: 'patient', select: 'patientId name age gender phone' },
   { path: 'doctor', select: 'name specialization' },
   { path: 'department', select: 'name' },
 ]), getOPRegistrations).post(authorizePermissions('CREATE_OP_QUEUE'), createOPRegistration);
-router.get('/:id', authorizeAnyPermission('VIEW_OP_QUEUE', 'VIEW_PHARMACY', 'CREATE_CONSULTATION'), getOPRegistration);
-// Pharmacy marks the visit "pharmacy_completed" after dispensing, so
-// DISPENSE_PRESCRIPTION is also accepted here.
-router.put('/:id/status', authorizeAnyPermission('UPDATE_OP_QUEUE', 'DISPENSE_PRESCRIPTION'), updateOPStatus);
+router.get('/:id', authorizeAnyPermission('VIEW_OP_QUEUE', 'VIEW_PHARMACY', 'CREATE_CONSULTATION', 'CREATE_PRESCRIPTION', 'VIEW_PRESCRIPTION'), getOPRegistration);
+// Pharmacy / reception marks the visit "pharmacy_completed" after billing medicines.
+router.put('/:id/status', authorizeAnyPermission('UPDATE_OP_QUEUE', 'DISPENSE_PRESCRIPTION', 'CREATE_PRESCRIPTION'), updateOPStatus);
 router.put('/:id/consultation', authorizeAnyPermission('CREATE_CONSULTATION', 'UPDATE_CONSULTATION'), saveConsultation);
 
 router.post('/:id/service-usage', authorizePermissions('CREATE_SERVICE_USAGE'), addServiceUsage);
