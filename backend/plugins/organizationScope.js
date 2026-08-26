@@ -44,9 +44,27 @@ const buildScopeFilter = (ctx) => {
   return nothingFilter;
 };
 
+const OPERATOR_KEYS = ['$or', '$and', '$nor'];
+
+/** Combine a find filter with the tenant scope without letting two `$or`s overwrite each other. */
+const mergeScopeFilters = (existing, filter) => {
+  if (!filter) return existing && Object.keys(existing).length ? existing : {};
+  if (!existing || !Object.keys(existing).length) return filter;
+  const clashes = OPERATOR_KEYS.some(
+    (key) => existing[key] != null && filter[key] != null,
+  );
+  if (clashes) return { $and: [existing, filter] };
+  return { ...existing, ...filter };
+};
+
 const mergeWhere = (query, filter) => {
   if (!filter) return;
-  query.where(filter);
+  const existing = typeof query.getFilter === 'function' ? { ...query.getFilter() } : {};
+  if (!Object.keys(existing).length) {
+    query.where(filter);
+    return;
+  }
+  query.setQuery(mergeScopeFilters(existing, filter));
 };
 
 const applyToPipeline = (pipeline, filter) => {
@@ -158,6 +176,7 @@ const applyOrganizationScope = (schema) => {
 module.exports = {
   applyOrganizationScope,
   buildScopeFilter,
+  mergeScopeFilters,
   legacyMissingOrgFilter,
   legacyOrOrgFilter,
   nothingFilter,

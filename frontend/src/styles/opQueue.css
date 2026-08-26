@@ -14,7 +14,8 @@
 }
 
 .opq-select,
-.opq-date {
+.opq-date,
+.opq-search {
   height: 42px;
   min-width: 180px;
   flex: 1 1 180px;
@@ -28,8 +29,28 @@
   outline: none;
 }
 .opq-date { max-width: 200px; flex: 0 0 190px; }
+.opq-search-wrap {
+  position: relative;
+  flex: 1 1 220px;
+  max-width: 280px;
+  min-width: 200px;
+}
+.opq-search-wrap svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+.opq-search {
+  width: 100%;
+  max-width: none;
+  padding-left: 36px;
+}
 .opq-select:focus,
-.opq-date:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+.opq-date:focus,
+.opq-search:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
 
 .opq-toolbar-actions {
   margin-left: auto;

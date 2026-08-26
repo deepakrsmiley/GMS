@@ -13,7 +13,7 @@ const {
   orgById,
   orgRoom,
 } = require('../middleware/tenant');
-const { buildScopeFilter, legacyMissingOrgFilter, nothingFilter } = require('../plugins/organizationScope');
+const { buildScopeFilter, mergeScopeFilters, legacyMissingOrgFilter, nothingFilter } = require('../plugins/organizationScope');
 const brandingService = require('../services/brandingService');
 
 const mockResNext = () => {
@@ -134,6 +134,25 @@ describe('mongoose plugin scope builder', () => {
   it('skips when no request context (migration scripts)', () => {
     assert.equal(buildScopeFilter(null), null);
     assert.equal(buildScopeFilter({ skipOrganizationFilter: true }), null);
+  });
+
+  it('does not let tenant $or overwrite patient search $or', () => {
+    const orgId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    const search = { $or: [{ name: /ram/i }, { patientId: /ram/i }, { phone: /ram/i }] };
+    const scope = buildScopeFilter({ organizationId: orgId, legacyUnscoped: true });
+    const merged = mergeScopeFilters(search, scope);
+    assert.ok(merged.$and);
+    assert.equal(merged.$and.length, 2);
+    assert.equal(merged.$and[0], search);
+    assert.equal(merged.$and[1], scope);
+    assert.equal(merged.$or, undefined);
+
+    const fromReq = orgFilter(
+      { organizationId: orgId, tenant: { organizationId: orgId, legacyUnscoped: true } },
+      search,
+    );
+    assert.ok(fromReq.$and);
+    assert.deepEqual(fromReq.$and[0], search);
   });
 });
 

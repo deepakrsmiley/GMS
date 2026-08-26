@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -137,7 +137,11 @@ export default function OPQueuePage() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
   const [patients, setPatients] = useState([]);
+  const [patientSearchDone, setPatientSearchDone] = useState(false);
+  const [queueSearch, setQueueSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const patientSearchTimer = useRef(null);
+  const skipVisibleReset = useRef(false);
   const [departments, setDepartments] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [deptFilter, setDeptFilter] = useState('');
@@ -204,6 +208,7 @@ export default function OPQueuePage() {
     setShowAdd(false);
     setPatientSearch('');
     setPatients([]);
+    setPatientSearchDone(false);
     setSelectedPatient(null);
     reset(defaultRegForm);
   };
@@ -211,24 +216,39 @@ export default function OPQueuePage() {
   const resetRegForm = () => {
     setPatientSearch('');
     setPatients([]);
+    setPatientSearchDone(false);
     setSelectedPatient(null);
     reset(defaultRegForm);
   };
 
-  const handlePatientSearchChange = async (e) => {
+  const handlePatientSearchChange = (e) => {
     const val = e.target.value;
     setPatientSearch(val);
     setValue('patient', '');
     setSelectedPatient(null);
-    if (val.length >= 2) {
-      try {
-        const r = await api.get(`/patients/search?q=${val}`);
-        setPatients(r.data.data || []);
-      } catch (err) {}
-    } else {
+    setPatientSearchDone(false);
+    if (patientSearchTimer.current) clearTimeout(patientSearchTimer.current);
+    const term = val.trim();
+    if (term.length < 2) {
       setPatients([]);
+      return;
     }
+    patientSearchTimer.current = setTimeout(async () => {
+      try {
+        const r = await api.get(`/patients/search?q=${encodeURIComponent(term)}`);
+        setPatients(r.data.data || []);
+      } catch (err) {
+        setPatients([]);
+        toast.error(err?.response?.data?.message || 'Patient search failed');
+      } finally {
+        setPatientSearchDone(true);
+      }
+    }, 250);
   };
+
+  useEffect(() => () => {
+    if (patientSearchTimer.current) clearTimeout(patientSearchTimer.current);
+  }, []);
 
   const pickPatient = (p) => {
     setValue('patient', p._id);
@@ -237,6 +257,7 @@ export default function OPQueuePage() {
     setValue('mobileNumber', p.phone || '');
     setValue('uhid', p.patientId || '');
     setPatients([]);
+    setPatientSearchDone(false);
   };
 
   const selectedDoctorId = watch('doctor');
@@ -293,6 +314,10 @@ export default function OPQueuePage() {
     },
     onSuccess: async (r) => {
       qc.invalidateQueries(['opQueue']);
+      setActiveTab('waiting');
+      setQueueSearch('');
+      skipVisibleReset.current = true;
+      setVisibleCount(Math.max(PAGE_SIZE, 50));
       let op = r?.data?.data;
       let bill = r?.data?.bill || op?.bill;
       if (op && selectedPatient?.address && !op.patient?.address) {
@@ -408,6 +433,13 @@ export default function OPQueuePage() {
 
   const allItems = queue?.data || [];
   const typeFiltered = typeFilter ? allItems.filter((q) => q.appointmentType === typeFilter) : allItems;
+  const queueSearchTerm = queueSearch.trim().toLowerCase();
+  const matchesQueueSearch = (item) => {
+    if (!queueSearchTerm) return true;
+    const p = item.patient || {};
+    return [p.name, p.patientId, p.phone, item.tokenNumber, item.doctor?.name]
+      .some((v) => String(v || '').toLowerCase().includes(queueSearchTerm));
+  };
 
   const waiting = typeFiltered.filter((q) => q.status === 'waiting');
   const inConsult = typeFiltered.filter((q) => q.status === 'in_consultation');
@@ -415,10 +447,15 @@ export default function OPQueuePage() {
   const admitted = typeFiltered.filter((q) => q.status === 'admitted');
 
   const tabData = { waiting, in_consultation: inConsult, completed, admitted };
-  const activeItems = tabData[activeTab] || [];
-  const visibleItems = activeItems.slice(0, visibleCount);
+  const activeItems = (tabData[activeTab] || []).filter(matchesQueueSearch);
+  const visibleItems = queueSearchTerm ? activeItems : activeItems.slice(0, visibleCount);
 
   useEffect(() => {
+    if (skipVisibleReset.current) {
+      skipVisibleReset.current = false;
+      setOpenMenuId(null);
+      return;
+    }
     setVisibleCount(PAGE_SIZE);
     setOpenMenuId(null);
   }, [activeTab, deptFilter, doctorFilter, typeFilter, queueDate]);
@@ -500,11 +537,21 @@ export default function OPQueuePage() {
   };
 
   const activeTabMeta = TABS.find((t) => t.key === activeTab);
-  const showingTo = Math.min(visibleCount, activeItems.length);
+  const showingTo = queueSearchTerm ? activeItems.length : Math.min(visibleCount, activeItems.length);
 
   return (
     <div className="opq">
       <div className="opq-toolbar">
+        <div className="opq-search-wrap">
+          <Search size={15} />
+          <input
+            type="search"
+            className="opq-search"
+            placeholder="Search name, UHID, phone, token…"
+            value={queueSearch}
+            onChange={(e) => setQueueSearch(e.target.value)}
+          />
+        </div>
         <select className="opq-select" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
           <option value="">All Departments</option>
           {departments.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
@@ -592,8 +639,16 @@ export default function OPQueuePage() {
           ) : activeItems.length === 0 ? (
             <div className="opq-empty">
               <div className="opq-empty-icon"><ClipboardList size={26} /></div>
-              <p>No patients in {activeTabMeta?.label.toLowerCase()} queue</p>
-              <span>All caught up. Great job.</span>
+              <p>
+                {queueSearchTerm
+                  ? `No patients matching “${queueSearch.trim()}”`
+                  : `No patients in ${activeTabMeta?.label.toLowerCase()} queue`}
+              </p>
+              <span>
+                {queueSearchTerm
+                  ? 'Try another name, UHID, phone, or token number.'
+                  : 'All caught up. Great job.'}
+              </span>
             </div>
           ) : (
             <>
@@ -840,11 +895,26 @@ export default function OPQueuePage() {
                           value={patientSearch} onChange={handlePatientSearchChange}
                           className="w-full pl-4 pr-11 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
-                        <button type="button" className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center transition-colors">
+                        <button
+                          type="button"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center transition-colors"
+                          onClick={() => {
+                            const term = patientSearch.trim();
+                            if (term.length < 2) return;
+                            if (patientSearchTimer.current) clearTimeout(patientSearchTimer.current);
+                            api.get(`/patients/search?q=${encodeURIComponent(term)}`)
+                              .then((r) => setPatients(r.data.data || []))
+                              .catch((err) => {
+                                setPatients([]);
+                                toast.error(err?.response?.data?.message || 'Patient search failed');
+                              })
+                              .finally(() => setPatientSearchDone(true));
+                          }}
+                        >
                           <Search size={15} className="text-white" />
                         </button>
                         {patients.length > 0 && (
-                          <div className="absolute mt-1 w-full border border-slate-200 rounded-xl overflow-hidden shadow-lg bg-white z-20">
+                          <div className="absolute mt-1 w-full border border-slate-200 rounded-xl overflow-hidden shadow-lg bg-white z-30">
                             {patients.map((p) => (
                               <button key={p._id} type="button" onClick={() => pickPatient(p)}
                                 className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm transition-colors border-b border-slate-100 last:border-0">
@@ -852,6 +922,11 @@ export default function OPQueuePage() {
                                 <span className="text-slate-400 ml-2">{p.patientId} • {p.phone}</span>
                               </button>
                             ))}
+                          </div>
+                        )}
+                        {patientSearchDone && patientSearch.trim().length >= 2 && !selectedPatient && patients.length === 0 && (
+                          <div className="absolute mt-1 w-full border border-slate-200 rounded-xl shadow-lg bg-white z-30 px-4 py-3 text-sm text-slate-500">
+                            No matching patient. Check the name, UHID, or phone, or use Add New Patient.
                           </div>
                         )}
                       </div>

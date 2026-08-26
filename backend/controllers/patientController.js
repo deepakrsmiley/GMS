@@ -5,6 +5,9 @@ const Counter = require('../models/Counter');
 const { generatePatientId } = require('../utils/generateId');
 const cloudinary = require('../config/cloudinary');
 const logger = require('../utils/logger');
+const { orgFilter } = require('../middleware/tenant');
+
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const hasCloudinaryCredentials = () => (
   process.env.CLOUDINARY_CLOUD_NAME
@@ -137,15 +140,24 @@ exports.deletePatient = asyncHandler(async (req, res, next) => {
 });
 
 exports.searchPatients = asyncHandler(async (req, res) => {
-  const { q } = req.query;
+  const q = String(req.query.q || '').trim();
   if (!q) return res.status(200).json({ success: true, data: [] });
-  const patients = await Patient.find({
+
+  const rx = new RegExp(escapeRegex(q.slice(0, 80)), 'i');
+  // orgFilter wraps search `$or` in `$and` so Hospital A's legacy org `$or`
+  // cannot overwrite the name / UHID / phone match (mongoose keeps only one `$or`).
+  const patients = await Patient.find(orgFilter(req, {
     $or: [
-      { patientId: { $regex: q, $options: 'i' } },
-      { name: { $regex: q, $options: 'i' } },
-      { phone: { $regex: q, $options: 'i' } },
+      { patientId: rx },
+      { name: rx },
+      { phone: rx },
+      { email: rx },
     ],
-  }).limit(10).select('patientId name phone age gender bloodGroup');
+  }))
+    .sort('-createdAt')
+    .limit(25)
+    .select('patientId name phone age gender bloodGroup email address');
+
   res.status(200).json({ success: true, data: patients });
 });
 

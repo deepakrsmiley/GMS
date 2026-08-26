@@ -153,16 +153,16 @@ const userOrgFilter = (req, extra = {}) => {
   const orgId = getRequestOrganizationId(req);
   const ctx = req?.tenant || getOrganizationContext();
   if (orgId && ctx?.legacyUnscoped) {
-    return { ...extra, ...legacyOrOrgFilter(orgId) };
+    const scope = legacyOrOrgFilter(orgId);
+    return Object.keys(extra).length ? { $and: [extra, scope] } : scope;
   }
   if (orgId) {
     return { organizationId: orgId, ...extra };
   }
   if (ctx?.legacyUnscoped) {
-    return {
-      ...extra,
-      ...legacyMissingOrgFilter,
-    };
+    return Object.keys(extra).length
+      ? { $and: [extra, legacyMissingOrgFilter] }
+      : legacyMissingOrgFilter;
   }
   return { _id: null, ...extra };
 };
