@@ -69,5 +69,6 @@ describe('pharmacistBillScopeError', () => {
     );
     assert.equal(pharmacistBillScopeError(counterOnly, { billType: 'pharmacy' }), null);
     assert.equal(pharmacistBillScopeError(counterOnly, { billType: 'ip' }), null);
+    assert.equal(pharmacistBillScopeError(counterOnly, { billType: 'lab' }), null);
   });
 });

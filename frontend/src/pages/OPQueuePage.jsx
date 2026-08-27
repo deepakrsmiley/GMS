@@ -263,6 +263,7 @@ export default function OPQueuePage() {
   const selectedDoctorId = watch('doctor');
   const appointmentType = watch('appointmentType');
   const selectedDeptId = watch('department');
+  const queueFor = watch('queueFor');
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const selectedDept = useMemo(
     () => departments.find((d) => d._id === selectedDeptId) || selectedDoctor?.department || null,
@@ -1075,11 +1076,16 @@ export default function OPQueuePage() {
                           <select {...register('queueFor', { required: true })} className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
                             <option value="Consultation">Consultation</option>
                             <option value="Procedure">Procedure</option>
-                            <option value="Lab">Lab</option>
+                            <option value="Lab">Lab (after doctor — not lab-only)</option>
                             <option value="Pharmacy">Pharmacy</option>
                             <option value="Follow-up">Follow-up</option>
                           </select>
                         </div>
+                        {queueFor === 'Lab' && (
+                          <p className="text-[11px] text-amber-700 mt-1.5 leading-snug">
+                            This still creates a <strong>consultation bill</strong>. Lab-only patients (no doctor): register in Patients, then Lab Orders — do not use OP Queue.
+                          </p>
+                        )}
                       </div>
                       <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 flex items-center gap-2.5">
                         <Hourglass size={22} className="text-blue-500 flex-shrink-0" />

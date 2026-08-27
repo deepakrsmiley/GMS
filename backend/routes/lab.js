@@ -22,6 +22,7 @@ router.route('/:id')
 
 router.put('/:id/status', authorizePermissions('UPDATE_LAB_ORDER'), labController.updateLabStatus);
 router.put('/:id/results', authorizePermissions('UPDATE_LAB_REPORT'), labController.enterResults);
+router.post('/:id/bill', authorizeAnyPermission('CREATE_BILLING', 'UPDATE_BILLING'), labController.createLabBill);
 router.get('/:id/print', labController.printLabReport);
 
 module.exports = router;

@@ -1,7 +1,7 @@
 const { normalizeRole, isSuperAdmin } = require('./roles');
 const { resolveEffectivePermissions } = require('../config/permissions');
 
-const PHARMACY_SCOPE_BILL_TYPES = new Set(['pharmacy', 'ip']);
+const PHARMACY_SCOPE_BILL_TYPES = new Set(['pharmacy', 'ip', 'lab']);
 
 const userHasPermission = (user, code) => {
   if (!user) return false;
@@ -18,7 +18,7 @@ const isPharmacyScopeBill = (bill) => {
 /**
  * Pharmacists with UPDATE_BILLING can manage any bill type (OP consultation,
  * lab, unified, IP, pharmacy) — same rule as the Billing page.
- * Pharmacists who only have CREATE_BILLING stay limited to pharmacy and IP bills.
+ * Pharmacists who only have CREATE_BILLING stay limited to pharmacy, IP, and lab bills.
  */
 const pharmacistBillScopeError = (user, billLike) => {
   if (normalizeRole(user?.role) !== 'Pharmacist') return null;

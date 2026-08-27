@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { hasPermission } from '../constants/permissions';
-import { Plus, Printer, CheckCircle, Eye } from 'lucide-react';
+import { Plus, Printer, CheckCircle, Eye, Wallet } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -12,6 +12,7 @@ import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
 import LabReportTemplate from '../components/lab/LabReportTemplate';
 import LabOrderCreateModal from '../components/lab/LabOrderCreateModal';
+import LabCollectPaymentModal from '../components/lab/LabCollectPaymentModal';
 import {
   getProfileTests,
   getTestMeta,
@@ -34,6 +35,13 @@ const flagLabel = (flag) => {
   if (flag === 'LOW' || flag === 'Low') return 'Low';
   if (flag === 'ABNORMAL') return 'Abnormal';
   return String(flag).replace(/_/g, ' ');
+};
+
+const labIsBilled = (row) => {
+  const bill = row?.bill;
+  if (!bill) return false;
+  const status = typeof bill === 'object' ? bill.status : '';
+  return status !== 'cancelled' && status !== 'refunded';
 };
 
 const flagStyleKey = (flag) => {
@@ -110,6 +118,7 @@ export default function LabPage() {
   const { user } = useSelector((s) => s.auth);
   const isLabTech = hasPermission(user, 'UPDATE_LAB_REPORT') || hasPermission(user, 'UPDATE_LAB_ORDER');
   const canCreateOrders = hasPermission(user, 'CREATE_LAB_ORDER');
+  const canBill = hasPermission(user, 'CREATE_BILLING');
   const modalMode = isLabTech ? 'full' : 'request';
 
   const [page, setPage] = useState(1);
@@ -119,6 +128,7 @@ export default function LabPage() {
   const [prefillOp, setPrefillOp] = useState('');
   const [showResults, setShowResults] = useState(null);
   const [showViewResult, setShowViewResult] = useState(null);
+  const [collectLab, setCollectLab] = useState(null);
   const [printData, setPrintData] = useState(null);
   const [tab, setTab] = useState(searchParams.get('tab') === 'reports' ? 'reports' : 'orders');
   const [desk, setDesk] = useState(
@@ -321,6 +331,31 @@ export default function LabPage() {
       ),
     },
     {
+      key: 'payment',
+      header: 'Payment',
+      render: (r) => {
+        const billed = labIsBilled(r);
+        const billNo = typeof r.bill === 'object' ? r.bill.billNumber : '';
+        if (r.ipAdmission) {
+          return <span className="text-[11px] text-slate-500">IP — bill at discharge</span>;
+        }
+        if (billed) {
+          return (
+            <span className="text-[11px] font-semibold text-emerald-700">
+              Paid{billNo ? ` · ${billNo}` : ''}
+            </span>
+          );
+        }
+        const amt = (r.tests || []).filter((t) => t.status !== 'cancelled').reduce((s, t) => s + (Number(t.price) || 0), 0)
+          || Number(r.totalAmount) || 0;
+        return (
+          <span className="text-[11px] font-semibold text-amber-700">
+            Unbilled{amt ? ` · ₹${amt}` : ''}
+          </span>
+        );
+      },
+    },
+    {
       key: 'createdAt',
       header: 'Requested',
       render: (r) => (
@@ -335,7 +370,7 @@ export default function LabPage() {
       header: '',
       render: (r) => (
         <div className="flex gap-2 items-center flex-wrap justify-end">
-          {canCreateOrders && !['completed', 'cancelled'].includes(r.status) && (
+          {canCreateOrders && !['completed', 'cancelled'].includes(r.status) && !labIsBilled(r) && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); openAddMoreTests(r); }}
@@ -343,6 +378,15 @@ export default function LabPage() {
               title="Add more tests to the SAME Lab No."
             >
               + More tests
+            </button>
+          )}
+          {canBill && !r.ipAdmission && !labIsBilled(r) && r.status !== 'cancelled' && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setCollectLab(r); }}
+              className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1"
+            >
+              <Wallet size={11} /> Collect
             </button>
           )}
           {r.status === 'pending' && isLabTech && (
@@ -415,7 +459,8 @@ export default function LabPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Laboratory</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Separate desks · one Lab No. per request · live status on request desks
+            Lab-only patients: register the patient, create this order, then collect payment before sample.
+            OP patients: collect consultation in OP Queue first, then order lab and collect a separate lab bill.
           </p>
         </div>
         {tab === 'orders' && canCreateOrders && (
@@ -475,6 +520,7 @@ export default function LabPage() {
             Showing <strong>{ORDER_SOURCE_LABELS[desk] || desk}</strong>.
             {' '}When Lab Technician collects / processes / completes an order, the
             {' '}<strong>Lab status</strong> column updates on this desk in real time.
+            {' '}Collect lab payment as soon as the order is created — do not wait for the report.
           </p>
         </>
       )}
@@ -517,6 +563,17 @@ export default function LabPage() {
           appendTo?.orderSource
           || (desk === 'nurse_ip' ? 'nurse_ip' : desk === 'lab_desk' ? 'lab_desk' : 'reception')
         }
+        onCreated={(lab, meta) => {
+          if (meta?.appended) return;
+          if (!canBill || lab?.ipAdmission) return;
+          setCollectLab(lab);
+        }}
+      />
+
+      <LabCollectPaymentModal
+        isOpen={!!collectLab}
+        lab={collectLab}
+        onClose={() => setCollectLab(null)}
       />
 
       <Modal

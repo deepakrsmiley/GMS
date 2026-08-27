@@ -241,7 +241,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       return dateBounds(datePreset, customFrom, customTo);
     }, [datePreset, customFrom, customTo, tableTab]);
 
-    const listBillType = typeFilter || (mainTab === 'ip' ? 'ip' : mainTab === 'op' ? 'op' : 'all');
+    const listBillType = typeFilter || (
+      mainTab === 'ip' ? 'ip' : mainTab === 'lab' ? 'lab' : mainTab === 'op' ? 'op' : 'all'
+    );
 
     const { data, isLoading } = useQuery({
       queryKey: ['bills', page, limit, search, statusFilter, listBillType, deptFilter, range.from?.toISOString(), range.to?.toISOString(), mainTab],
@@ -326,7 +328,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setSelectedPatient(p);
       setPatientSearch(`${p.name} (${p.patientId})`);
       setPatients([]);
-      const chargeBillType = mainTab === 'op' ? 'op' : 'ip';
+      const chargeBillType = mainTab === 'lab' ? 'lab' : mainTab === 'op' ? 'op' : 'ip';
       loadPatientCharges(p._id, chargeBillType);
     };
 
@@ -443,7 +445,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const createMut = useMutation({
-      mutationFn: (payload) => api.post('/billing', payload),
+      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true }),
       onSuccess: (res) => {
         toast.success(res.data.message || 'Bill created!');
         qc.invalidateQueries(['bills']);
@@ -823,8 +825,17 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         return;
       }
 
+      const allLab = included.every((c) => c.category === 'Laboratory' || c.type === 'lab');
+      const billType = chargeMeta.patientType === 'ip' && mainTab !== 'op' && mainTab !== 'lab'
+        ? 'ip'
+        : (mainTab === 'lab' || allLab)
+          ? 'lab'
+          : mainTab === 'op'
+            ? 'op'
+            : 'unified';
+
       const payload = {
-        billType: chargeMeta.patientType === 'ip' && mainTab !== 'op' ? 'ip' : mainTab === 'op' ? 'op' : 'unified',
+        billType,
         patient: selectedPatient._id,
         doctor: chargeMeta.doctor?._id,
         department: chargeMeta.department?._id,
@@ -939,13 +950,14 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         <header className="bl-head">
           <div>
             <h1>Billing</h1>
-            <p>Manage OP, IP and all hospital billing from one place.</p>
+            <p>OP consultation, lab tests, IP and pharmacy — bill each the right way.</p>
           </div>
         </header>
 
         <nav className="bl-tabs">
           {[
             { key: 'op', label: 'OP Billing' },
+            { key: 'lab', label: 'Lab Billing' },
             { key: 'ip', label: 'IP Billing' },
             { key: 'discharge', label: 'Pending Discharge' },
             { key: 'previous', label: 'Previous Bills' },
@@ -1092,6 +1104,15 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                 </div>
               )}
               <div className="bl-panel-tools">
+                {canCreate && (mainTab === 'op' || mainTab === 'ip' || mainTab === 'lab') && (
+                  <button
+                    type="button"
+                    className="bl-tool"
+                    onClick={() => { resetCreateForm(); setShowCreate(true); }}
+                  >
+                    <Plus size={14} /> Create Bill
+                  </button>
+                )}
                 <button type="button" className="bl-tool" onClick={exportRows}>
                   <Download size={14} /> Export
                 </button>
@@ -1387,7 +1408,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         </footer>
 
         {/* UNIFIED BILLING MODAL */}
-        <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); resetCreateForm(); }} title={mainTab === 'op' ? 'OP Billing — Create Bill' : 'IP Billing — Create Bill'} size="full">
+        <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); resetCreateForm(); }} title={mainTab === 'lab' ? 'Lab Billing — Create Bill' : mainTab === 'op' ? 'OP Billing — Create Bill' : 'IP Billing — Create Bill'} size="full">
           <div className="flex flex-col lg:flex-row min-h-[75vh]">
             {/* Left: Patient & Charges */}
             <div className="flex-1 p-6 space-y-5 border-r border-gray-200 dark:border-gray-700 overflow-y-auto max-h-[80vh]">
@@ -1405,7 +1426,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                     className="input-field flex-1"
                   />
                   {selectedPatient && (
-                    <button type="button" onClick={() => loadPatientCharges(selectedPatient._id)} className="btn-secondary px-3" title="Refresh charges">
+                    <button type="button" onClick={() => loadPatientCharges(selectedPatient._id, mainTab === 'lab' ? 'lab' : mainTab === 'op' ? 'op' : 'ip')} className="btn-secondary px-3" title="Refresh charges">
                       <RefreshCw size={16} className={loadingCharges ? 'animate-spin' : ''} />
                     </button>
                   )}
@@ -1866,7 +1887,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-gray-400 text-sm text-center px-4">
-                  Select a patient to load all unpaid charges from OP, IP, Lab, Pharmacy &amp; more
+                  Select a patient to load unpaid charges
+                  {mainTab === 'lab' ? ' for lab tests (available as soon as the order is created)' : ' from OP, IP, Lab, Pharmacy & more'}
                 </div>
               )}
 

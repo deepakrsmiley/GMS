@@ -34,6 +34,7 @@ export default function LabOrderCreateModal({
   initialOpId = '',
   initialIpId = '',
   orderSource,
+  onCreated,
 }) {
   const qc = useQueryClient();
   const isAppend = !!appendTo;
@@ -203,11 +204,12 @@ export default function LabOrderCreateModal({
       }
       return api.post('/lab', payload);
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       toast.success(isAppend ? 'Tests added to same lab order' : 'Lab order created');
       qc.invalidateQueries(['labTests']);
       qc.invalidateQueries(['labDash']);
       qc.invalidateQueries(['ip-admission']);
+      onCreated?.(res.data.data, { appended: isAppend });
       onClose();
     },
     onError: (e) => toast.error(e?.response?.data?.message || e.message || 'Failed'),

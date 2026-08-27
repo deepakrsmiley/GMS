@@ -7,6 +7,7 @@ const Medicine = require('../models/Medicine');
 const Bill = require('../models/Bill');
 const Bed = require('../models/Bed');
 const { EMERGENCY_SURCHARGE, resolveOpConsultationFee } = require('../utils/opConsultationFee');
+const { filterChargesForBillType, labBillableTestLines } = require('../utils/billingChargeRules');
 
 const ADMISSION_FEE = 500;
 const NURSING_CHARGE_PER_NOTE = 200;
@@ -77,21 +78,13 @@ const isOpOnlyPatient = async (patientId) => {
   return ipCount === 0;
 };
 
-/** OP / lab billing must not pull pharmacy prescription lines — those are billed from Pharmacy. */
-const filterChargesForBillType = (charges, billType) => {
-  const mode = billType || 'auto';
-  if (mode === 'op' || mode === 'lab') {
-    return charges.filter((c) => c.category !== 'Pharmacy' && c.type !== 'medicine');
-  }
-  return charges;
-};
-
 exports.getPatientBillableCharges = async (patientId, options = {}) => {
   const patient = await Patient.findById(patientId).select('patientId name age gender phone email');
   if (!patient) return null;
 
   const billType = options.billType || 'auto';
-  const opOnly = billType === 'op' || (billType === 'auto' && await isOpOnlyPatient(patientId));
+  const labMode = billType === 'lab';
+  const opOnly = billType === 'op' || labMode || (billType === 'auto' && await isOpOnlyPatient(patientId));
   const includeIp = billType === 'ip' || (billType === 'auto' && !opOnly);
 
   const billedRefs = await getBilledReferenceIds(patientId);
@@ -335,10 +328,10 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
     }
   }
 
-  // ── Laboratory (completed tests with results only) ──
+  // ── Laboratory (bill as soon as the order is created, not only after results) ──
   const labTests = await LabTest.find({
     patient: patientId,
-    status: 'completed',
+    status: { $nin: ['cancelled'] },
     ...notBilledFilter,
   })
     .populate('doctor', 'name')
@@ -346,39 +339,23 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
 
   for (const lab of labTests) {
     if (isBilled(billedRefs, 'LabTest', lab._id)) continue;
+    if (lab.ipAdmission && !includeIp) continue;
 
-    const hasResults = (lab.results?.length > 0) || lab.status === 'completed';
-    if (!hasResults) continue;
-
-    if (lab.tests?.length) {
-      for (const test of lab.tests) {
-        if (test.status === 'cancelled') continue;
-        if ((test.price || 0) <= 0) continue;
-        charges.push(makeCharge({
-          id: `lab-${lab._id}-${test.testName}`,
-          category: 'Laboratory',
-          type: 'lab',
-          description: `Lab: ${test.testName} (${lab.labNumber || ''})`,
-          quantity: 1,
-          unitPrice: test.price || 0,
-          referenceId: lab._id,
-          referenceModel: 'LabTest',
-          meta: { labNumber: lab.labNumber, testStatus: test.status, labStatus: lab.status },
-        }));
-      }
-    } else if (lab.totalAmount > 0) {
+    const lines = labBillableTestLines(lab);
+    lines.forEach((line, idx) => {
       charges.push(makeCharge({
-        id: `lab-${lab._id}`,
-        category: 'Laboratory',
-        type: 'lab',
-        description: `Lab tests (${lab.labNumber || ''})`,
-        quantity: 1,
-        unitPrice: lab.totalAmount,
+        id: `lab-${lab._id}-${line.name || idx}`,
+        category: line.category,
+        type: line.type,
+        description: line.description,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        gstPercent: line.gstPercent,
         referenceId: lab._id,
         referenceModel: 'LabTest',
         meta: { labNumber: lab.labNumber, labStatus: lab.status },
       }));
-    }
+    });
   }
 
   // ── Pharmacy (dispensed prescriptions) ──
@@ -420,7 +397,7 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
     patient: patientId,
     status: { $nin: ['cancelled', 'refunded'] },
   });
-  if (priorBills === 0 && !isBilled(billedRefs, 'Patient', patientId)) {
+  if (!labMode && priorBills === 0 && !isBilled(billedRefs, 'Patient', patientId)) {
     charges.push(makeCharge({
       id: `reg-${patientId}`,
       category: 'Miscellaneous',
@@ -527,6 +504,9 @@ exports.getPendingDischargeBilling = async () => {
 
   return results;
 };
+
+exports.filterChargesForBillType = filterChargesForBillType;
+exports.labBillableTestLines = labBillableTestLines;
 
 exports.markSourcesAsBilled = async (items, billId) => {
   const opIds = new Set();

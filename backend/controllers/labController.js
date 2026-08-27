@@ -1,13 +1,20 @@
 const asyncHandler = require('../utils/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const LabTest = require('../models/LabTest');
+const Bill = require('../models/Bill');
 const Counter = require('../models/Counter');
-const { generateLabNo } = require('../utils/generateId');
+const { generateLabNo, allocateBillNumber } = require('../utils/generateId');
 const { generateLabReportPDF } = require('../utils/pdfGenerator');
 const { LAB_TYPES } = require('../models/LabTest');
 const { analyzeResult } = require('../utils/labResultAnalyzer');
 const TestMaster = require('../models/TestMaster');
 const { normalizeRole } = require('../utils/roles');
+const { withOrganization } = require('../middleware/tenant');
+const { markSourcesAsBilled } = require('../services/billingService');
+const { labBillableTestLines } = require('../utils/billingChargeRules');
+const { pharmacistBillScopeError } = require('../utils/billingAccess');
+
+const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
 
 const resolveOrderSource = (body, user) => {
   if (body.orderSource && ['reception', 'lab_desk', 'nurse_ip', 'doctor', 'other'].includes(body.orderSource)) {
@@ -83,6 +90,7 @@ exports.getLabTests = asyncHandler(async (req, res) => {
       .populate('patient', 'patientId name age gender')
       .populate('doctor', 'name')
       .populate('createdBy', 'name role')
+      .populate('bill', 'billNumber status paidAmount totalAmount dueAmount')
       .sort(sort)
       .skip(skip)
       .limit(limit),
@@ -105,7 +113,8 @@ exports.getLabTest = asyncHandler(async (req, res, next) => {
     .populate('doctor', 'name')
     .populate('sampleCollectedBy', 'name')
     .populate('reportVerifiedBy', 'name')
-    .populate('createdBy', 'name role');
+    .populate('createdBy', 'name role')
+    .populate('bill', 'billNumber status paidAmount totalAmount dueAmount');
   if (!test) return next(new ErrorResponse('Lab test not found', 404));
 
   if (req.user.role === 'Patient' && test.patient?.email !== req.user.email) {
@@ -159,9 +168,14 @@ exports.createLabTest = asyncHandler(async (req, res, next) => {
 
   if (body.opRegistration) {
     const OPRegistration = require('../models/OPRegistration');
-    await OPRegistration.findByIdAndUpdate(body.opRegistration, {
-      $addToSet: { labTests: labTest._id },
-    });
+    const opDoc = await OPRegistration.findById(body.opRegistration).select('status');
+    if (opDoc) {
+      const patch = { $addToSet: { labTests: labTest._id } };
+      if (!['admitted', 'discharged', 'cancelled', 'no_show'].includes(opDoc.status)) {
+        patch.$set = { status: 'sent_to_lab' };
+      }
+      await OPRegistration.updateOne({ _id: opDoc._id }, patch);
+    }
   }
 
   if (body.ipAdmission) {
@@ -203,6 +217,15 @@ exports.addTestsToLabOrder = asyncHandler(async (req, res, next) => {
   if (!lab) return next(new ErrorResponse('Lab order not found', 404));
   if (['completed', 'cancelled'].includes(lab.status)) {
     return next(new ErrorResponse('Cannot add tests to a completed / cancelled order', 400));
+  }
+  if (lab.bill) {
+    const existingBill = await Bill.findById(lab.bill).select('billNumber status');
+    if (existingBill && !['cancelled', 'refunded'].includes(existingBill.status)) {
+      return next(new ErrorResponse(
+        `This lab order is already billed (${existingBill.billNumber}). Create a new lab order for extra tests.`,
+        400,
+      ));
+    }
   }
 
   const newProfiles = Array.isArray(req.body.profiles) ? req.body.profiles.filter(Boolean) : [];
@@ -452,4 +475,87 @@ exports.getIPMedicinesByTime = asyncHandler(async (req, res) => {
 // Export LAB_TYPES for frontend to fetch
 exports.getLabTypes = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: LAB_TYPES });
+});
+
+exports.createLabBill = asyncHandler(async (req, res, next) => {
+  const lab = await LabTest.findById(req.params.id);
+  if (!lab) return next(new ErrorResponse('Lab order not found', 404));
+  if (lab.status === 'cancelled') {
+    return next(new ErrorResponse('Cannot bill a cancelled lab order', 400));
+  }
+  if (lab.ipAdmission) {
+    return next(new ErrorResponse(
+      'IP lab tests are billed from IP Billing / Pending Discharge, not as a separate lab bill',
+      400,
+    ));
+  }
+
+  if (lab.bill) {
+    const existing = await Bill.findById(lab.bill).select('billNumber status totalAmount paidAmount dueAmount');
+    if (existing && !['cancelled', 'refunded'].includes(existing.status)) {
+      return next(new ErrorResponse(`This lab order is already billed as ${existing.billNumber}`, 400));
+    }
+  }
+
+  const items = labBillableTestLines(lab).map((line) => ({
+    ...line,
+    referenceId: lab._id,
+  }));
+  if (!items.length) {
+    return next(new ErrorResponse('No billable tests on this order. Set prices in Test Master, then try again.', 400));
+  }
+
+  const billLike = { billType: 'lab' };
+  const scopeError = pharmacistBillScopeError(req.user, billLike);
+  if (scopeError) return next(new ErrorResponse(scopeError, 403));
+
+  const total = items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  const rawPaid = req.body.paidAmount;
+  const paidParsed = Number(rawPaid);
+  const paidAmount = (rawPaid === '' || rawPaid == null || !Number.isFinite(paidParsed))
+    ? total
+    : Math.max(0, Math.min(paidParsed, total));
+  const paymentMode = PAYMENT_MODES.includes(req.body.paymentMode) ? req.body.paymentMode : 'cash';
+
+  const payload = withOrganization(req, {
+    billNumber: await allocateBillNumber(),
+    billType: 'lab',
+    patient: lab.patient,
+    doctor: lab.doctor || undefined,
+    opRegistration: lab.opRegistration || undefined,
+    items,
+    paidAmount,
+    paymentMode,
+    payments: paidAmount > 0
+      ? [{ amount: paidAmount, mode: paymentMode, receivedBy: req.user._id, paidAt: new Date() }]
+      : [],
+    notes: `Lab order ${lab.labNumber || lab._id}`,
+    createdBy: req.user._id,
+  });
+
+  const bill = await Bill.create(payload);
+  await markSourcesAsBilled(payload.items, bill._id);
+
+  const populated = await Bill.findById(bill._id)
+    .populate('patient', 'patientId name age gender phone')
+    .populate('doctor', 'name')
+    .populate('createdBy', 'name');
+
+  const updatedLab = await LabTest.findById(lab._id)
+    .populate('patient', 'patientId name age gender')
+    .populate('doctor', 'name')
+    .populate('createdBy', 'name role')
+    .populate('bill', 'billNumber status paidAmount totalAmount dueAmount');
+
+  if (req.app.get('io')) {
+    req.app.get('io').emit('lab:update', { type: 'billed', data: updatedLab });
+  }
+
+  res.status(201).json({
+    success: true,
+    data: { bill: populated, lab: updatedLab },
+    message: paidAmount >= total
+      ? `Lab bill ${populated.billNumber} collected`
+      : `Lab bill ${populated.billNumber} created`,
+  });
 });
