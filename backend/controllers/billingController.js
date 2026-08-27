@@ -24,7 +24,10 @@ const {
   markSourcesAsBilled,
   unmarkSourcesAsBilled,
 } = require("../services/billingService");
-const { normalizeRole } = require("../utils/roles");
+const {
+  isPharmacyScopeBill,
+  pharmacistBillScopeError,
+} = require("../utils/billingAccess");
 
 const enrichMedicineItems = async (items = []) => {
   const enriched = [];
@@ -203,25 +206,11 @@ const toBillError = (error) => {
 
 const toPlain = (value) => JSON.parse(JSON.stringify(value || null));
 
-// Pharmacists can manage pharmacy bills and any IP bill (so they can add
-// medicines and generate bills for admitted patients).
-const isPharmacyScopeBill = (bill) => {
-  const type = bill.billType || "unified";
-  return type === "pharmacy" || type === "ip";
-};
-
 const requirePharmacistBillScope = (req, billLike, next) => {
-  if (normalizeRole(req.user.role) !== "Pharmacist") return false;
-  if (!isPharmacyScopeBill(billLike)) {
-    next(
-      new ErrorResponse(
-        "Pharmacy users can manage pharmacy and IP pharmacy bills only",
-        403,
-      ),
-    );
-    return true;
-  }
-  return false;
+  const message = pharmacistBillScopeError(req.user, billLike);
+  if (!message) return false;
+  next(new ErrorResponse(message, 403));
+  return true;
 };
 
 const summarizeItem = (item = {}) => ({

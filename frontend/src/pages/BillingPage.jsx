@@ -479,7 +479,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     });
 
     const updateBillMut = useMutation({
-      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload),
+      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload, { skipErrorToast: true }),
       onSuccess: (res) => {
         toast.success('Bill updated');
         qc.invalidateQueries(['bills']);
@@ -530,9 +530,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setShowPrintPreview(id);
     };
 
-    // ── Any non-cancelled bill (OP/IP/Pharmacy/unified) can now be edited by
-    // billing-capable roles. Pharmacist can manage pharmacy bills and any IP
-    // bill — mirrors the backend's requirePharmacistBillScope check.
+    // Any non-cancelled bill can be edited by UPDATE_BILLING (including the
+    // pharmacist role, which has that permission by default). CREATE_BILLING
+    // without UPDATE_BILLING stays limited to pharmacy and IP bills.
     const canEditBill = (bill) => {
       if (!bill || bill.status === 'cancelled') return false;
       if (hasPermission(user, 'UPDATE_BILLING')) return true;
