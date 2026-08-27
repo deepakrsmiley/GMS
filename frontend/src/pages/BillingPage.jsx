@@ -937,9 +937,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     const openMainTab = (tab) => {
       setMainTab(tab);
       setOpenMenuId(null);
+      setTypeFilter('');
       if (tab === 'previous') {
         setTableTab('previous');
         setDatePreset('today');
+      } else if (tab === 'lab') {
+        setTableTab('today');
+        setDatePreset('7d');
       } else if (tab !== 'discharge') {
         setTableTab('today');
       }
@@ -1201,7 +1205,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
               ) : isLoading ? (
                 <p className="bl-empty">Loading bills…</p>
               ) : tableRows.length === 0 ? (
-                <p className="bl-empty">No bills found for the selected filters.</p>
+                <p className="bl-empty">
+                  {mainTab === 'lab'
+                    ? 'No lab bills in this date range. First Collect payment on Lab Orders (or Create Bill here), then open Lab Billing. Try Last 7 Days if you billed earlier.'
+                    : 'No bills found for the selected filters.'}
+                </p>
               ) : (
                 <table className="bl-table">
                   <thead>

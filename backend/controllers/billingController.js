@@ -432,6 +432,13 @@ exports.getBills = asyncHandler(async (req, res) => {
     extra.billType = { $in: ["op", "pharmacy", "lab", "unified"] };
   } else if (req.query.billType === "ip") {
     extra.billType = "ip";
+  } else if (req.query.billType === "lab") {
+    extra.billType = { $ne: "ip" };
+    extra.$or = [
+      { billType: "lab" },
+      { "items.category": "Laboratory" },
+      { "items.type": "lab" },
+    ];
   } else if (req.query.billType && req.query.billType !== "all") {
     extra.billType = req.query.billType;
   }
@@ -450,7 +457,13 @@ exports.getBills = asyncHandler(async (req, res) => {
     )
       .select("_id")
       .limit(80);
-    extra.$or = [{ billNumber: rx }, { patient: { $in: patients.map((p) => p._id) } }];
+    const searchOr = [{ billNumber: rx }, { patient: { $in: patients.map((p) => p._id) } }];
+    if (extra.$or) {
+      extra.$and = [{ $or: extra.$or }, { $or: searchOr }];
+      delete extra.$or;
+    } else {
+      extra.$or = searchOr;
+    }
   }
 
   const filter = orgFilter(req, extra);

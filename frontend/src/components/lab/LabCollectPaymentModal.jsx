@@ -38,7 +38,7 @@ export default function LabCollectPaymentModal({ isOpen, lab, onClose, onBilled 
       toast.success(res.data.message || 'Lab bill created');
       qc.invalidateQueries({ queryKey: ['labTests'] });
       qc.invalidateQueries({ queryKey: ['bills'] });
-      qc.invalidateQueries({ queryKey: ['billStats'] });
+      qc.invalidateQueries({ queryKey: ['labBills'] });
       const bill = res.data.data?.bill;
       onBilled?.(res.data.data);
       onClose();

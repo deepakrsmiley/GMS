@@ -130,7 +130,9 @@ export default function LabPage() {
   const [showViewResult, setShowViewResult] = useState(null);
   const [collectLab, setCollectLab] = useState(null);
   const [printData, setPrintData] = useState(null);
-  const [tab, setTab] = useState(searchParams.get('tab') === 'reports' ? 'reports' : 'orders');
+  const [tab, setTab] = useState(
+    searchParams.get('tab') === 'reports' ? 'reports' : searchParams.get('tab') === 'bills' ? 'bills' : 'orders',
+  );
   const [desk, setDesk] = useState(
     searchParams.get('desk')
     || (hasPermission(user, 'CREATE_LAB_ORDER') && !isLabTech ? 'reception' : 'lab_desk'),
@@ -143,6 +145,7 @@ export default function LabPage() {
   useEffect(() => {
     const urlTab = searchParams.get('tab');
     if (urlTab === 'reports') setTab('reports');
+    else if (urlTab === 'bills') setTab('bills');
     else if (urlTab === 'orders') setTab('orders');
     const urlDesk = searchParams.get('desk');
     if (urlDesk && ['reception', 'lab_desk', 'nurse_ip'].includes(urlDesk)) setDesk(urlDesk);
@@ -169,6 +172,7 @@ export default function LabPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['labTests', page, tab, desk],
+    enabled: tab !== 'bills',
     queryFn: () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -179,6 +183,12 @@ export default function LabPage() {
       else if (desk) params.set('orderSource', desk);
       return api.get(`/lab?${params}`).then((r) => r.data);
     },
+  });
+
+  const { data: labBillsData, isLoading: labBillsLoading } = useQuery({
+    queryKey: ['labBills', page],
+    enabled: tab === 'bills',
+    queryFn: () => api.get(`/lab/bills?page=${page}&limit=20`).then((r) => r.data),
   });
 
   const { data: dashData } = useQuery({
@@ -229,6 +239,24 @@ export default function LabPage() {
     },
     onError: (err) => toast.error(err?.response?.data?.message || 'Failed to save'),
   });
+
+  const handlePrintBill = async (billId, billNumber) => {
+    if (!billId) {
+      toast.error('No bill on this order yet — click Collect first');
+      return;
+    }
+    try {
+      const response = await api.get(`/billing/${billId}/print?size=A5`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${billNumber || 'lab-bill'}.pdf`;
+      link.click();
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch {
+      toast.error('Could not open the lab bill PDF');
+    }
+  };
 
   const handlePrint = async (test) => {
     try {
@@ -340,10 +368,15 @@ export default function LabPage() {
           return <span className="text-[11px] text-slate-500">IP — bill at discharge</span>;
         }
         if (billed) {
+          const billId = typeof r.bill === 'object' ? r.bill._id : r.bill;
           return (
-            <span className="text-[11px] font-semibold text-emerald-700">
+            <button
+              type="button"
+              className="text-[11px] font-semibold text-emerald-700 hover:underline"
+              onClick={(e) => { e.stopPropagation(); handlePrintBill(billId, billNo); }}
+            >
               Paid{billNo ? ` · ${billNo}` : ''}
-            </span>
+            </button>
           );
         }
         const amt = (r.tests || []).filter((t) => t.status !== 'cancelled').reduce((s, t) => s + (Number(t.price) || 0), 0)
@@ -453,6 +486,72 @@ export default function LabPage() {
 
   const tableData = data?.data || [];
 
+  const fmtMoney = (n) =>
+    `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const billColumns = [
+    {
+      key: 'billNumber',
+      header: 'Bill No',
+      render: (r) => (
+        <button
+          type="button"
+          className="font-mono font-semibold text-blue-700 dark:text-blue-400 hover:underline"
+          onClick={() => handlePrintBill(r._id, r.billNumber)}
+        >
+          {r.billNumber || '—'}
+        </button>
+      ),
+    },
+    {
+      key: 'patient',
+      header: 'Patient',
+      render: (r) => (
+        <div>
+          <p className="font-medium text-gray-900 dark:text-white">{r.patient?.name || '—'}</p>
+          <p className="text-xs text-gray-400">{r.patient?.patientId || ''}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Billed',
+      render: (r) => (
+        <span className="text-xs text-gray-500">
+          {r.createdAt ? new Date(r.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'totalAmount',
+      header: 'Amount',
+      render: (r) => <span className="font-semibold">{fmtMoney(r.totalAmount)}</span>,
+    },
+    {
+      key: 'paidAmount',
+      header: 'Paid',
+      render: (r) => fmtMoney(r.paidAmount),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (r) => <span className={r.status === 'paid' ? 'badge-green' : 'badge-yellow'}>{r.status || '—'}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (r) => (
+        <button
+          type="button"
+          className="text-xs bg-purple-100 text-purple-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1"
+          onClick={() => handlePrintBill(r._id, r.billNumber)}
+        >
+          <Printer size={11} /> Print bill
+        </button>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -471,11 +570,23 @@ export default function LabPage() {
       </div>
 
       <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
-        {[{ id: 'orders', label: 'Lab Orders' }, { id: 'reports', label: 'Lab Reports' }].map(({ id, label }) => (
+        {[
+          { id: 'orders', label: 'Lab Orders' },
+          { id: 'bills', label: 'Lab Bills' },
+          { id: 'reports', label: 'Lab Reports' },
+        ].map(({ id, label }) => (
           <button
             key={id}
             type="button"
-            onClick={() => { setTab(id); setPage(1); }}
+            onClick={() => {
+              setTab(id);
+              setPage(1);
+              setSearchParams((prev) => {
+                const p = new URLSearchParams(prev);
+                p.set('tab', id);
+                return p;
+              });
+            }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'
             }`}
@@ -484,6 +595,13 @@ export default function LabPage() {
           </button>
         ))}
       </div>
+
+      {tab === 'bills' && (
+        <p className="text-xs text-slate-500">
+          Lab invoices after you click <strong>Collect</strong> on an order (or Billing → Lab Billing → Create Bill).
+          This is not the same as Lab Orders (tests) or Lab Reports (results).
+        </p>
+      )}
 
       {tab === 'orders' && (
         <>
@@ -542,14 +660,30 @@ export default function LabPage() {
       )}
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-        <DataTable
-          columns={columns}
-          data={tableData}
-          loading={isLoading}
-          page={page}
-          pages={data?.pages || 1}
-          onPageChange={setPage}
-        />
+        {tab === 'bills' && !labBillsLoading && !(labBillsData?.data || []).length ? (
+          <p className="p-8 text-sm text-slate-500 text-center">
+            No lab bills yet. Open <strong>Lab Orders</strong>, click <strong>Collect</strong> on the order (green button),
+            then return here. Creating only a lab order does not create a bill.
+          </p>
+        ) : tab === 'bills' ? (
+          <DataTable
+            columns={billColumns}
+            data={labBillsData?.data || []}
+            loading={labBillsLoading}
+            page={page}
+            pages={labBillsData?.pages || 1}
+            onPageChange={setPage}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={tableData}
+            loading={isLoading}
+            page={page}
+            pages={data?.pages || 1}
+            onPageChange={setPage}
+          />
+        )}
       </div>
 
       <LabOrderCreateModal

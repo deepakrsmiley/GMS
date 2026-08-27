@@ -90,11 +90,50 @@ exports.getLabTests = asyncHandler(async (req, res) => {
       .populate('patient', 'patientId name age gender')
       .populate('doctor', 'name')
       .populate('createdBy', 'name role')
-      .populate('bill', 'billNumber status paidAmount totalAmount dueAmount')
+      .populate({
+        path: 'bill',
+        select: 'billNumber status paidAmount totalAmount dueAmount billType createdAt',
+        options: { skipOrganizationFilter: true },
+      })
       .sort(sort)
       .skip(skip)
       .limit(limit),
     LabTest.countDocuments(findFilter),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    count: data.length,
+    total,
+    page,
+    pages: Math.ceil(total / limit) || 1,
+    data,
+  });
+});
+
+exports.getLabBills = asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const skip = (page - 1) * limit;
+
+  const filter = {
+    status: { $nin: ['cancelled', 'refunded'] },
+    billType: { $ne: 'ip' },
+    $or: [
+      { billType: 'lab' },
+      { 'items.category': 'Laboratory' },
+      { 'items.type': 'lab' },
+    ],
+  };
+  if (req.query.patient) filter.patient = req.query.patient;
+
+  const [data, total] = await Promise.all([
+    Bill.find(filter)
+      .populate('patient', 'patientId name age gender phone')
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit),
+    Bill.countDocuments(filter),
   ]);
 
   res.status(200).json({
@@ -114,7 +153,11 @@ exports.getLabTest = asyncHandler(async (req, res, next) => {
     .populate('sampleCollectedBy', 'name')
     .populate('reportVerifiedBy', 'name')
     .populate('createdBy', 'name role')
-    .populate('bill', 'billNumber status paidAmount totalAmount dueAmount');
+    .populate({
+      path: 'bill',
+      select: 'billNumber status paidAmount totalAmount dueAmount billType createdAt',
+      options: { skipOrganizationFilter: true },
+    });
   if (!test) return next(new ErrorResponse('Lab test not found', 404));
 
   if (req.user.role === 'Patient' && test.patient?.email !== req.user.email) {
@@ -545,7 +588,11 @@ exports.createLabBill = asyncHandler(async (req, res, next) => {
     .populate('patient', 'patientId name age gender')
     .populate('doctor', 'name')
     .populate('createdBy', 'name role')
-    .populate('bill', 'billNumber status paidAmount totalAmount dueAmount');
+    .populate({
+      path: 'bill',
+      select: 'billNumber status paidAmount totalAmount dueAmount billType createdAt',
+      options: { skipOrganizationFilter: true },
+    });
 
   if (req.app.get('io')) {
     req.app.get('io').emit('lab:update', { type: 'billed', data: updatedLab });

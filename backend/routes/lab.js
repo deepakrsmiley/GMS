@@ -11,6 +11,7 @@ router.use(requireHospitalModule('lab'));
 router.get('/dashboard', authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION'), labController.getLabDashboard);
 router.get('/types', authorizeAnyPermission('VIEW_LAB', 'CREATE_LAB_ORDER', 'VIEW_NURSE_STATION'), labController.getLabTypes);
 router.get('/ip-medicines', authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION'), labController.getIPMedicinesByTime);
+router.get('/bills', authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION', 'VIEW_BILLING', 'CREATE_BILLING'), labController.getLabBills);
 
 router.route('/')
   .get(authorizeAnyPermission('VIEW_LAB', 'VIEW_NURSE_STATION'), labController.getLabTests)
