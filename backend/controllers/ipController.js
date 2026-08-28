@@ -3,6 +3,8 @@ const ErrorResponse = require('../utils/errorResponse');
 const IPAdmission = require('../models/IPAdmission');
 const { canEditDischargeAfterDischarge } = require('../utils/clinicalAccess');
 const { generateDischargeSummaryPDF } = require('../utils/pdfGenerator');
+const { evaluateDischargeSettlement, loadAdmissionBillState } = require('../utils/dischargeSettlement');
+const { isSuperAdmin, normalizeRole } = require('../utils/roles');
 const DISCHARGE_REQUIRED_FIELDS = [
   'diagnosis',
   'chiefComplaints',
@@ -74,7 +76,16 @@ exports.getAdmission = asyncHandler(async (req, res, next) => {
     .populate('medications.administeredBy', 'name')
     .populate('labTests');
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
-  res.status(200).json({ success: true, data: admission });
+  let dischargeGate = null;
+  if (admission.status === 'admitted') {
+    try {
+      const billState = await loadAdmissionBillState(admission);
+      dischargeGate = evaluateDischargeSettlement(billState);
+    } catch (_) {
+      dischargeGate = null;
+    }
+  }
+  res.status(200).json({ success: true, data: admission, dischargeGate });
 });
 
 /** Ward/bed board for Nurse Station — admitted patients with summary badges */
@@ -599,6 +610,20 @@ exports.dischargePatient = asyncHandler(async (req, res, next) => {
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
   if (admission.status === 'discharged') return next(new ErrorResponse('Patient already discharged', 400));
 
+  const dischargeType = req.body.dischargeType || 'regular';
+  const role = normalizeRole(req.user?.role);
+  const isAdmin = isSuperAdmin(role) || role === 'Admin';
+  const billState = await loadAdmissionBillState(admission);
+  const gate = evaluateDischargeSettlement({
+    ...billState,
+    dischargeType,
+    forceDischarge: Boolean(req.body.forceDischarge),
+    isAdmin,
+  });
+  if (!gate.allowed) {
+    return next(new ErrorResponse(gate.message, 400));
+  }
+
   if (req.body.dischargeDetails) {
     admission.dischargeDetails = { ...admission.dischargeDetails?.toObject?.() || {}, ...req.body.dischargeDetails };
     admission.dischargeSummary = buildDischargeSummaryText(admission.dischargeDetails);
@@ -627,8 +652,8 @@ exports.dischargePatient = asyncHandler(async (req, res, next) => {
     const patientName = (await require('../models/Patient').findById(admission.patient).select('name').lean())?.name;
     await notifyRoles(req, {
       roles: ['Receptionist', 'Admin', 'Super Admin', 'Pharmacist', 'Accountant'],
-      title: 'Discharge ready for billing',
-      message: `${patientName || 'Patient'} discharged — prepare final bill (${admission.admissionNumber || ''})`.trim(),
+      title: gate.exceptional || gate.forced ? 'Discharge — billing follow-up' : 'Patient discharged',
+      message: `${patientName || 'Patient'} discharged (${admission.admissionNumber || ''})${gate.exceptional || gate.forced ? ' — complete billing from Pending Discharge' : ''}.`.trim(),
       type: 'ip',
       link: '/billing',
       relatedId: admission._id,

@@ -15,7 +15,7 @@ export default function Modal({ isOpen, onClose, title, subtitle, children, size
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -27,7 +27,7 @@ export default function Modal({ isOpen, onClose, title, subtitle, children, size
             initial={{ opacity: 0, scale: 0.97, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 12 }}
-            className={`relative bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-blue-100 dark:border-gray-700 w-full ${sizes[size]} max-h-[90vh] overflow-hidden z-10`}
+            className={`relative bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-xl shadow-xl border border-blue-100 dark:border-gray-700 w-full ${sizes[size]} max-h-[92dvh] overflow-hidden z-10`}
           >
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-blue-100/80 bg-gradient-to-r from-white to-blue-50/50 dark:from-gray-800 dark:to-gray-800">
               <div className="min-w-0">
@@ -45,7 +45,7 @@ export default function Modal({ isOpen, onClose, title, subtitle, children, size
                 </button>
               </div>
             </div>
-            <div className="overflow-y-auto max-h-[calc(90vh-88px)]">
+            <div className="overflow-y-auto max-h-[calc(92dvh-88px)]">
               {children}
             </div>
           </motion.div>

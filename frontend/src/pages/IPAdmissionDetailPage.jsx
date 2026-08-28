@@ -14,6 +14,8 @@ import Modal from '../components/common/Modal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useBranding } from '../hooks/useBranding';
 import { hasPermission } from '../constants/permissions';
+import { isSuperAdmin, normalizeRole } from '../utils/roles';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
 import '../styles/dischargeSummary.css';
 
@@ -255,11 +257,15 @@ export default function IPAdmissionDetailPage() {
   const [printAdmission, setPrintAdmission] = useState(false);
   const [editReason, setEditReason] = useState('');
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null);
+  const [forceDischarge, setForceDischarge] = useState(false);
+  const canForceDischarge = isSuperAdmin(user) || normalizeRole(user?.role) === 'Admin';
 
-  const { data: admission, isLoading } = useQuery({
+  const { data: admissionPacket, isLoading } = useQuery({
     queryKey: ['admission', id],
-    queryFn: () => api.get(`/ip/${id}`).then((r) => r.data.data),
+    queryFn: () => api.get(`/ip/${id}`).then((r) => r.data),
   });
+  const admission = admissionPacket?.data;
+  const dischargeGate = admissionPacket?.dischargeGate;
 
   const buildFormFromAdmission = (adm) => {
     const dd = adm?.dischargeDetails;
@@ -400,7 +406,19 @@ export default function IPAdmissionDetailPage() {
   const handleSaveAndPreview = () => handleSaveDraft();
 
   const handleConfirmDischarge = () => {
-    dischargeMut.mutate({ dischargeDetails: form, dischargeType: computedDischargeType() });
+    const type = computedDischargeType();
+    const exceptional = ['LAMA', 'death', 'absconded', 'transfer'].includes(type);
+    const blocked = !exceptional && dischargeGate && dischargeGate.allowed === false;
+    if (blocked && !(forceDischarge && canForceDischarge)) {
+      toast.error(dischargeGate.message || 'Settle the IP bill before discharge.');
+      navigate('/billing');
+      return;
+    }
+    dischargeMut.mutate({
+      dischargeDetails: form,
+      dischargeType: type,
+      forceDischarge: Boolean(blocked && forceDischarge && canForceDischarge),
+    });
   };
 
   const fetchPdfBlobUrl = async () => {
@@ -488,6 +506,10 @@ export default function IPAdmissionDetailPage() {
 
   return (
     <div className="space-y-4">
+      <WorkflowStrip
+        flow="ip"
+        current={isDischarged ? 'discharge' : (section === 'discharge' ? 'summary' : 'care')}
+      />
       {/* Back */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <button onClick={() => navigate('/ip-admissions')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
@@ -1179,14 +1201,32 @@ export default function IPAdmissionDetailPage() {
       {/* Confirm discharge modal */}
       <Modal isOpen={showDischargeConfirm} onClose={() => setShowDischargeConfirm(false)} title="Confirm Discharge" size="sm">
         <div className="p-6 space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            This will discharge <strong>{patient.name}</strong> and free up their room/bed. You can still edit and save the discharge summary later from this page after discharge.
-          </p>
+          {dischargeGate && dischargeGate.allowed === false && computedDischargeType() === 'regular' ? (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              {dischargeGate.message}
+            </p>
+          ) : (
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              This will discharge <strong>{patient.name}</strong> and free the bed. Regular discharge is allowed only after the IP bill is paid.
+            </p>
+          )}
+          {canForceDischarge && dischargeGate && dischargeGate.allowed === false && (
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={forceDischarge} onChange={(e) => setForceDischarge(e.target.checked)} />
+              Admin override (LAMA / special case — bill later)
+            </label>
+          )}
           <div className="flex gap-3">
             <button type="button" onClick={() => setShowDischargeConfirm(false)} className="btn-secondary flex-1 justify-center">Cancel</button>
-            <button type="button" disabled={dischargeMut.isPending} onClick={handleConfirmDischarge} className="btn-primary flex-1 justify-center">
-              <LogOut size={15} /> {dischargeMut.isPending ? 'Discharging...' : 'Confirm Discharge'}
-            </button>
+            {dischargeGate && dischargeGate.allowed === false && computedDischargeType() === 'regular' && !forceDischarge ? (
+              <button type="button" onClick={() => { setShowDischargeConfirm(false); navigate('/billing'); }} className="btn-primary flex-1 justify-center">
+                Open Billing
+              </button>
+            ) : (
+              <button type="button" disabled={dischargeMut.isPending} onClick={handleConfirmDischarge} className="btn-primary flex-1 justify-center">
+                <LogOut size={15} /> {dischargeMut.isPending ? 'Discharging...' : 'Confirm Discharge'}
+              </button>
+            )}
           </div>
         </div>
       </Modal>

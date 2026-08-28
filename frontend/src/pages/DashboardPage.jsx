@@ -21,8 +21,9 @@ import { format } from 'date-fns';
 import { hasPermission } from '../constants/permissions';
 import { isHospitalModuleEnabledForUser } from '../constants/hospitalModules';
 import { isSuperAdmin } from '../utils/roles';
-import { SYSTEM_SHORT_NAME } from '../constants/branding';
 import { isClientOrg } from '../utils/hospitalA';
+import { SYSTEM_SHORT_NAME } from '../constants/branding';
+import RolePlaybook from '../components/workflow/RolePlaybook';
 
 const fetchDashboard = () => api.get('/dashboard/stats').then((r) => r.data.data);
 const fetchDeptAnalytics = () => api.get('/dashboard/department-analytics').then((r) => r.data.data);
@@ -204,6 +205,8 @@ export default function DashboardPage() {
           GMS is empty. Open a client hospital from the header — Sri Sanjeevi and Srinivasa each keep their own data and branding.
         </div>
       )}
+
+      <RolePlaybook />
 
       {/* Primary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">

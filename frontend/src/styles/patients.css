@@ -152,6 +152,11 @@
   letter-spacing: 0.02em;
 }
 
+.pt-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .pt-table-wrap :is(table) {
   border-collapse: separate;
   border-spacing: 0;

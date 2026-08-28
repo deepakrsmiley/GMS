@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
 import { hasPermission } from '../constants/permissions';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 
 const STATUS_STYLES = {
   scheduled: 'badge-blue',
@@ -209,6 +210,7 @@ export default function AppointmentsPage() {
 
   return (
     <div className="space-y-6">
+      <WorkflowStrip flow="appointments" current="book" />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Appointments</h1>

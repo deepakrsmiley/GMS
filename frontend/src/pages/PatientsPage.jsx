@@ -9,6 +9,7 @@ import api from '../services/api';
 import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
 import { hasPermission } from '../constants/permissions';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import '../styles/patients.css';
 
 const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -32,6 +33,8 @@ export default function PatientsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editPatient, setEditPatient] = useState(null);
   const [showDelete, setShowDelete] = useState(null);
+  const [dupMatches, setDupMatches] = useState(null);
+  const [pendingRegister, setPendingRegister] = useState(null);
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -68,14 +71,21 @@ export default function PatientsPage() {
   const createMut = useMutation({
     mutationFn: (d) => (editPatient
       ? api.put(`/patients/${editPatient._id}`, d)
-      : api.post('/patients', d)),
+      : api.post('/patients', d, { skipErrorToast: true })),
     onSuccess: () => {
       toast.success(editPatient ? 'Patient updated' : 'Patient registered');
       qc.invalidateQueries(['patients']);
       closeForm();
     },
-    onError: (err) => {
-      toast.error(err.response?.data?.message || 'Failed to save patient');
+    onError: (err, vars) => {
+      const body = err.response?.data;
+      if (err.response?.status === 409 && body?.code === 'DUPLICATE_PHONE') {
+        setPendingRegister(vars);
+        setDupMatches(body.matches || []);
+        toast.error(body.message);
+        return;
+      }
+      toast.error(body?.message || 'Failed to save patient');
     },
   });
 
@@ -191,12 +201,13 @@ export default function PatientsPage() {
 
   return (
     <div className="pt-shell space-y-4">
+      <WorkflowStrip flow="patient" current={showAdd ? 'register' : 'search'} />
       <header className="pt-masthead">
         <div>
           <p className="pt-masthead__eyebrow">Patient Master</p>
           <h1 className="pt-masthead__title">Patients</h1>
           <p className="pt-masthead__meta">
-            {total.toLocaleString('en-IN')} registered · click a row for full profile
+            {total.toLocaleString('en-IN')} registered · search UHID / phone before adding a new file
           </p>
         </div>
         <div className="pt-masthead__actions">
@@ -227,7 +238,7 @@ export default function PatientsPage() {
               }}
             />
           </div>
-          <p className="pt-toolbar__hint">Showing page {page}{data?.pages ? ` of ${data.pages}` : ''}</p>
+            <p className="pt-toolbar__hint">Always search first. Register only if this person has no UHID.</p>
         </div>
         <div className="pt-table-wrap">
           <DataTable
@@ -326,6 +337,48 @@ export default function PatientsPage() {
             </div>
           </div>
         )}
+      </Modal>
+      <Modal isOpen={!!dupMatches} onClose={() => { setDupMatches(null); setPendingRegister(null); }} title="Patient already exists" size="md">
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-slate-600">Use the existing UHID. Do not create a second file for the same person.</p>
+          <ul className="space-y-2">
+            {(dupMatches || []).map((m) => (
+              <li key={m._id}>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 rounded-lg border border-blue-100 hover:bg-blue-50"
+                  onClick={() => {
+                    setDupMatches(null);
+                    closeForm();
+                    navigate(`/patients/${m._id}/profile`);
+                  }}
+                >
+                  <strong>{m.patientId}</strong> · {m.name} · {m.phone}
+                  {m.age != null ? ` · ${m.age} yrs` : ''}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-3">
+            <button type="button" className="btn-secondary flex-1 justify-center" onClick={() => { setDupMatches(null); setPendingRegister(null); }}>
+              Cancel
+            </button>
+            {canCreate && (
+              <button
+                type="button"
+                className="btn-secondary flex-1 justify-center"
+                onClick={() => {
+                  if (!pendingRegister) return;
+                  createMut.mutate({ ...pendingRegister, allowDuplicatePhone: true });
+                  setDupMatches(null);
+                  setPendingRegister(null);
+                }}
+              >
+                Register anyway
+              </button>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   );

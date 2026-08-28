@@ -7,12 +7,13 @@ import {
   Receipt, Pill, Calendar, BarChart3, LogOut,
   Building2, UserCog, Activity, Settings, Stethoscope,
   FileText, ClipboardList, Package, FileBarChart, Clock,
-  FileBarChart2, ShieldCheck, Headphones, AlertTriangle, MonitorPlay, Database,
-  ChevronRight, HeartPulse, ClipboardCheck, Wrench,
+  FileBarChart2, ShieldCheck, AlertTriangle, MonitorPlay, Database,
+  ChevronRight, HeartPulse, ClipboardCheck, Wrench, BookOpen,
 } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
 import { logout } from '../../redux/slices/authSlice';
-import { filterNavForUser, filterGmsNavForUser } from '../../constants/navConfig';
+import { setSidebarOpen } from '../../redux/slices/uiSlice';
+import { filterNavForUser, filterGmsNavForUser, groupNavItems } from '../../constants/navConfig';
 import { isSuperAdmin } from '../../utils/roles';
 import { SYSTEM_SHORT_NAME, SYSTEM_NAME, SOFTWARE_LOGO } from '../../constants/branding';
 import { GmsDevelopedMark } from '../branding/GmsDevelopedBar';
@@ -24,27 +25,30 @@ const ICON_MAP = {
   BarChart3, Building2, UserCog, Activity, Settings, Stethoscope,
   FileText, ClipboardList, Package, FileBarChart, Clock, FileBarChart2,
   AlertTriangle, MonitorPlay, Database, HeartPulse, ClipboardCheck, Wrench,
-  ShieldCheck,
+  ShieldCheck, BookOpen,
 };
 
-const byLabelAz = (a, b) =>
-  String(a.label || '').localeCompare(String(b.label || ''), undefined, { sensitivity: 'base' });
-
-export default function Sidebar() {
+export default function Sidebar({ isDesktop = true }) {
   const { sidebarOpen } = useSelector((s) => s.ui);
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [showProfile, setShowProfile] = useState(false);
+  const showLabels = isDesktop ? sidebarOpen : true;
 
   const handleLogout = async () => {
     await dispatch(logout());
     navigate('/login');
   };
 
+  const closeIfMobile = () => {
+    if (!isDesktop) dispatch(setSidebarOpen(false));
+  };
+
   const gmsNavItems = filterGmsNavForUser(user);
-  const navItems = [...filterNavForUser(user)].sort(byLabelAz);
+  const navItems = filterNavForUser(user);
+  const navGroups = groupNavItems(navItems);
   const gmsAdmin = isSuperAdmin(user);
   const clientHospital = isClientOrg(user?.organization);
   const hospitalName = user?.organization?.name || branding.hospitalName || 'Hospital';
@@ -58,6 +62,7 @@ export default function Sidebar() {
       <NavLink
         key={item.id}
         to={item.to}
+        onClick={closeIfMobile}
         className={({ isActive }) =>
           `flex items-center gap-3 px-3 py-2.5 rounded-xl mb-0.5 transition-all duration-150 group ${
             isActive
@@ -68,7 +73,7 @@ export default function Sidebar() {
       >
         <Icon size={18} className="flex-shrink-0" />
         <AnimatePresence>
-          {sidebarOpen && (
+          {showLabels && (
             <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm font-medium whitespace-nowrap">
               {item.label}
             </motion.span>
@@ -80,8 +85,10 @@ export default function Sidebar() {
 
   return (
     <motion.div
-      animate={{ width: sidebarOpen ? 256 : 64 }}
-      className="fixed left-0 top-7 h-[calc(100vh-1.75rem)] max-h-[calc(100vh-1.75rem)] bg-white dark:bg-gray-900 text-gray-700 z-40 flex flex-col border-r border-gray-100 dark:border-gray-800 overflow-hidden"
+      animate={{ width: isDesktop ? (sidebarOpen ? 256 : 64) : 256 }}
+      className={`fixed left-0 top-7 h-[calc(100dvh-1.75rem)] max-h-[calc(100dvh-1.75rem)] bg-white dark:bg-gray-900 text-gray-700 z-40 flex flex-col border-r border-gray-100 dark:border-gray-800 overflow-hidden transition-transform duration-300 ${
+        isDesktop ? '' : (sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full pointer-events-none')
+      }`}
     >
       {/* Brand — selected client hospital logo and name (Sanjeevi, Srinivasa, later hospitals) */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
@@ -95,7 +102,7 @@ export default function Sidebar() {
           <img src={SOFTWARE_LOGO} alt={SYSTEM_NAME} className="w-9 h-9 rounded-xl object-contain flex-shrink-0 bg-white" />
         )}
         <AnimatePresence>
-          {sidebarOpen && (
+          {showLabels && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="overflow-hidden min-w-0">
               {showHospitalBrand && <GmsDevelopedMark className="mb-0.5" />}
               <p className="font-bold text-gray-900 dark:text-white text-sm leading-tight truncate" title={brandTitle}>
@@ -106,10 +113,10 @@ export default function Sidebar() {
         </AnimatePresence>
       </div>
 
-      {/* Nav — A–Z for quick find */}
+      {/* Nav — grouped by hospital workflow */}
       <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-4 px-3">
         <AnimatePresence>
-          {sidebarOpen && gmsNavItems.length > 0 && (
+          {showLabels && gmsNavItems.length > 0 && (
             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
               GMS
             </motion.p>
@@ -117,26 +124,45 @@ export default function Sidebar() {
         </AnimatePresence>
         {gmsNavItems.map(renderLink)}
         <AnimatePresence>
-          {sidebarOpen && navItems.length > 0 && (
+          {showLabels && navItems.length > 0 && (
             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2 mt-3">
               {clientHospital ? hospitalName : ''}
             </motion.p>
           )}
         </AnimatePresence>
-        {navItems.map(renderLink)}
+        {navGroups.map((group) => (
+          <div key={group.id}>
+            <AnimatePresence>
+              {showLabels && (
+                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1 mt-3">
+                  {group.label}
+                </motion.p>
+              )}
+            </AnimatePresence>
+            {group.items.map(renderLink)}
+          </div>
+        ))}
       </nav>
 
-      {/* Need Help card */}
+      {/* How to Use */}
       <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mx-3 mb-3 p-3 rounded-2xl bg-blue-50 dark:bg-gray-800 flex items-center gap-3 flex-shrink-0">
-            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-              <Headphones size={16} className="text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">Need Help?</p>
-              <p className="text-xs text-blue-600 truncate cursor-pointer">Contact Support</p>
-            </div>
+        {showLabels && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mx-3 mb-3 flex-shrink-0">
+            <NavLink
+              to="/how-to-use"
+              onClick={closeIfMobile}
+              className={({ isActive }) =>
+                `flex items-center gap-3 p-3 rounded-2xl ${isActive ? 'bg-blue-600 text-white' : 'bg-blue-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100'}`
+              }
+            >
+              <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <BookOpen size={16} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold truncate">How to Use</p>
+                <p className="text-xs opacity-80 truncate">Correct hospital workflow</p>
+              </div>
+            </NavLink>
           </motion.div>
         )}
       </AnimatePresence>
@@ -157,7 +183,7 @@ export default function Sidebar() {
             )}
           </div>
           <AnimatePresence>
-            {sidebarOpen && (
+            {showLabels && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="overflow-hidden min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
                 <p className="text-xs text-gray-400 capitalize truncate">
@@ -167,7 +193,7 @@ export default function Sidebar() {
               </motion.div>
             )}
           </AnimatePresence>
-          {sidebarOpen && (
+          {showLabels && (
             <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 shrink-0" />
           )}
         </button>
@@ -178,7 +204,7 @@ export default function Sidebar() {
         >
           <LogOut size={18} className="flex-shrink-0" />
           <AnimatePresence>
-            {sidebarOpen && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm">Logout</motion.span>}
+            {showLabels && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-sm">Logout</motion.span>}
           </AnimatePresence>
         </button>
       </div>

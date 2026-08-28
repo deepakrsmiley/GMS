@@ -12,6 +12,7 @@ import { hasPermission } from '../constants/permissions';
 import { useBranding } from '../hooks/useBranding';
 import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 
 export default function DoctorConsultationPage() {
   const { opId } = useParams();
@@ -165,6 +166,7 @@ export default function DoctorConsultationPage() {
 
   return (
     <div className="space-y-6">
+      <WorkflowStrip flow="consult" current={op.status === 'waiting' ? 'start' : 'notes'} />
       <div className="flex items-center gap-4">
         <button type="button" onClick={() => navigate('/op-queue')} className="btn-secondary py-2">
           <ArrowLeft size={16} /> Back

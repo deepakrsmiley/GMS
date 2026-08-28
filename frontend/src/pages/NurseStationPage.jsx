@@ -13,6 +13,7 @@ import { hasPermission } from '../constants/permissions';
 import MedicationLogModal from '../components/ip/MedicationLogModal';
 import ServiceUsageModal from '../components/ip/ServiceUsageModal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import {
   LAB_TYPES,
   profilesForType,
@@ -285,6 +286,9 @@ export default function NurseStationPage() {
 
   return (
     <div className="am-shell ns-page">
+      <div className="no-print" style={{ marginBottom: '0.75rem' }}>
+        <WorkflowStrip flow="nurse" current="board" />
+      </div>
       <div className="am-head no-print">
         <div>
           <p className="am-head__eyebrow">Inpatient care</p>

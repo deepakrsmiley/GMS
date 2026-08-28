@@ -7,6 +7,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true,
+  timeout: 12000,
   maxBodyLength: 25 * 1024 * 1024,
   maxContentLength: 25 * 1024 * 1024,
 });
@@ -35,10 +36,10 @@ api.interceptors.response.use(
       'Something went wrong';
 
     if (error.response?.status === 401) {
-      localStorage.removeItem('hms_token');
-
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login?reason=session_expired';
+      const url = error.config?.url || '';
+      if (!url.includes('/auth/login')) {
+        localStorage.removeItem('hms_token');
+        window.dispatchEvent(new Event('hms:unauthorized'));
       }
     } else if (!error.config?.skipErrorToast) {
       // Avoid double toasts (React Strict Mode / parallel 403s)

@@ -8,7 +8,7 @@ import {
   FlaskConical, Bed, Building2, User,
   Users, ClipboardList, Calendar, Timer, XCircle,
   Search, UserPlus, Footprints, Flag, Link2, RotateCcw, Send, Info,
-  Hourglass, Phone, CreditCard, X, Printer, Settings2, MoreVertical,
+  Hourglass, Phone, CreditCard, X, Printer, Settings2, MoreVertical, Pencil,
   FileText, UserSearch, CalendarDays, BarChart3,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -24,6 +24,7 @@ import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 import { hasPermission } from '../constants/permissions';
 import { SYSTEM_NAME } from '../constants/branding';
 import { istCalendarDate } from '../utils/istDate';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import '../styles/opQueue.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -199,7 +200,7 @@ export default function OPQueuePage() {
     patient: '', doctor: '', department: '', appointmentType: 'walkin',
     priority: 'normal', queueFor: 'Consultation', chiefComplaint: '', referredBy: '',
     visitDate: todayStr(), visitTime: nowStr(), mobileNumber: '', uhid: '',
-    paidAmount: '', paymentMode: 'cash', paymentPurpose: 'Doctor consultation fee',
+    paidAmount: '', consultationFee: '', paymentMode: 'cash', paymentPurpose: 'Doctor consultation fee',
   };
 
   const { register, handleSubmit, reset, watch, setValue } = useForm({ defaultValues: defaultRegForm });
@@ -274,7 +275,13 @@ export default function OPQueuePage() {
     [selectedDoctor, selectedDept, appointmentType],
   );
   const surcharge = appointmentType === 'emergency' ? EMERGENCY_SURCHARGE : 0;
-  const billTotal = consultFee + surcharge;
+  const watchedFee = watch('consultationFee');
+  const billedConsult = (() => {
+    const n = Number(watchedFee);
+    return Number.isFinite(n) && n >= 0 ? n : consultFee;
+  })();
+  const billTotal = billedConsult + surcharge;
+  const feeIsEdited = selectedDoctor && Number.isFinite(Number(watchedFee)) && Number(watchedFee) !== consultFee;
 
   useEffect(() => {
     if (selectedDoctorId) {
@@ -283,16 +290,32 @@ export default function OPQueuePage() {
       if (doc?.department?._id || doc?.department) {
         setValue('department', doc.department._id || doc.department);
       }
+      const dept = departments.find((d) => d._id === (doc?.department?._id || doc?.department))
+        || doc?.department
+        || null;
+      const fee = resolveOpConsultationFee(doc, dept, appointmentType);
+      const extra = appointmentType === 'emergency' ? EMERGENCY_SURCHARGE : 0;
+      setValue('consultationFee', fee);
+      setValue('paidAmount', fee + extra);
     } else {
       setSelectedDoctor(null);
       setValue('department', '');
+      setValue('consultationFee', '');
+      setValue('paidAmount', '');
     }
-  }, [selectedDoctorId, doctors, setValue]);
-
-  useEffect(() => {
-    setValue('paidAmount', billTotal);
     setValue('paymentPurpose', defaultPaymentPurpose(appointmentType));
-  }, [billTotal, appointmentType, setValue]);
+  }, [selectedDoctorId, doctors, departments, appointmentType, setValue]);
+
+  const applyConsultFee = (raw) => {
+    const n = Number(raw);
+    const fee = Number.isFinite(n) && n >= 0 ? n : 0;
+    setValue('paidAmount', (raw === '' ? 0 : fee) + surcharge);
+  };
+
+  const resetConsultFeeToMaster = () => {
+    setValue('consultationFee', consultFee);
+    setValue('paidAmount', consultFee + surcharge);
+  };
 
   const registerMut = useMutation({
     mutationFn: (d) => {
@@ -307,6 +330,7 @@ export default function OPQueuePage() {
         chiefComplaint: d.chiefComplaint,
         referredBy: d.referredBy,
         scheduledTime,
+        consultationFee: d.consultationFee === '' || d.consultationFee == null ? consultFee : Number(d.consultationFee),
         paidAmount: d.paidAmount === '' || d.paidAmount == null ? billTotal : Number(d.paidAmount),
         paymentMode: d.paymentMode || 'cash',
         paymentPurpose: d.paymentPurpose || defaultPaymentPurpose(d.appointmentType),
@@ -542,6 +566,7 @@ export default function OPQueuePage() {
 
   return (
     <div className="opq">
+      <WorkflowStrip flow="op" current={canRegister ? 'register' : 'consult'} />
       <div className="opq-toolbar">
         <div className="opq-search-wrap">
           <Search size={15} />
@@ -946,14 +971,21 @@ export default function OPQueuePage() {
                       <h3 className="text-sm font-bold">Consultation Details</h3>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div>
                         <label className="text-xs font-medium text-slate-500 block mb-1.5">Doctor *</label>
                         <div className="relative">
                           <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                           <select {...register('doctor', { required: true })} className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
                             <option value="">Select Doctor</option>
-                            {doctors.map((d) => <option key={d._id} value={d._id}>Dr. {d.name}</option>)}
+                            {doctors.map((d) => {
+                              const fee = resolveOpConsultationFee(d, d.department, appointmentType);
+                              return (
+                                <option key={d._id} value={d._id}>
+                                  Dr. {d.name}{fee > 0 ? ` — ₹${fee}` : ''}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                       </div>
@@ -1010,30 +1042,57 @@ export default function OPQueuePage() {
                     <div className="mt-4 bg-emerald-50 rounded-xl p-4 border border-emerald-100">
                       <div className="flex items-center gap-2 text-emerald-700 mb-3">
                         <CreditCard size={15} />
-                        <h4 className="text-sm font-semibold">Consultation payment</h4>
+                        <h4 className="text-sm font-semibold">Consultation amount</h4>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Fee from master (auto)</label>
-                          <div className="px-3 py-2.5 text-sm bg-white border border-emerald-200 rounded-xl font-semibold text-slate-900">
-                            ₹{consultFee.toLocaleString('en-IN')}
-                            {surcharge > 0 && (
-                              <span className="ml-2 text-xs font-medium text-amber-700">+ ₹{surcharge} emergency</span>
+                          <label className="text-xs font-medium text-slate-500 mb-1.5 flex items-center gap-1.5">
+                            <Pencil size={12} /> Amount (auto from doctor — edit here)
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder={selectedDoctor ? String(consultFee) : 'Select doctor'}
+                              {...register('consultationFee', {
+                                onChange: (e) => applyConsultFee(e.target.value),
+                              })}
+                              className="w-full pl-7 pr-20 py-2.5 text-sm bg-white border border-emerald-300 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                            {feeIsEdited && (
+                              <button
+                                type="button"
+                                onClick={resetConsultFeeToMaster}
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 px-2 py-1 rounded-lg"
+                              >
+                                Reset
+                              </button>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-400 mt-1">
-                            Total billed: ₹{billTotal.toLocaleString('en-IN')} · from doctor / department master
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            {selectedDoctor
+                              ? `Master ₹${consultFee.toLocaleString('en-IN')}${surcharge > 0 ? ` + ₹${surcharge} emergency` : ''}${feeIsEdited ? ' · edited for this visit' : ''}`
+                              : 'Select a doctor — amount fills automatically. You can edit it on this form.'}
                           </p>
                         </div>
                         <div>
                           <label className="text-xs font-medium text-slate-500 block mb-1.5">Amount paid</label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            {...register('paidAmount')}
-                            className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              {...register('paidAmount')}
+                              className="w-full pl-7 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Total billed: ₹{billTotal.toLocaleString('en-IN')}
+                            {surcharge > 0 ? ` (includes ₹${surcharge} emergency)` : ''}
+                          </p>
                         </div>
                         <div>
                           <label className="text-xs font-medium text-slate-500 block mb-1.5">Payment mode</label>

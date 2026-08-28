@@ -23,11 +23,11 @@ export default function PageHeader({
           </div>
         )}
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-slate-800 dark:text-white tracking-tight truncate">
+          <h1 className="text-lg font-semibold text-slate-800 dark:text-white tracking-tight">
             {title}
           </h1>
           {subtitle && (
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>
+            <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{subtitle}</p>
           )}
         </div>
       </div>

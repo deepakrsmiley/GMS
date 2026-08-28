@@ -13,6 +13,7 @@ import DataTable from '../components/common/DataTable';
 import LabReportTemplate from '../components/lab/LabReportTemplate';
 import LabOrderCreateModal from '../components/lab/LabOrderCreateModal';
 import LabCollectPaymentModal from '../components/lab/LabCollectPaymentModal';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import {
   getProfileTests,
   getTestMeta,
@@ -554,6 +555,7 @@ export default function LabPage() {
 
   return (
     <div className="space-y-6">
+      <WorkflowStrip flow="lab" current={tab === 'reports' ? 'result' : 'order'} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Laboratory</h1>

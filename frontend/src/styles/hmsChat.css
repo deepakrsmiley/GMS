@@ -8,10 +8,10 @@
   --chat-surface: #ffffff;
   --chat-rail: #f8fafc;
   position: fixed;
-  top: 64px;
-  right: 16px;
-  width: min(420px, calc(100vw - 24px));
-  height: min(560px, calc(100vh - 80px));
+  top: 56px;
+  right: 8px;
+  width: min(420px, calc(100vw - 16px));
+  height: min(560px, calc(100dvh - 72px));
   background: var(--chat-surface);
   border: 1px solid var(--chat-border);
   border-radius: 16px;

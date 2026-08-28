@@ -72,6 +72,7 @@ const sanitizePatientPayload = (body) => {
   const data = { ...body };
   delete data._id;
   delete data.patientId;
+  delete data.allowDuplicatePhone;
 
   ['email', 'bloodGroup', 'maritalStatus', 'occupation', 'alternatePhone', 'rchId', 'photo'].forEach((key) => {
     if (data[key] === '' || data[key] === null) delete data[key];
@@ -81,9 +82,31 @@ const sanitizePatientPayload = (body) => {
 };
 
 exports.createPatient = asyncHandler(async (req, res) => {
+  const allowDuplicatePhone = Boolean(req.body?.allowDuplicatePhone);
   const payload = sanitizePatientPayload(req.body);
+  delete payload.allowDuplicatePhone;
   payload.patientId = await allocatePatientId();
   payload.registeredBy = req.user._id;
+
+  if (payload.phone && !allowDuplicatePhone) {
+    const raw = String(payload.phone).trim();
+    const digits = raw.replace(/\D/g, '');
+    const last10 = digits.slice(-10);
+    const or = [{ phone: raw }];
+    if (last10.length >= 8) or.push({ phone: last10 });
+    const matches = await Patient.find({ $or: or })
+      .select('patientId name phone age gender')
+      .limit(5)
+      .lean();
+    if (matches.length) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_PHONE',
+        message: 'A patient with this phone already exists. Open their UHID instead of registering again.',
+        matches,
+      });
+    }
+  }
 
   if (payload.photo && payload.photo.startsWith('data:')) {
     try {

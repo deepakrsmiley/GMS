@@ -30,6 +30,7 @@ export default function Header() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
+  const [mobileSearch, setMobileSearch] = useState(false);
   const searchRef = useRef(null);
   const notifRef = useRef(null);
   const activityRef = useRef(null);
@@ -176,17 +177,29 @@ export default function Header() {
   };
 
   return (
-    <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between px-4 md:px-6 gap-4 flex-shrink-0">
+    <header className="h-14 sm:h-16 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between px-2 sm:px-4 md:px-6 gap-2 sm:gap-4 flex-shrink-0 relative z-20">
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <button
           type="button"
           onClick={() => dispatch(toggleSidebar())}
           className="p-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors flex-shrink-0"
+          aria-label="Open menu"
         >
           <Menu size={20} />
         </button>
+        <button
+          type="button"
+          onClick={() => setMobileSearch((v) => !v)}
+          className="md:hidden p-2 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors flex-shrink-0"
+          aria-label="Search"
+        >
+          <Search size={20} />
+        </button>
 
-        <div className="relative hidden md:block max-w-md w-full" ref={searchRef}>
+        <div
+          className={`${mobileSearch ? 'absolute left-0 right-0 top-14 z-30 px-3 py-2 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 md:static md:top-auto md:px-0 md:py-0 md:border-0 md:bg-transparent' : 'hidden'} md:block relative max-w-md w-full min-w-0`}
+          ref={searchRef}
+        >
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -197,7 +210,7 @@ export default function Header() {
             className="pl-9 pr-14 py-2 text-sm bg-gray-100 dark:bg-gray-800 border-0 rounded-xl w-full focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-200"
           />
           {!query && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] px-1.5 py-0.5 rounded-md bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-400">
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] px-1.5 py-0.5 rounded-md bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-400 hidden md:inline">
               Ctrl + K
             </span>
           )}
@@ -348,7 +361,7 @@ export default function Header() {
               )}
             </button>
             {showActivity && (
-              <div className="absolute right-0 top-12 w-[380px] bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
+              <div className="absolute right-0 top-12 w-[min(380px,calc(100vw-1.5rem))] bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden">
                 <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2">
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white">Activity feed</h3>

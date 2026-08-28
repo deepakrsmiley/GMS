@@ -18,8 +18,8 @@ export default function DataTable({
   if (loading) return <LoadingSpinner />;
   return (
     <div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto -mx-1 sm:mx-0">
+        <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-700">
               {columns.map((col) => (
@@ -62,7 +62,7 @@ export default function DataTable({
         </table>
       </div>
       {pages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700 gap-3 flex-wrap">
           <p className="text-sm text-gray-500">Page {page} of {pages}</p>
           <div className="flex gap-2">
             <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 1} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors">

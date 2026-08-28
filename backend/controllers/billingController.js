@@ -13,6 +13,7 @@ const {
 } = require("../utils/pdfGenerator");
 const {
   getMedicineItems,
+  stockableMedicineItems,
   validateMedicineStock,
   deductMedicineStock,
   restoreMedicineStock,
@@ -165,9 +166,6 @@ const sanitizeBillItems = (items = []) =>
       };
     }),
   );
-
-const stockableMedicineItems = (items = []) =>
-  getMedicineItems(items).filter((item) => item.referenceModel !== "Prescription");
 
 const stockFingerprint = (items = []) =>
   stockableMedicineItems(items)
@@ -514,19 +512,12 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   if (requirePharmacistBillScope(req, req.body, next)) return;
 
   const medicineItems = getMedicineItems(req.body.items);
-  const dispensedMeds = medicineItems.filter(
-    (i) => i.referenceModel === "Prescription",
-  );
-  const newMeds = medicineItems.filter(
-    (i) => i.referenceModel !== "Prescription",
-  );
-
-  if (newMeds.length > 0) {
-    await validateMedicineStock(req.body.items);
-  }
+  const newMeds = stockableMedicineItems(req.body.items);
+  const alreadyIssuedMeds = medicineItems.length - newMeds.length;
 
   let deductedStock = [];
   if (newMeds.length > 0) {
+    await validateMedicineStock(newMeds);
     deductedStock = await deductMedicineStock(newMeds, req.user._id);
   }
 
@@ -593,7 +584,7 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   res.status(201).json({
     success: true,
     data: populated,
-    message: `Unified bill created with ${itemCount} item(s).${dispensedMeds.length ? ` ${dispensedMeds.length} dispensed medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`,
+    message: `Unified bill created with ${itemCount} item(s).${alreadyIssuedMeds ? ` ${alreadyIssuedMeds} already-issued medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`,
   });
 });
 
@@ -703,11 +694,9 @@ exports.cancelBill = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Please enter a reason to cancel this bill", 400));
   }
 
-  const medicineItems = getMedicineItems(bill.items).filter(
-    (i) => i.referenceModel !== "Prescription",
-  );
+  const medicineItems = stockableMedicineItems(bill.items);
   if (medicineItems.length > 0) {
-    await restoreBillItemsStock(bill.items, {
+    await restoreBillItemsStock(medicineItems, {
       userId: req.user._id,
       remarks: `Bill cancelled: ${reason}`,
       referenceId: bill._id,

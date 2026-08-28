@@ -59,8 +59,8 @@ export default function HospitalSwitcher() {
   if (!superAdmin) return null;
 
   return (
-    <div className="hidden sm:flex items-center gap-2">
-      <label className="flex items-center gap-1.5 max-w-[280px] rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs text-gray-700 dark:text-gray-200">
+    <div className="flex items-center gap-2 min-w-0">
+      <label className="flex items-center gap-1.5 max-w-[min(280px,46vw)] sm:max-w-[280px] rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 py-1 text-xs text-gray-700 dark:text-gray-200">
         <Building2 size={14} className="flex-shrink-0 text-blue-600" />
         <select
           className="bg-transparent font-medium truncate max-w-[210px] focus:outline-none"

@@ -4,11 +4,21 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body, #root {
+  max-width: 100%;
+  min-height: 100dvh;
+}
+
+html {
+  overflow-x: hidden;
+}
+
 body {
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
+  overflow-x: hidden;
   @apply bg-blue-50/40 text-slate-800;
 }
 
@@ -54,7 +64,7 @@ h1, h2, h3, .font-display {
 }
 
 .input-field {
-  @apply w-full px-3 py-2 bg-white dark:bg-gray-700 border border-blue-100 dark:border-gray-600 rounded-lg text-slate-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 placeholder-slate-400 dark:placeholder-gray-500;
+  @apply w-full px-3 py-2 bg-white dark:bg-gray-700 border border-blue-100 dark:border-gray-600 rounded-lg text-slate-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 placeholder-slate-400 dark:placeholder-gray-500 text-base;
 }
 
 .corp-tabs {
@@ -83,3 +93,10 @@ h1, h2, h3, .font-display {
 .badge-yellow { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800; }
 .badge-blue { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800; }
 .badge-gray { @apply inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold border bg-slate-100 text-slate-600 border-slate-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600; }
+
+@media (max-width: 639px) {
+  .bl-kpis,
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}

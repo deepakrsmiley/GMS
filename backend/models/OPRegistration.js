@@ -63,6 +63,7 @@ const opRegistrationSchema = new mongoose.Schema({
   labTests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'LabTest' }],
   followUpDate: Date,
   registeredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  billedConsultationFee: { type: Number, min: 0 },
   consultationStart: Date,
   consultationEnd: Date,
   bill: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill' },

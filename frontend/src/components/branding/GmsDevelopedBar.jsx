@@ -6,9 +6,9 @@ export default function GmsDevelopedBar({ superAdmin = false, clientHospital = f
     ? `${SYSTEM_SHORT_NAME} Super Admin`
     : DEVELOPED_BY_LABEL;
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 h-7 flex items-center justify-center gap-2 bg-slate-900 text-white text-[11px] font-semibold tracking-wide">
-      <img src={SOFTWARE_LOGO} alt="" className="h-4 w-4 rounded-sm object-contain bg-white" />
-      <span>{label}</span>
+    <div className="fixed top-0 left-0 right-0 z-50 h-7 flex items-center justify-center gap-2 bg-slate-900 text-white text-[10px] sm:text-[11px] font-semibold tracking-wide px-2">
+      <img src={SOFTWARE_LOGO} alt="" className="h-4 w-4 rounded-sm object-contain bg-white shrink-0" />
+      <span className="truncate">{label}</span>
     </div>
   );
 }

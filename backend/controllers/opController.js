@@ -16,6 +16,7 @@ const { markSourcesAsBilled } = require('../services/billingService');
 const {
   EMERGENCY_SURCHARGE,
   resolveOpConsultationFee,
+  resolveBilledConsultationFee,
   defaultPaymentPurpose,
 } = require('../utils/opConsultationFee');
 
@@ -36,7 +37,16 @@ async function createOpConsultationBill(req, op, payment) {
     departmentId ? Department.findById(departmentId).select('name consultationFee').setOptions({ skipOrganizationFilter: true }) : null,
   ]);
 
-  const consultFee = resolveOpConsultationFee(doctorDoc, deptDoc, op.appointmentType);
+  const masterFee = resolveOpConsultationFee(doctorDoc, deptDoc, op.appointmentType);
+  const consultFee = resolveBilledConsultationFee(
+    masterFee,
+    payment?.consultationFee,
+    op.billedConsultationFee,
+  );
+  if (op.billedConsultationFee !== consultFee) {
+    op.billedConsultationFee = consultFee;
+    await OPRegistration.updateOne({ _id: op._id }, { billedConsultationFee: consultFee });
+  }
   const purpose = String(payment.paymentPurpose || '').trim() || defaultPaymentPurpose(op.appointmentType);
   const doctorName = (() => {
     const cleaned = String(doctorDoc?.name || '').replace(/^(dr\.?\s*)+/i, '').trim();
@@ -228,6 +238,7 @@ exports.getOPRegistration = asyncHandler(async (req, res, next) => {
         paidAmount: undefined,
         paymentMode: 'cash',
         paymentPurpose: defaultPaymentPurpose(op.appointmentType),
+        consultationFee: op.billedConsultationFee,
       });
     } catch (err) {
       logger.error(`OP consultation bill ensure failed for ${op._id}: ${err.message}`, { stack: err.stack });
@@ -345,6 +356,7 @@ exports.createOPRegistration = asyncHandler(async (req, res) => {
     paidAmount: req.body.paidAmount,
     paymentMode: req.body.paymentMode,
     paymentPurpose: req.body.paymentPurpose,
+    consultationFee: req.body.consultationFee,
   };
   delete req.body.paidAmount;
   delete req.body.paymentMode;

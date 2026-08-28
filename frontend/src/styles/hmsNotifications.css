@@ -7,10 +7,10 @@
   --n-surface: #ffffff;
   --n-rail: #f8fafc;
   position: fixed;
-  top: 64px;
-  right: 16px;
-  width: min(400px, calc(100vw - 24px));
-  max-height: min(520px, calc(100vh - 80px));
+  top: 56px;
+  right: 8px;
+  width: min(400px, calc(100vw - 16px));
+  max-height: min(520px, calc(100dvh - 72px));
   background: var(--n-surface);
   border: 1px solid var(--n-border);
   border-radius: 16px;

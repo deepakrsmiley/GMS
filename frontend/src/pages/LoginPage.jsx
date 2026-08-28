@@ -36,13 +36,16 @@ function FloatingInput({
         id={id}
         type={type}
         autoComplete={autoComplete}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
         placeholder=" "
         {...register}
         className={`
           peer w-full px-4 pt-6 pb-2.5
           bg-white/80 backdrop-blur-sm
           border rounded-xl
-          text-gray-900 text-[15px]
+          text-gray-900 text-base
           transition-all duration-300 ease-out
           focus:outline-none focus:ring-0
           ${
@@ -106,7 +109,8 @@ function DateTimeDisplay() {
       <div className="flex items-center gap-2 bg-white/70 backdrop-blur-sm px-3 py-2 rounded-xl border border-gray-100 shadow-sm">
         <Calendar size={15} className="text-[#2563EB]" />
         <span className="font-medium text-gray-600">
-          {format(now, "EEEE, MMMM d, yyyy")}
+          <span className="hidden sm:inline">{format(now, "EEEE, MMMM d, yyyy")}</span>
+          <span className="sm:hidden">{format(now, "EEE, d MMM")}</span>
         </span>
       </div>
       <div className="flex items-center gap-2 bg-white/70 backdrop-blur-sm px-3 py-2 rounded-xl border border-gray-100 shadow-sm">
@@ -121,7 +125,7 @@ function DateTimeDisplay() {
 
 export default function LoginPage() {
   const dispatch = useDispatch();
-  const { loading, error } = useSelector((s) => s.auth);
+  const { loginLoading, error } = useSelector((s) => s.auth);
   const [showPass, setShowPass] = useState(false);
   // login | forgot-email | forgot-reset
   const [mode, setMode] = useState("login");
@@ -261,7 +265,7 @@ export default function LoginPage() {
               Enterprise Healthcare Platform
             </div>
             <div>
-              <h1 className="text-5xl font-bold text-gray-900">
+              <h1 className="text-4xl xl:text-5xl font-bold text-gray-900">
                 Galactic Medical Systems
               </h1>
 
@@ -318,7 +322,7 @@ export default function LoginPage() {
             className="
               relative bg-white/90 backdrop-blur-xl
               border border-white/60
-              rounded-[20px] p-7 sm:p-9
+              rounded-[20px] p-5 sm:p-7 lg:p-9
               shadow-[0_4px_24px_rgba(37,99,235,0.06),0_12px_48px_rgba(15,23,42,0.04)]
               before:absolute before:inset-0 before:rounded-[20px]
               before:bg-gradient-to-b before:from-white/50 before:to-transparent
@@ -432,7 +436,7 @@ export default function LoginPage() {
                       <button
                         type="button"
                         onClick={continueWithHospital}
-                        disabled={loading || !selectedHospitalId}
+                        disabled={loginLoading || !selectedHospitalId}
                         className="w-full rounded-lg bg-[#2563EB] px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
                       >
                         Continue with selected hospital
@@ -452,9 +456,9 @@ export default function LoginPage() {
 
                   <motion.button
                     type="submit"
-                    disabled={loading}
-                    whileHover={{ scale: loading ? 1 : 1.01, y: loading ? 0 : -1 }}
-                    whileTap={{ scale: loading ? 1 : 0.98 }}
+                    disabled={loginLoading}
+                    whileHover={{ scale: loginLoading ? 1 : 1.01, y: loginLoading ? 0 : -1 }}
+                    whileTap={{ scale: loginLoading ? 1 : 0.98 }}
                     className="
                       relative w-full py-3.5 sm:py-4 mt-1
                       bg-gradient-to-r from-[#2563EB] via-[#0EA5E9] to-[#60A5FA]
@@ -471,7 +475,7 @@ export default function LoginPage() {
                     "
                   >
                     <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
-                    {loading ? (
+                    {loginLoading ? (
                       <>
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         Signing in...
@@ -653,16 +657,6 @@ export default function LoginPage() {
               )}
             </AnimatePresence>
           </div>
-
-          {/* Mobile branding */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="lg:hidden flex justify-center mt-6"
-          >
-            <SystemBrandingLogo size="sm" />
-          </motion.div>
         </motion.div>
       </div>
     </div>

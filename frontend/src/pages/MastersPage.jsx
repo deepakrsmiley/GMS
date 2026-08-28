@@ -18,6 +18,7 @@ import HospitalBrandingPage from './HospitalBrandingPage';
 import OrganizationsPage from './OrganizationsPage';
 import PharmacyPage from './PharmacyPage';
 import LabTestMasterPage from './LabTestMasterPage';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import '../styles/masters.css';
 
 const MASTER_MODULES = [
@@ -194,8 +195,19 @@ export default function MastersPage() {
     return <Navigate to={`/masters/${modules[0].id}`} replace />;
   }
 
+  const setupCurrent = {
+    branding: 'branding',
+    departments: 'departments',
+    staff: 'staff',
+    beds: 'beds',
+    services: 'services',
+    'lab-tests': 'lab',
+    medicines: 'pharmacy',
+  }[section] || 'branding';
+
   return (
     <div className="masters-shell">
+      <WorkflowStrip flow="setup" current={setupCurrent} />
       <header className="masters-masthead">
         <div>
           <p className="masters-masthead__eyebrow">Hospital configuration</p>

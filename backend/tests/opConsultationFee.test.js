@@ -7,6 +7,8 @@ const assert = require('node:assert/strict');
 const {
   EMERGENCY_SURCHARGE,
   resolveOpConsultationFee,
+  parseFeeOverride,
+  resolveBilledConsultationFee,
   defaultPaymentPurpose,
 } = require('../utils/opConsultationFee');
 
@@ -26,6 +28,20 @@ describe('resolveOpConsultationFee', () => {
       resolveOpConsultationFee({ consultationFee: 400, followUpFee: 0 }, { consultationFee: 200 }, 'followup'),
       200,
     );
+  });
+});
+
+describe('resolveBilledConsultationFee', () => {
+  it('accepts a reception override including zero', () => {
+    assert.equal(parseFeeOverride(''), null);
+    assert.equal(parseFeeOverride(undefined), null);
+    assert.equal(parseFeeOverride(-10), null);
+    assert.equal(parseFeeOverride(0), 0);
+    assert.equal(parseFeeOverride('400'), 400);
+    assert.equal(resolveBilledConsultationFee(500, 400, 350), 400);
+    assert.equal(resolveBilledConsultationFee(500, '', 350), 350);
+    assert.equal(resolveBilledConsultationFee(500, null, null), 500);
+    assert.equal(resolveBilledConsultationFee(500, 0, 350), 0);
   });
 });
 

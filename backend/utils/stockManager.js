@@ -7,8 +7,20 @@ const {
   logStockMovement,
 } = require('./pharmacyStockHelper');
 
+// Stock is taken at the source for these bill lines:
+// - Prescription: pharmacy dispense
+// - IPAdmission: ward medication log (ipController.addMedication)
+// Billing must charge them without deducting (or restoring) inventory again.
+const STOCK_PRE_DEDUCTED_REFS = new Set(['Prescription', 'IPAdmission']);
+
+const isStockPreDeducted = (item) =>
+  STOCK_PRE_DEDUCTED_REFS.has(item?.referenceModel);
+
 const getMedicineItems = (items = []) =>
   items.filter((item) => item.type === 'medicine' && item.medicine);
+
+const stockableMedicineItems = (items = []) =>
+  getMedicineItems(items).filter((item) => !isStockPreDeducted(item));
 
 const deductFromBatches = (medicine, quantity, preferredBatchNumber = null) =>
   deductFromUsableBatches(medicine, quantity, preferredBatchNumber);
@@ -31,7 +43,7 @@ const restoreToBatch = (medicine, batchNumber, quantity) => {
 };
 
 const validateMedicineStock = async (items) => {
-  for (const item of getMedicineItems(items)) {
+  for (const item of stockableMedicineItems(items)) {
     const quantity = Number(item.quantity || 0);
     if (quantity <= 0) throw new ErrorResponse('Medicine quantity must be greater than zero', 400);
 
@@ -49,7 +61,7 @@ const validateMedicineStock = async (items) => {
 const deductMedicineStock = async (items, userId = null) => {
   const deducted = [];
 
-  for (const item of getMedicineItems(items)) {
+  for (const item of stockableMedicineItems(items)) {
     const quantity = Number(item.quantity || 0);
     const medicine = await Medicine.findById(item.medicine);
 
@@ -138,7 +150,7 @@ const restoreMedicineStock = async (deducted = [], meta = {}) => {
 };
 
 const restoreBillItemsStock = async (items = [], meta = {}) => {
-  const entries = getMedicineItems(items).map((item) => ({
+  const entries = stockableMedicineItems(items).map((item) => ({
     medicine: item.medicine,
     quantity: Number(item.quantity || 0),
     batch: item.batch || item.batchNumber,
@@ -147,7 +159,9 @@ const restoreBillItemsStock = async (items = [], meta = {}) => {
 };
 
 module.exports = {
+  isStockPreDeducted,
   getMedicineItems,
+  stockableMedicineItems,
   validateMedicineStock,
   deductMedicineStock,
   restoreMedicineStock,

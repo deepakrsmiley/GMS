@@ -65,7 +65,7 @@ export default function AuthLayout() {
   if (user) return <Navigate to={homePathForUser(user)} replace />;
 
   return (
-    <div className="relative min-h-screen bg-[#F8FAFC] overflow-hidden">
+    <div className="relative min-h-[100dvh] bg-[#F8FAFC] overflow-x-hidden">
       {/* Soft gradient washes */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-bl from-[#60A5FA]/20 via-[#0EA5E9]/10 to-transparent rounded-full blur-3xl -translate-y-1/4 translate-x-1/4" />
@@ -97,7 +97,7 @@ export default function AuthLayout() {
         }}
       />
 
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <div className="relative z-10 min-h-[100dvh] flex items-center justify-center p-4 sm:p-6 lg:p-8 py-8">
         <Outlet />
       </div>
     </div>

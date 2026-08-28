@@ -6,7 +6,7 @@ const Prescription = require('../models/Prescription');
 const Medicine = require('../models/Medicine');
 const Bill = require('../models/Bill');
 const Bed = require('../models/Bed');
-const { EMERGENCY_SURCHARGE, resolveOpConsultationFee } = require('../utils/opConsultationFee');
+const { EMERGENCY_SURCHARGE, resolveOpConsultationFee, resolveBilledConsultationFee } = require('../utils/opConsultationFee');
 const { filterChargesForBillType, labBillableTestLines } = require('../utils/billingChargeRules');
 
 const ADMISSION_FEE = 500;
@@ -21,13 +21,14 @@ const daysBetween = (start, end) => {
 
 const makeCharge = ({
   id, category, type, description, quantity, unitPrice, gstPercent = 0,
-  referenceId, referenceModel, medicine, meta = {},
+  referenceId, referenceModel, medicine, batch, batchNumber, meta = {},
 }) => {
   const qty = Number(quantity) || 1;
   const price = Number(unitPrice) || 0;
   const gst = Number(gstPercent) || 0;
   const lineSubtotal = qty * price;
   const gstAmount = lineSubtotal * (gst / 100);
+  const lot = batchNumber || batch;
   return {
     id,
     category,
@@ -41,6 +42,8 @@ const makeCharge = ({
     referenceId,
     referenceModel,
     medicine: medicine || undefined,
+    batch: lot || undefined,
+    batchNumber: lot || undefined,
     meta,
     included: true,
   };
@@ -111,7 +114,11 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
 
     if (!consultAlreadyBilled) {
     const isFollowUp = op.appointmentType === 'followup';
-    const fee = resolveOpConsultationFee(op.doctor, op.department, op.appointmentType);
+    const fee = resolveBilledConsultationFee(
+      resolveOpConsultationFee(op.doctor, op.department, op.appointmentType),
+      null,
+      op.billedConsultationFee,
+    );
 
     if (!primaryDoctor && op.doctor) primaryDoctor = op.doctor;
     if (!primaryDepartment && op.department) primaryDepartment = op.department;
@@ -319,6 +326,7 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
         referenceId: med._id,
         referenceModel: 'IPAdmission',
         medicine: medDoc?._id,
+        batchNumber: med.batchNumber,
         meta: {
           admissionNumber: adm.admissionNumber,
           administeredAt: med.administeredAt,

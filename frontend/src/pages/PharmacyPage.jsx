@@ -27,6 +27,7 @@ import { hasPermission, hasPharmacyPermission } from "../constants/permissions";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import api from "../services/api";
+import WorkflowStrip from "../components/workflow/WorkflowStrip";
 import Modal from "../components/common/Modal";
 import MedicineEditRequestModal from "../components/pharmacy/MedicineEditRequestModal";
 import DataTable from "../components/common/DataTable";
@@ -1670,6 +1671,7 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
 
   return (
     <div className="space-y-5">
+      {!masterMode && <WorkflowStrip flow="pharmacy" current="queue" />}
       {!masterMode && (
         <PageHeader
           icon={Pill}

@@ -20,6 +20,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   } from '../utils/medicineBatches';
   import { useBranding } from '../hooks/useBranding';
   import { SYSTEM_NAME } from '../constants/branding';
+  import WorkflowStrip from '../components/workflow/WorkflowStrip';
   import '../styles/billing.css';
 
   const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
@@ -951,10 +952,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
     return (
       <div className="bl-shell">
+        <WorkflowStrip flow="billing" current={isDischargeTab ? 'charges' : 'pick'} />
         <header className="bl-head">
           <div>
             <h1>Billing</h1>
-            <p>OP consultation, lab tests, IP and pharmacy — bill each the right way.</p>
+            <p>Load unbilled charges after the work is done. For IP, settle Pending Discharge before the bed is released.</p>
           </div>
         </header>
 

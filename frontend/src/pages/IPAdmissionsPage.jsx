@@ -14,6 +14,7 @@ import MedicationLogModal from '../components/ip/MedicationLogModal';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
 import { useBranding } from '../hooks/useBranding';
 import { hasPermission } from '../constants/permissions';
+import WorkflowStrip from '../components/workflow/WorkflowStrip';
 
 const ROOM_TYPES = [
   { value: '', label: 'All Types' },
@@ -337,6 +338,7 @@ export default function IPAdmissionsPage() {
 
   return (
     <div className="space-y-6">
+      <WorkflowStrip flow="ip" current={tab === 'discharge' ? 'summary' : 'admit'} />
       <p className="text-sm text-slate-400 flex items-center gap-1.5">
         <Home size={13} /> IP Management <ChevronRight size={13} /> <span className="text-slate-500">IP Admissions</span>
       </p>
