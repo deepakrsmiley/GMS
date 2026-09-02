@@ -316,14 +316,21 @@
 }
 
 .lab-report-signs {
-  margin-top: 22px;
+  margin-top: 28px;
+  width: 100%;
 }
 .lab-report-signs td {
-  width: 25%;
-  text-align: center;
-  vertical-align: bottom;
-  padding: 0 8px;
   border: 0;
+  vertical-align: bottom;
+  padding: 0;
+}
+.lab-report-signs td.lab-report-sign-spacer {
+  width: 68%;
+}
+.lab-report-signs td.lab-report-sign-only {
+  width: 32%;
+  text-align: center;
+  padding: 0 4px;
 }
 .lab-report-signs img {
   height: 28px;

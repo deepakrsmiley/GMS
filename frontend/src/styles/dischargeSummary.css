@@ -26,8 +26,25 @@
   color: var(--ds-accent);
   background: var(--ds-canvas);
   border-bottom: 1px solid var(--ds-line);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+}
+
+.ds-section__check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ds-section__check input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+}
+
+.ds-section--off {
+  opacity: 0.72;
 }
 
 .ds-section__body {

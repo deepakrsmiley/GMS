@@ -163,6 +163,7 @@ const ipAdmissionSchema = new mongoose.Schema({
     absconded: { type: String, enum: ['Yes', 'No'], default: 'No' },
     death: { type: String, enum: ['Yes', 'No'], default: 'No' },
     remarks: String,
+    printSections: { type: mongoose.Schema.Types.Mixed },
     maternityAdvice: {
       motherCondition: String,
       babyCondition: String,

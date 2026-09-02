@@ -242,18 +242,12 @@ const generateLabReportPDF = async (labTest, res, branding) => {
   }
 
   const signatureY = pageHeight - 116;
-  doc.font('Helvetica').fontSize(7).fillColor('#64748b').text('Verified by', margin, signatureY, { width: 150 });
-  doc.moveTo(margin, signatureY + 20).lineTo(margin + 145, signatureY + 20).strokeColor('#94a3b8').stroke();
-  doc.font('Helvetica-Bold').fontSize(7).fillColor('#111827').text(printedBy, margin, signatureY + 24, { width: 150 });
   doc.font('Helvetica').fontSize(7).fillColor('#64748b').text('Authorized Signatory', pageWidth - margin - 160, signatureY, { width: 160, align: 'right' });
   doc.moveTo(pageWidth - margin - 145, signatureY + 20).lineTo(pageWidth - margin, signatureY + 20).strokeColor('#94a3b8').stroke();
-
-  const footerY = pageHeight - 66;
-  doc.moveTo(margin, footerY).lineTo(pageWidth - margin, footerY).lineWidth(0.6).strokeColor('#d1d5db').stroke();
-  doc.font('Helvetica').fontSize(6.7).fillColor('#4b5563');
-  doc.text(b.footerNote || 'Thank you for choosing our hospital.', margin, footerY + 5, { width: contentWidth, align: 'center' });
-  doc.text(`Printed on ${fmtDateTime(new Date())} | Printed by ${printedBy}`, margin, footerY + 17, { width: contentWidth / 2 });
-  doc.text(`Lab No: ${labTest.labNumber || '-'}`, margin + contentWidth / 2, footerY + 17, { width: contentWidth / 2, align: 'right' });
+  const signName = labTest.reportApprovedBy?.name || '';
+  if (signName) {
+    doc.font('Helvetica-Bold').fontSize(7).fillColor('#111827').text(signName, pageWidth - margin - 160, signatureY + 24, { width: 160, align: 'right' });
+  }
 
   doc.end();
 };
@@ -594,7 +588,12 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   const d = admission.dischargeDetails || {};
   const patient = admission.patient || {};
   const ma = d.maternityAdvice || {};
-  const includeMaternity = !!(ma.motherCondition || ma.babyCondition || (ma.adviceChecked || []).length);
+  const ps = d.printSections;
+  const sectionOn = (key) => {
+    if (ps == null || typeof ps !== 'object' || Array.isArray(ps)) return true;
+    return Boolean(ps[key]);
+  };
+  const includeMaternity = sectionOn('maternityAdvice') && !!(ma.motherCondition || ma.babyCondition || (ma.adviceChecked || []).length);
   const state = { pageNo: 1 };
 
   const doc = new PDFDocument({
@@ -611,7 +610,9 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   const width = PAGE.width - (DS_MARGIN + DS_INNER) * 2;
   const left = DS_MARGIN + DS_INNER;
 
-  const allergyText = pdfSafe(d.allergyAlert || (patient.allergies || []).filter(Boolean).join(', ')).toUpperCase();
+  const allergyText = sectionOn('allergyAlert')
+    ? pdfSafe(d.allergyAlert || (patient.allergies || []).filter(Boolean).join(', ')).toUpperCase()
+    : '';
   if (allergyText) {
     doc.font('Times-Bold').fontSize(8.5).fillColor('#b91c1c')
       .text(allergyText.includes('ALLERGY') ? allergyText : `${allergyText} ALLERGY`, left, doc.y, { width, align: 'center' });
@@ -644,7 +645,7 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
 
   drawDischargeInfoGrid(doc, [
     ['PATIENT NAME', pdfSafe(patient.name || '').toUpperCase(), 'D.O.A', fmtDischargeDT(admission.admissionDate)],
-    ['AGE/SEX', ageSex, 'D.O.DELIVERY', fmtDischargeDT(d.deliveryDate)],
+    ['AGE/SEX', ageSex, 'D.O.DELIVERY', sectionOn('deliveryDate') ? fmtDischargeDT(d.deliveryDate) : ''],
     ['IP.NO', admission.admissionNumber || '', 'D.O.D', fmtDischargeDate(admission.dischargeDate)],
     ['CONSULTANT', consultant, 'DEPARTMENT', pdfSafe(admission.department?.name || '').toUpperCase()],
   ], state);
@@ -675,7 +676,7 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
       .text(`UHID - ${pdfSafe(patient.patientId)}`, left + width * 0.62, rightY, { width: width * 0.38, align: 'right', lineBreak: false });
     rightY += 11;
   }
-  const rchId = d.rchId || patient.rchId;
+  const rchId = sectionOn('rchId') ? (d.rchId || patient.rchId) : '';
   if (rchId) {
     doc.font('Times-Bold').fontSize(8)
       .text(`RCH ID - ${pdfSafe(rchId)}`, left + width * 0.62, rightY, { width: width * 0.38, align: 'right', lineBreak: false });
@@ -683,10 +684,11 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   }
   doc.y = Math.max(ay, rightY) + 4;
 
-  // Continuous flow — page breaks only when content overflows
-  drawDischargeSection(doc, 'Diagnosis', d.diagnosis || admission.finalDiagnosis || admission.admissionDiagnosis, state);
+  if (sectionOn('diagnosis')) {
+    drawDischargeSection(doc, 'Diagnosis', d.diagnosis, state);
+  }
   const oh = d.obstetricHistory || {};
-  if (oh.rmp || oh.lmp || oh.edd) {
+  if (sectionOn('menstrualHistory') && (oh.rmp || oh.lmp || oh.edd)) {
     const lines = [];
     if (oh.rmp) lines.push(oh.rmp.toUpperCase().startsWith('RMP') ? oh.rmp : `RMP, ${oh.rmp}`);
     const lmpEdd = [
@@ -696,11 +698,13 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
     if (lmpEdd) lines.push(lmpEdd);
     drawDischargeSection(doc, 'Menstrual History', lines.join('\n'), state);
   }
-  drawDischargeSection(doc, 'Chief Complaints', d.chiefComplaints, state);
-  drawDischargeSection(doc, 'Past History', d.pastHistory || 'Nil relevant', state);
-  drawDischargeSection(doc, 'Physical Examination', d.physicalExamination, state);
+  if (sectionOn('chiefComplaints')) drawDischargeSection(doc, 'Chief Complaints', d.chiefComplaints, state);
+  if (sectionOn('pastHistory')) drawDischargeSection(doc, 'Past History', d.pastHistory, state);
+  if (sectionOn('physicalExamination')) drawDischargeSection(doc, 'Physical Examination', d.physicalExamination, state);
 
-  const labs = (d.labInvestigations || []).filter((r) => r && (String(r.name || '').trim() || String(r.report || '').trim()));
+  const labs = sectionOn('labInvestigations')
+    ? (d.labInvestigations || []).filter((r) => r && String(r.report || '').trim())
+    : [];
   if (labs.length) {
     ensureDischargeSpace(doc, 24, state);
     const labLabel = 'LABORATORY INVESTIGATION REPORTS:';
@@ -724,67 +728,73 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
     doc.moveDown(0.15);
   }
 
-  drawDischargeSection(doc, 'Echo / Imaging', d.echoReport, state);
-  if (d.investigationsNote) {
+  if (sectionOn('echoReport')) drawDischargeSection(doc, 'Echo / Imaging', d.echoReport, state);
+  if (sectionOn('investigationsNote') && d.investigationsNote) {
     ensureDischargeSpace(doc, 16, state);
     doc.font('Times-Italic').fontSize(8).fillColor('#333')
       .text(pdfSafe(d.investigationsNote), left, doc.y, { width });
     doc.moveDown(0.18);
   }
-  drawDischargeSection(doc, 'Course of Treatment in Hospital', d.hospitalCourse, state);
-  drawDischargeSection(doc, 'Baby Details', d.babyDetails, state);
-  if (d.postnatalPeriod || d.hospitalMedications) {
-    drawDischargeSection(doc, 'Postnatal Period', [d.postnatalPeriod, d.hospitalMedications].filter(Boolean).join('\n'), state);
+  if (sectionOn('hospitalCourse')) drawDischargeSection(doc, 'Course of Treatment in Hospital', d.hospitalCourse, state);
+  if (sectionOn('babyDetails')) drawDischargeSection(doc, 'Baby Details', d.babyDetails, state);
+  if (sectionOn('postnatalPeriod') || sectionOn('hospitalMedications')) {
+    const pn = [
+      sectionOn('postnatalPeriod') ? d.postnatalPeriod : null,
+      sectionOn('hospitalMedications') ? d.hospitalMedications : null,
+    ].filter(Boolean).join('\n');
+    if (pn) drawDischargeSection(doc, 'Postnatal Period', pn, state);
   }
-  drawDischargeSection(doc, 'Condition on Discharge', d.conditionOnDischarge, state);
+  if (sectionOn('conditionOnDischarge')) drawDischargeSection(doc, 'Condition on Discharge', d.conditionOnDischarge, state);
 
-  if (d.pvStatus) {
+  if (sectionOn('pvStatus') && d.pvStatus) {
     ensureDischargeSpace(doc, 14, state);
     doc.font('Times-Roman').fontSize(8.5).fillColor('#111').text(pdfSafe(d.pvStatus), left, doc.y, { width });
     doc.moveDown(0.18);
   }
-  drawDischargeSection(doc, 'Further Advice on Discharge', d.medicationsOnDischarge, state);
-  [d.motherWarnings, d.dietaryAdvice, d.babyWarnings].filter(Boolean).forEach((txt) => {
+  if (sectionOn('medicationsOnDischarge')) drawDischargeSection(doc, 'Further Advice on Discharge', d.medicationsOnDischarge, state);
+  [sectionOn('motherWarnings') && d.motherWarnings, sectionOn('dietaryAdvice') && d.dietaryAdvice, sectionOn('babyWarnings') && d.babyWarnings].filter(Boolean).forEach((txt) => {
     ensureDischargeSpace(doc, 14, state);
     doc.font('Times-Roman').fontSize(8).fillColor('#111').text(pdfSafe(txt), left, doc.y, { width });
     doc.moveDown(0.15);
   });
-  if (d.immunizationNote) {
+  if (sectionOn('immunizationNote') && d.immunizationNote) {
     ensureDischargeSpace(doc, 12, state);
     doc.font('Times-Bold').fontSize(8).text(pdfSafe(d.immunizationNote), left, doc.y, { width });
     doc.moveDown(0.12);
   }
-  if (d.supplementsAdvice) {
+  if (sectionOn('supplementsAdvice') && d.supplementsAdvice) {
     ensureDischargeSpace(doc, 12, state);
     doc.font('Times-Bold').fontSize(8).text(pdfSafe(String(d.supplementsAdvice).toUpperCase()), left, doc.y, { width });
     doc.moveDown(0.12);
   }
-  if (d.babyLabAdvice) {
+  if (sectionOn('babyLabAdvice') && d.babyLabAdvice) {
     ensureDischargeSpace(doc, 14, state);
     doc.font('Times-Roman').fontSize(8).text(pdfSafe(d.babyLabAdvice), left, doc.y, { width });
     doc.moveDown(0.15);
   }
-  drawDischargeSection(doc, 'Additional Instructions', d.customInstructions, state);
-  if (d.reviewAppointment) {
+  if (sectionOn('customInstructions')) drawDischargeSection(doc, 'Additional Instructions', d.customInstructions, state);
+  if (sectionOn('reviewAppointment') && d.reviewAppointment) {
     ensureDischargeSpace(doc, 12, state);
     doc.font('Times-Roman').fontSize(8).text(`• ${pdfSafe(d.reviewAppointment)}`, left, doc.y, { width });
     doc.moveDown(0.12);
   }
-  if (d.emergencyContact) {
+  if (sectionOn('emergencyContact') && d.emergencyContact) {
     ensureDischargeSpace(doc, 12, state);
     doc.font('Times-Roman').fontSize(8).text(`• ${pdfSafe(d.emergencyContact)}`, left, doc.y, { width });
     doc.moveDown(0.18);
   }
 
   [
-    ['Treatment Given', d.treatmentGiven],
-    ['Clinical Findings', d.clinicalFindings],
-    ['Procedure', d.procedures],
-    ['Follow-up Advice', d.followUpAdvice],
-    ['Discharge Instructions', d.dischargeInstructions],
-  ].forEach(([title, content]) => drawDischargeSection(doc, title, content, state));
+    ['treatmentGiven', 'Treatment Given', d.treatmentGiven],
+    ['clinicalFindings', 'Clinical Findings', d.clinicalFindings],
+    ['procedures', 'Procedure', d.procedures],
+    ['followUpAdvice', 'Follow-up Advice', d.followUpAdvice],
+    ['dischargeInstructions', 'Discharge Instructions', d.dischargeInstructions],
+  ].forEach(([key, title, content]) => {
+    if (sectionOn(key)) drawDischargeSection(doc, title, content, state);
+  });
 
-  if (d.dama === 'Yes' || d.referred === 'Yes' || d.absconded === 'Yes' || d.death === 'Yes' || d.remarks) {
+  if (sectionOn('adminFlags') && (d.dama === 'Yes' || d.referred === 'Yes' || d.absconded === 'Yes' || d.death === 'Yes' || d.remarks)) {
     const flags = [
       d.dama === 'Yes' ? 'DAMA: Yes' : null,
       d.referred === 'Yes' ? `Referred to ${d.referredTo || '-'}` : null,

@@ -140,7 +140,6 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
 
   const showMethod = results.some((r) => r.method);
   const showRemarks = results.some((r) => r.remarks);
-  const criticalRows = results.filter((r) => r.flag === 'CRITICAL_LOW' || r.flag === 'CRITICAL_HIGH');
   const resultTableClass = [
     'lab-report-results',
     showMethod ? 'has-method' : '',
@@ -319,23 +318,6 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
         <tbody>
           <tr>
             <td>
-              {criticalRows.length > 0 && (
-                <div
-                  className="lab-report-section"
-                  style={{
-                    marginTop: 8,
-                    padding: '5px 8px',
-                    fontSize: '9pt',
-                    fontWeight: 700,
-                    color: '#fff',
-                    textAlign: 'center',
-                    background: cfg.criticalColor,
-                  }}
-                >
-                  CRITICAL VALUE ALERT: {criticalRows.map((r) => r.testName).join(', ')} — PLEASE NOTIFY THE TREATING PHYSICIAN IMMEDIATELY
-                </div>
-              )}
-
               {sections.map((section) => (
                 <div key={section.title} className="lab-report-block lab-report-section">
                   <div
@@ -401,39 +383,22 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
               <table className="lab-report-signs lab-report-section">
                 <tbody>
                   <tr>
-                    {[
-                      { label: 'Lab Technician', name: labTest?.sampleCollectedBy?.name, sig: cfg.labTechnicianSignature },
-                      { label: 'Pathologist', name: labTest?.reportVerifiedBy?.name, sig: cfg.pathologistSignature },
-                      { label: 'Consultant', name: doctor.name ? `Dr. ${doctor.name}` : null, sig: cfg.doctorSignature },
-                      { label: 'Authorized Signatory', name: labTest?.reportApprovedBy?.name, sig: cfg.authorizedSignature },
-                    ].map((sig) => (
-                      <td key={sig.label}>
-                        {sig.sig ? <img src={sig.sig} alt="" /> : <div style={{ height: 28 }} />}
-                        <div className="sig-line">{sig.name || '\u00A0'}</div>
-                        <div className="sig-role">{sig.label}</div>
-                      </td>
-                    ))}
+                    <td className="lab-report-sign-spacer" />
+                    <td className="lab-report-sign-only">
+                      {cfg.authorizedSignature ? (
+                        <img src={cfg.authorizedSignature} alt="" />
+                      ) : (
+                        <div style={{ height: 28 }} />
+                      )}
+                      <div className="sig-line">{labTest?.reportApprovedBy?.name || '\u00A0'}</div>
+                      <div className="sig-role">Authorized Signatory</div>
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </td>
           </tr>
         </tbody>
-
-        <tfoot>
-          <tr>
-            <td>
-              <table className="lab-report-footer" style={{ borderColor: cfg.primaryColor, color: cfg.footerColor }}>
-                <tbody>
-                  <tr>
-                    <td className="left">{cfg.footerText}</td>
-                    <td className="right">Printed on {fmtDateTime(new Date())} · Lab No: {sampleId}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </td>
-          </tr>
-        </tfoot>
       </table>
     </div>
   );
