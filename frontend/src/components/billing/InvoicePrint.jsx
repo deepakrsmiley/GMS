@@ -48,17 +48,20 @@ function numberToWords(num) {
   return conv(r)+' RUPEES'+(p>0?' AND '+conv(p)+' PAISA':'')+' ONLY';
 }
 
+const LETTER_FONT = "'Source Serif 4', 'Times New Roman', Times, Georgia, serif";
+const UI_FONT = "'IBM Plex Sans', 'Segoe UI', sans-serif";
+
 /* ─── shared cell styles (regular weight, high contrast) ─ */
 const TH = {
-  padding:'9px 5px', textAlign:'center', fontSize:11.5,
-  border:'1px solid rgba(255,255,255,0.35)', fontWeight:500, lineHeight:1.4,
-  whiteSpace:'nowrap', letterSpacing:'0.15px',
+  padding:'9px 5px', textAlign:'center', fontSize:13.5,
+  border:'1px solid rgba(255,255,255,0.35)', fontWeight:600, lineHeight:1.4,
+  whiteSpace:'nowrap', letterSpacing:'0.2px',
 };
-const TD  = { padding:'8px 6px', border:'1px solid #d1d5db', verticalAlign:'middle', lineHeight:1.45, fontSize:'12.5px', fontWeight:400, color:'#111827' };
+const TD  = { padding:'9px 6px', border:'1px solid #d1d5db', verticalAlign:'middle', lineHeight:1.45, fontSize:'14.5px', fontWeight:400, color:'#111827' };
 const TDc = { ...TD, textAlign:'center' };
-const TDr = { ...TD, textAlign:'right', fontFamily:"'Courier New', monospace" };
-const TH2 = { padding:'8px 8px', border:'1px solid #d1d5db', fontWeight:500, fontSize:'12.5px', letterSpacing:'0.15px', color:'#111827' };
-const TD2 = { padding:'8px 8px', border:'1px solid #d1d5db', fontSize:'12.5px', fontWeight:400, color:'#111827' };
+const TDr = { ...TD, textAlign:'right', fontVariantNumeric:'tabular-nums' };
+const TH2 = { padding:'9px 8px', border:'1px solid #d1d5db', fontWeight:600, fontSize:'14.5px', letterSpacing:'0.15px', color:'#111827' };
+const TD2 = { padding:'9px 8px', border:'1px solid #d1d5db', fontSize:'14.5px', fontWeight:400, color:'#111827' };
 
 /* ─── NORMALISE ─── */
 function normalise(bill) {

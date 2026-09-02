@@ -29,9 +29,15 @@ import '../styles/opQueue.css';
 
 const EMERGENCY_SURCHARGE = 300;
 
+const finiteFee = (value) => {
+  if (value === '' || value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
 const resolveOpConsultationFee = (doctor, department, appointmentType) => {
-  const consult = Number(doctor?.consultationFee) || Number(department?.consultationFee) || 0;
-  const follow = Number(doctor?.followUpFee) || 0;
+  const consult = finiteFee(doctor?.consultationFee) ?? finiteFee(department?.consultationFee) ?? 0;
+  const follow = finiteFee(doctor?.followUpFee) ?? 0;
   if (appointmentType === 'followup') {
     if (follow > 0) return follow;
     if (consult > 0) return Math.round(consult * 0.5);
@@ -188,9 +194,13 @@ export default function OPQueuePage() {
     return () => clearInterval(id);
   }, [followLiveDay]);
 
+  const loadFeeMasters = () => {
+    api.get('/departments').then((r) => setDepartments(r.data.data || [])).catch(() => {});
+    api.get('/staff/doctors').then((r) => setDoctors(r.data.data || [])).catch(() => {});
+  };
+
   useEffect(() => {
-    api.get('/departments').then(r => setDepartments(r.data.data || [])).catch(() => {});
-    api.get('/staff/doctors').then(r => setDoctors(r.data.data || [])).catch(() => {});
+    loadFeeMasters();
   }, []);
 
   const todayStr = () => istCalendarDate();
@@ -466,10 +476,13 @@ export default function OPQueuePage() {
       .some((v) => String(v || '').toLowerCase().includes(queueSearchTerm));
   };
 
-  const waiting = typeFiltered.filter((q) => q.status === 'waiting');
-  const inConsult = typeFiltered.filter((q) => q.status === 'in_consultation');
-  const completed = typeFiltered.filter((q) => ['completed', 'consultation_completed', 'sent_to_pharmacy', 'pharmacy_completed', 'sent_to_lab', 'discharged'].includes(q.status));
-  const admitted = typeFiltered.filter((q) => q.status === 'admitted');
+  const tokenNumeric = (n) => Number(String(n || '').replace(/\D/g, '')) || 0;
+  const highestOpNumberFirst = (a, b) => tokenNumeric(b.tokenNumber) - tokenNumeric(a.tokenNumber);
+
+  const waiting = typeFiltered.filter((q) => q.status === 'waiting').sort(highestOpNumberFirst);
+  const inConsult = typeFiltered.filter((q) => q.status === 'in_consultation').sort(highestOpNumberFirst);
+  const completed = typeFiltered.filter((q) => ['completed', 'consultation_completed', 'sent_to_pharmacy', 'pharmacy_completed', 'sent_to_lab', 'discharged'].includes(q.status)).sort(highestOpNumberFirst);
+  const admitted = typeFiltered.filter((q) => q.status === 'admitted').sort(highestOpNumberFirst);
 
   const tabData = { waiting, in_consultation: inConsult, completed, admitted };
   const activeItems = (tabData[activeTab] || []).filter(matchesQueueSearch);
@@ -616,7 +629,7 @@ export default function OPQueuePage() {
             <button
               type="button"
               className="opq-btn-add"
-              onClick={() => { resetRegForm(); setShowAdd(true); }}
+              onClick={() => { resetRegForm(); loadFeeMasters(); setShowAdd(true); }}
             >
               <Plus size={16} /> Add Patient
             </button>
@@ -839,7 +852,7 @@ export default function OPQueuePage() {
               <h3 className="opq-card-title">Quick Actions</h3>
             </div>
             <div className="opq-quick">
-              <button type="button" onClick={() => { if (canRegister) { resetRegForm(); setShowAdd(true); } else navigate('/patients'); }}>
+              <button type="button" onClick={() => { if (canRegister) { resetRegForm(); loadFeeMasters(); setShowAdd(true); } else navigate('/patients'); }}>
                 <span className="opq-quick-ico bg-blue-50 text-blue-600"><UserPlus size={16} /></span>
                 New Registration
               </button>
@@ -978,14 +991,9 @@ export default function OPQueuePage() {
                           <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                           <select {...register('doctor', { required: true })} className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
                             <option value="">Select Doctor</option>
-                            {doctors.map((d) => {
-                              const fee = resolveOpConsultationFee(d, d.department, appointmentType);
-                              return (
-                                <option key={d._id} value={d._id}>
-                                  Dr. {d.name}{fee > 0 ? ` — ₹${fee}` : ''}
-                                </option>
-                              );
-                            })}
+                            {doctors.map((d) => (
+                              <option key={d._id} value={d._id}>{formatDoctorName(d.name)}</option>
+                            ))}
                           </select>
                         </div>
                       </div>
@@ -1021,12 +1029,12 @@ export default function OPQueuePage() {
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           <div>
                             <p className="text-slate-500">Consultation Fee (master)</p>
-                            <p className="font-semibold text-sm text-slate-900">₹{selectedDoctor.consultationFee || selectedDept?.consultationFee || 0}</p>
+                            <p className="font-semibold text-sm text-slate-900">₹{finiteFee(selectedDoctor.consultationFee) ?? finiteFee(selectedDept?.consultationFee) ?? 0}</p>
                           </div>
                           <div>
                             <p className="text-slate-500">Follow-up Fee (master)</p>
                             <p className="font-semibold text-sm text-slate-900">
-                              ₹{selectedDoctor.followUpFee > 0 ? selectedDoctor.followUpFee : Math.round((selectedDoctor.consultationFee || selectedDept?.consultationFee || 0) * 0.5)}
+                              ₹{finiteFee(selectedDoctor.followUpFee) ?? Math.round((finiteFee(selectedDoctor.consultationFee) ?? finiteFee(selectedDept?.consultationFee) ?? 0) * 0.5)}
                             </p>
                           </div>
                           {selectedDoctor.qualification && (

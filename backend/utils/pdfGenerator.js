@@ -130,11 +130,11 @@ const generateLabReportPDF = async (labTest, res, branding) => {
       : labTest.patient?.gender || '';
 
   const groupedRows = buildResultGroups(labTest.results || [])
-    .map((group) => ({ ...group, rows: group.rows.filter((row) => row.value || row.unit || row.normalRange) }))
+    .map((group) => ({ ...group, rows: group.rows.filter((row) => String(row.value ?? '').trim()) }))
     .filter((group) => group.rows.length);
   const resultGroups = groupedRows.length
     ? groupedRows
-    : [{ title: labTest.tests?.[0]?.testName || 'RESULTS', rows: labTest.results || [] }];
+    : [{ title: labTest.tests?.[0]?.testName || 'RESULTS', rows: [] }];
   const totalRows = resultGroups.reduce((count, group) => count + group.rows.length + 1, 0);
   const rowHeight = totalRows > 28 ? 10.4 : totalRows > 24 ? 11.2 : 12.2;
 
@@ -180,7 +180,7 @@ const generateLabReportPDF = async (labTest, res, branding) => {
     ['Name', labTest.patient?.name || '-'],
     ['Type / Gender', patientType || labTest.patient?.gender || '-'],
     ['Sample ID', labTest.labNumber || '-'],
-    ['Analysis Date', reportDate || '-'],
+    ...(labTest.showReportEnteredTime !== false ? [['Analysis Date', reportDate || '-']] : []),
     ['Operator', printedBy],
     ['Department', labTest.labType || '-'],
     ['Physician', labTest.doctor?.name ? `Dr. ${labTest.doctor.name}` : '-'],

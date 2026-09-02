@@ -253,7 +253,6 @@ export default function IPAdmissionsPage() {
     name: '', phone: '', age: '', gender: '', email: '', bloodGroup: '',
     rchId: '', allergies: '',
     address: { street: '', city: '', state: '', pincode: '' },
-    emergencyContact: { name: '', phone: '' },
   };
   const [quickForm, setQuickForm] = useState(EMPTY_QUICK_PATIENT);
   const quickAddMut = useMutation({
@@ -275,10 +274,6 @@ export default function IPAdmissionsPage() {
           city: d.address?.city || undefined,
           state: d.address?.state || undefined,
           pincode: d.address?.pincode || undefined,
-        },
-        emergencyContact: {
-          name: d.emergencyContact?.name || undefined,
-          phone: d.emergencyContact?.phone || undefined,
         },
         allergies,
       });
@@ -872,24 +867,6 @@ export default function IPAdmissionsPage() {
                 onChange={(e) => setQuickForm({ ...quickForm, address: { ...quickForm.address, pincode: e.target.value } })}
                 className="input-field"
                 placeholder="Pincode"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Contact</label>
-              <input
-                value={quickForm.emergencyContact.name}
-                onChange={(e) => setQuickForm({ ...quickForm, emergencyContact: { ...quickForm.emergencyContact, name: e.target.value } })}
-                className="input-field"
-                placeholder="Contact name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Emergency Phone</label>
-              <input
-                value={quickForm.emergencyContact.phone}
-                onChange={(e) => setQuickForm({ ...quickForm, emergencyContact: { ...quickForm.emergencyContact, phone: e.target.value } })}
-                className="input-field"
-                placeholder="Contact phone"
               />
             </div>
           </div>

@@ -386,23 +386,44 @@ exports.enterResults = asyncHandler(async (req, res, next) => {
   if (!existing) return next(new ErrorResponse('Lab test not found', 404));
 
   const patientContext = { age: existing.patient?.age, gender: existing.patient?.gender };
+  const wasCompleted = existing.status === 'completed';
 
-  // Auto-analyze each result row: derive flag/status from value vs reference range
-  // so the report template never has to guess — it just renders what's stored.
-  const analyzedResults = (req.body.results || []).map((row) => {
-    const analysis = analyzeResult({
-      value: row.value,
-      referenceRange: row.referenceRange || row.normalRange,
-      criticalLow: row.criticalLow,
-      criticalHigh: row.criticalHigh,
-      patient: patientContext,
+  // Only persist parameters that were selected and actually filled in.
+  const analyzedResults = (req.body.results || [])
+    .filter((row) => String(row.testName || '').trim() && String(row.value ?? '').trim())
+    .map((row) => {
+      const analysis = analyzeResult({
+        value: row.value,
+        referenceRange: row.referenceRange || row.normalRange,
+        criticalLow: row.criticalLow,
+        criticalHigh: row.criticalHigh,
+        patient: patientContext,
+      });
+      return {
+        testName: row.testName,
+        section: row.section,
+        method: row.method,
+        value: row.value,
+        unit: row.unit,
+        normalRange: row.normalRange,
+        referenceRange: row.referenceRange || row.normalRange,
+        criticalLow: row.criticalLow,
+        criticalHigh: row.criticalHigh,
+        remarks: row.remarks,
+        flag: analysis.flag,
+        status: analysis.status,
+      };
     });
-    return {
-      ...row,
-      flag: analysis.flag,
-      status: analysis.status,
-    };
-  });
+
+  if (!analyzedResults.length) {
+    return next(new ErrorResponse('Tick a parameter and enter a value before saving the report', 400));
+  }
+
+  const showReportEnteredTime = req.body.showReportEnteredTime !== false;
+  const parsedEnteredAt = req.body.reportGeneratedAt ? new Date(req.body.reportGeneratedAt) : null;
+  const reportGeneratedAt = parsedEnteredAt && !Number.isNaN(parsedEnteredAt.getTime())
+    ? parsedEnteredAt
+    : (existing.reportGeneratedAt || new Date());
 
   const test = await LabTest.findByIdAndUpdate(
     req.params.id,
@@ -417,7 +438,8 @@ exports.enterResults = asyncHandler(async (req, res, next) => {
       impression: req.body.impression,
       conclusion: req.body.conclusion,
       status: 'completed',
-      reportGeneratedAt: new Date(),
+      reportGeneratedAt,
+      showReportEnteredTime,
       reportVerifiedBy: req.user._id,
     },
     { new: true }
@@ -426,36 +448,38 @@ exports.enterResults = asyncHandler(async (req, res, next) => {
     .populate('doctor', 'name');
   if (!test) return next(new ErrorResponse('Lab test not found', 404));
 
-  if (req.app.get('io')) {
+  if (!wasCompleted && req.app.get('io')) {
     req.app.get('io')
       .to(`doctor:${test.doctor?._id}`)
       .emit('lab:result_ready', { labNumber: test.labNumber, patient: test.patient?.name });
   }
 
-  try {
-    const { notifyUser, notifyRoles } = require('../utils/notify');
-    if (test.doctor?._id) {
-      await notifyUser(req, {
-        userId: test.doctor._id,
-        title: 'Lab report ready',
-        message: `${test.patient?.name || 'Patient'} — ${test.labNumber} results available`,
+  if (!wasCompleted) {
+    try {
+      const { notifyUser, notifyRoles } = require('../utils/notify');
+      if (test.doctor?._id) {
+        await notifyUser(req, {
+          userId: test.doctor._id,
+          title: 'Lab report ready',
+          message: `${test.patient?.name || 'Patient'} — ${test.labNumber} results available`,
+          type: 'lab',
+          link: '/lab?tab=reports',
+          relatedId: test._id,
+          relatedModel: 'LabTest',
+        });
+      }
+      await notifyRoles(req, {
+        roles: ['Lab Technician'],
+        title: 'Lab report completed',
+        message: `${test.labNumber} marked completed`,
         type: 'lab',
         link: '/lab?tab=reports',
         relatedId: test._id,
         relatedModel: 'LabTest',
+        excludeUserId: req.user._id,
       });
-    }
-    await notifyRoles(req, {
-      roles: ['Lab Technician'],
-      title: 'Lab report completed',
-      message: `${test.labNumber} marked completed`,
-      type: 'lab',
-      link: '/lab?tab=reports',
-      relatedId: test._id,
-      relatedModel: 'LabTest',
-      excludeUserId: req.user._id,
-    });
-  } catch (_) { /* ignore */ }
+    } catch (_) { /* ignore */ }
+  }
 
   res.status(200).json({ success: true, data: test });
 });

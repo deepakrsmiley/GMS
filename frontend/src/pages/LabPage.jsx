@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { hasPermission } from '../constants/permissions';
-import { Plus, Printer, CheckCircle, Eye, Wallet } from 'lucide-react';
+import { Plus, Printer, CheckCircle, Eye, Wallet, Pencil, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -61,6 +61,28 @@ const autoAnalyze = (value, row, patient = {}) => analyzeResult({
   patient,
 });
 
+const hasResultValue = (value) => String(value ?? '').trim() !== '';
+
+const toDatetimeLocal = (value) => {
+  const d = value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const emptyManualRow = () => ({
+  testName: '',
+  profileName: 'Manual',
+  section: 'Manual',
+  value: '',
+  unit: '',
+  normalRange: '',
+  referenceRange: '',
+  flag: 'NA',
+  included: true,
+  custom: true,
+});
+
 /** Build result rows grouped by CBC / LFT / RFT profile order */
 const buildResultFields = (labOrder) => {
   const profileNames = (labOrder.profiles?.length
@@ -85,6 +107,8 @@ const buildResultFields = (labOrder) => {
       criticalHigh: meta.criticalHigh,
       flag: 'NA',
       referenceRange: meta.normalRange || '',
+      included: false,
+      custom: false,
     });
   };
 
@@ -111,8 +135,61 @@ const buildResultFields = (labOrder) => {
     });
   });
 
-  return fields;
+  const unusedSaved = [...(labOrder.results || [])];
+  const merged = fields.map((field) => {
+    const idx = unusedSaved.findIndex((s) => s.testName === field.testName);
+    if (idx < 0) return field;
+    const saved = unusedSaved.splice(idx, 1)[0];
+    const value = saved.value ?? '';
+    return {
+      ...field,
+      value,
+      unit: saved.unit || field.unit,
+      normalRange: saved.normalRange || field.normalRange,
+      referenceRange: saved.referenceRange || saved.normalRange || field.referenceRange,
+      method: saved.method || field.method,
+      remarks: saved.remarks || '',
+      flag: saved.flag || (hasResultValue(value) ? field.flag : 'NA'),
+      included: hasResultValue(value),
+    };
+  });
+
+  unusedSaved.forEach((saved) => {
+    if (!saved.testName) return;
+    merged.push({
+      testName: saved.testName,
+      profileName: saved.section || 'Manual',
+      section: saved.section || 'Manual',
+      value: saved.value || '',
+      unit: saved.unit || '',
+      normalRange: saved.normalRange || '',
+      referenceRange: saved.referenceRange || saved.normalRange || '',
+      criticalLow: saved.criticalLow,
+      criticalHigh: saved.criticalHigh,
+      flag: saved.flag || 'NA',
+      included: hasResultValue(saved.value),
+      custom: true,
+    });
+  });
+
+  return merged;
 };
+
+const selectedEnteredResults = (fields) => fields
+  .filter((r) => r.included && hasResultValue(r.testName) && hasResultValue(r.value))
+  .map((r) => ({
+    testName: r.testName,
+    section: r.section || shortProfileName(r.profileName),
+    method: r.method,
+    value: r.value,
+    unit: r.unit,
+    normalRange: r.normalRange,
+    referenceRange: r.referenceRange || r.normalRange,
+    criticalLow: r.criticalLow,
+    criticalHigh: r.criticalHigh,
+    remarks: r.remarks,
+    flag: r.flag,
+  }));
 
 export default function LabPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -140,8 +217,10 @@ export default function LabPage() {
   );
   const qc = useQueryClient();
 
-  const { register: resReg, handleSubmit: resSubmit, reset: resReset } = useForm();
+  const { register: resReg, handleSubmit: resSubmit, reset: resReset, getValues: getResValues } = useForm();
   const [resultFields, setResultFields] = useState([]);
+  const [showReportEnteredTime, setShowReportEnteredTime] = useState(true);
+  const [reportEnteredAt, setReportEnteredAt] = useState('');
 
   useEffect(() => {
     const urlTab = searchParams.get('tab');
@@ -230,8 +309,8 @@ export default function LabPage() {
 
   const resultsMut = useMutation({
     mutationFn: ({ id, data: body }) => api.put(`/lab/${id}/results`, body),
-    onSuccess: () => {
-      toast.success('Results saved!');
+    onSuccess: (_d, vars) => {
+      toast.success(vars?.wasCompleted ? 'Report updated' : 'Results saved!');
       qc.invalidateQueries(['labTests']);
       qc.invalidateQueries(['labDash']);
       setShowResults(null);
@@ -261,6 +340,10 @@ export default function LabPage() {
 
   const handlePrint = async (test) => {
     try {
+      if (Array.isArray(test?.results) && (test.results.length > 0 || test.status !== 'completed')) {
+        setPrintData({ branding: brandingData, labTest: test });
+        return;
+      }
       const id = test?._id || test?.id;
       const full = await api.get(`/lab/${id}`).then((r) => r.data.data);
       setPrintData({ branding: brandingData, labTest: full });
@@ -299,6 +382,18 @@ export default function LabPage() {
       window.removeEventListener('afterprint', handleAfterPrint);
     };
   }, [printData]);
+
+  const openResultsEditor = (row) => {
+    setResultFields(buildResultFields(row));
+    setShowReportEnteredTime(row.showReportEnteredTime !== false);
+    setReportEnteredAt(toDatetimeLocal(row.reportGeneratedAt));
+    resReset({ remarks: row.remarks || '' });
+    setShowResults(row);
+  };
+
+  const patchResultField = (index, patch) => {
+    setResultFields((prevFields) => prevFields.map((f, fi) => (fi === index ? { ...f, ...patch } : f)));
+  };
 
   const statusColors = {
     pending: 'badge-gray',
@@ -441,13 +536,12 @@ export default function LabPage() {
               Start Processing
             </button>
           )}
-          {r.status === 'processing' && isLabTech && (
+          {(r.status === 'sample_collected' || r.status === 'processing') && isLabTech && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                setResultFields(buildResultFields(r));
-                setShowResults(r);
+                openResultsEditor(r);
               }}
               className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-lg font-medium"
             >
@@ -471,6 +565,23 @@ export default function LabPage() {
               >
                 <Eye size={11} /> View
               </button>
+              {isLabTech && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      const full = await api.get(`/lab/${r._id}`).then((res) => res.data.data);
+                      openResultsEditor(full);
+                    } catch {
+                      toast.error('Could not load report');
+                    }
+                  }}
+                  className="text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1"
+                >
+                  <Pencil size={11} /> Edit
+                </button>
+              )}
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handlePrint(r); }}
@@ -715,20 +826,29 @@ export default function LabPage() {
       <Modal
         isOpen={!!showResults}
         onClose={() => { setShowResults(null); resReset(); setResultFields([]); }}
-        title={`Enter Results — ${showResults?.labNumber}`}
+        title={`${showResults?.status === 'completed' ? 'Edit Report' : 'Enter Results'} — ${showResults?.labNumber}`}
         size="2xl"
       >
         <form
-          onSubmit={resSubmit((d) => resultsMut.mutate({
-            id: showResults._id,
-            data: {
-              results: resultFields.map((r) => ({
-                ...r,
-                section: r.section || shortProfileName(r.profileName),
-              })),
-              remarks: d.remarks,
-            },
-          }))}
+          onSubmit={resSubmit((d) => {
+            const results = selectedEnteredResults(resultFields);
+            if (!results.length) {
+              toast.error('Tick a parameter and enter a value to print');
+              return;
+            }
+            resultsMut.mutate({
+              id: showResults._id,
+              wasCompleted: showResults.status === 'completed',
+              data: {
+                results,
+                remarks: d.remarks,
+                showReportEnteredTime,
+                reportGeneratedAt: showReportEnteredTime && reportEnteredAt
+                  ? new Date(reportEnteredAt).toISOString()
+                  : undefined,
+              },
+            });
+          })}
           className="p-6 space-y-4"
         >
           {showResults?.testProfile && (
@@ -736,15 +856,54 @@ export default function LabPage() {
               Profile: {showResults.testProfile}
             </div>
           )}
-          <p className="text-[11px] text-slate-500">
-            Flag updates automatically from the reference range (Normal / Low / High / Critical) with colour coding.
-          </p>
+          <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={showReportEnteredTime}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setShowReportEnteredTime(on);
+                if (on && !reportEnteredAt) setReportEnteredAt(toDatetimeLocal());
+              }}
+            />
+            <span className="font-semibold text-slate-700">Show report entered time on print / preview</span>
+            <input
+              type="datetime-local"
+              className="input-field ml-auto w-auto py-1 text-sm"
+              disabled={!showReportEnteredTime}
+              value={reportEnteredAt}
+              onChange={(e) => setReportEnteredAt(e.target.value)}
+            />
+          </label>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] text-slate-500">
+              Tick a parameter, type the value. Only ticked + filled rows appear on preview and print.
+            </p>
+            <div className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                className="text-[11px] font-semibold text-indigo-700"
+                onClick={() => setResultFields((rows) => rows.map((row) => ({ ...row, included: true })))}
+              >
+                Tick all
+              </button>
+              <button
+                type="button"
+                className="text-[11px] font-semibold text-slate-500"
+                onClick={() => setResultFields((rows) => rows.map((row) => ({ ...row, included: false })))}
+              >
+                Clear ticks
+              </button>
+            </div>
+          </div>
           <div className="border border-gray-200 rounded-xl overflow-hidden">
             <div className="grid grid-cols-12 gap-0 bg-gray-50 px-3 py-2.5 text-xs font-semibold text-gray-500">
-              <span className="col-span-3">Test Name</span>
-              <span className="col-span-2">Result *</span>
-              <span className="col-span-3">Reference</span>
-              <span className="col-span-2">Units</span>
+              <span className="col-span-1">Use</span>
+              <span className="col-span-3">Parameter</span>
+              <span className="col-span-2">Result</span>
+              <span className="col-span-2">Reference</span>
+              <span className="col-span-2">Unit</span>
               <span className="col-span-2">Flag</span>
             </div>
             <div className="max-h-96 overflow-y-auto">
@@ -769,28 +928,66 @@ export default function LabPage() {
                         )}
                       </div>
                     )}
-                    <div className={`grid grid-cols-12 border-t border-gray-100 items-center ${styles.row || ''}`}>
-                      <div className="col-span-3 px-3 py-1.5 text-sm font-medium border-r">{r.testName}</div>
+                    <div className={`grid grid-cols-12 border-t border-gray-100 items-center ${r.included ? styles.row || '' : 'opacity-60'}`}>
+                      <div className="col-span-1 px-2 flex items-center justify-center border-r">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={!!r.included}
+                          onChange={(e) => patchResultField(i, { included: e.target.checked })}
+                          aria-label={`Include ${r.testName || 'parameter'}`}
+                        />
+                      </div>
+                      {r.custom ? (
+                        <input
+                          className="col-span-3 px-2 py-1.5 text-sm border-r outline-none font-medium"
+                          value={r.testName}
+                          placeholder="Parameter name"
+                          onChange={(e) => patchResultField(i, { testName: e.target.value })}
+                        />
+                      ) : (
+                        <div className="col-span-3 px-3 py-1.5 text-sm font-medium border-r">{r.testName}</div>
+                      )}
                       <input
-                        className={`col-span-2 px-3 py-1.5 text-sm border-r outline-none font-semibold ${styles.text || ''}`}
+                        className={`col-span-2 px-2 py-1.5 text-sm border-r outline-none font-semibold ${styles.text || ''}`}
                         value={r.value}
-                        placeholder="Enter"
+                        placeholder="Value"
                         onChange={(e) => {
                           const newValue = e.target.value;
                           const analysis = autoAnalyze(newValue, r, patientCtx);
-                          setResultFields((prevFields) => prevFields.map((f, fi) => (
-                            fi === i
-                              ? { ...f, value: newValue, flag: newValue === '' ? 'NA' : analysis.flag }
-                              : f
-                          )));
+                          patchResultField(i, {
+                            value: newValue,
+                            included: hasResultValue(newValue) ? true : r.included,
+                            flag: newValue === '' ? 'NA' : analysis.flag,
+                          });
                         }}
                       />
-                      <input className="col-span-3 px-3 py-1.5 text-sm bg-gray-50 border-r text-gray-500" value={r.normalRange} readOnly tabIndex={-1} />
-                      <input className="col-span-2 px-3 py-1.5 text-sm bg-gray-50 border-r text-gray-500" value={r.unit} readOnly tabIndex={-1} />
-                      <div className="col-span-2 px-2 py-1.5 flex items-center justify-center">
+                      <input
+                        className="col-span-2 px-2 py-1.5 text-sm border-r outline-none"
+                        value={r.normalRange}
+                        placeholder="Range"
+                        onChange={(e) => patchResultField(i, { normalRange: e.target.value, referenceRange: e.target.value })}
+                      />
+                      <input
+                        className="col-span-2 px-2 py-1.5 text-sm border-r outline-none"
+                        value={r.unit}
+                        placeholder="Unit"
+                        onChange={(e) => patchResultField(i, { unit: e.target.value })}
+                      />
+                      <div className="col-span-2 px-1 py-1.5 flex items-center justify-between gap-1">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${styles.badge}`}>
                           {flagLabel(r.flag)}
                         </span>
+                        {r.custom && (
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-red-600"
+                            onClick={() => setResultFields((rows) => rows.filter((_, idx) => idx !== i))}
+                            aria-label="Remove parameter"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </React.Fragment>
@@ -798,14 +995,50 @@ export default function LabPage() {
               })}
             </div>
           </div>
+          <button
+            type="button"
+            className="text-sm font-semibold text-indigo-700 flex items-center gap-1"
+            onClick={() => setResultFields((rows) => [...rows, emptyManualRow()])}
+          >
+            <Plus size={14} /> Add parameter
+          </button>
           <div>
             <label className="block text-sm font-semibold mb-1">Remarks</label>
             <textarea {...resReg('remarks')} className="input-field" rows={2} />
           </div>
           <div className="flex gap-3 justify-end pt-4 border-t">
             <button type="button" onClick={() => setShowResults(null)} className="btn-secondary">Cancel</button>
+            <button
+              type="button"
+              className="btn-secondary flex items-center gap-2"
+              onClick={() => {
+                const results = selectedEnteredResults(resultFields);
+                if (!results.length) {
+                  toast.error('Tick a parameter and enter a value to preview');
+                  return;
+                }
+                setShowViewResult({
+                  branding: brandingData,
+                  labTest: {
+                    ...showResults,
+                    results,
+                    remarks: getResValues('remarks') || showResults.remarks,
+                    reportGeneratedAt: showReportEnteredTime && reportEnteredAt
+                      ? new Date(reportEnteredAt).toISOString()
+                      : showResults.reportGeneratedAt,
+                    showReportEnteredTime,
+                    status: 'completed',
+                  },
+                });
+              }}
+            >
+              <Eye size={15} /> Preview
+            </button>
             <button type="submit" disabled={resultsMut.isPending} className="btn-primary flex items-center gap-2">
-              <CheckCircle size={16} />{resultsMut.isPending ? 'Saving…' : 'Save & Complete'}
+              <CheckCircle size={16} />
+              {resultsMut.isPending
+                ? 'Saving…'
+                : (showResults?.status === 'completed' ? 'Update Report' : 'Save & Complete')}
             </button>
           </div>
         </form>
@@ -824,6 +1057,19 @@ export default function LabPage() {
             </div>
             <div className="flex gap-3 justify-end pt-2 border-t">
               <button type="button" onClick={() => setShowViewResult(null)} className="btn-secondary">Close</button>
+              {isLabTech && showViewResult.labTest?._id && (
+                <button
+                  type="button"
+                  className="btn-secondary flex items-center gap-2"
+                  onClick={() => {
+                    const labTest = showViewResult.labTest;
+                    setShowViewResult(null);
+                    openResultsEditor(labTest);
+                  }}
+                >
+                  <Pencil size={15} /> Edit Report
+                </button>
+              )}
               <button type="button" onClick={() => handlePrint(showViewResult.labTest)} className="btn-primary flex items-center gap-2">
                 <Printer size={15} /> Print Report
               </button>

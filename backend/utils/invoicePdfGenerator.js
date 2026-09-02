@@ -17,20 +17,20 @@ const LAYOUTS = {
     margin: 42,
     logo: 52,
     fonts: {
-      hospital: 16,
-      tagline: 10,
-      contact: 9,
-      title: 13,
-      section: 11,
-      boxTitle: 10,
-      body: 10.5,
-      table: 10.5,
-      small: 9.5,
-      total: 12,
+      hospital: 20,
+      tagline: 12,
+      contact: 11,
+      title: 16,
+      section: 13,
+      boxTitle: 12,
+      body: 12.5,
+      table: 12,
+      small: 11,
+      total: 15,
       watermark: 64,
     },
-    rowH: 17,
-    thH: 20,
+    rowH: 20,
+    thH: 24,
     summaryW: 230,
     labelW: 92,
   },
@@ -41,20 +41,20 @@ const LAYOUTS = {
     margin: 26,
     logo: 40,
     fonts: {
-      hospital: 13,
-      tagline: 9,
-      contact: 8,
-      title: 11,
-      section: 10,
-      boxTitle: 9,
-      body: 9.5,
-      table: 9.5,
-      small: 8.5,
-      total: 11,
+      hospital: 16,
+      tagline: 11,
+      contact: 10,
+      title: 13,
+      section: 11.5,
+      boxTitle: 11,
+      body: 11.5,
+      table: 11,
+      small: 10,
+      total: 13,
       watermark: 42,
     },
-    rowH: 15,
-    thH: 18,
+    rowH: 18,
+    thH: 22,
     summaryW: 175,
     labelW: 78,
   },
@@ -126,7 +126,7 @@ const renderWatermark = (doc, L, text, rgb) => {
   doc.save();
   doc.opacity(0.06);
   doc.rotate(-35, { origin: [L.width / 2, L.height / 2] });
-  doc.fontSize(L.fonts.watermark).font('Helvetica-Bold').fillColor(rgb);
+  doc.fontSize(L.fonts.watermark).font('Times-Bold').fillColor(rgb);
   doc.text(text, L.width / 2 - 160, L.height / 2 - 24, { width: 320, align: 'center' });
   doc.opacity(1);
   doc.restore();
@@ -146,19 +146,19 @@ const ensureSpace = (doc, L, needed, onNewPage) => {
 /** Compact header for page 2+ so remaining line items / balance stay clear */
 const renderContinuationHeader = (doc, L, ctx, rgb) => {
   doc.y = L.margin;
-  doc.fontSize(L.fonts.section).font('Helvetica').fillColor(rgb)
+  doc.fontSize(L.fonts.section).font('Times-Bold').fillColor(rgb)
     .text('TAX INVOICE — CONTINUED', L.margin, doc.y, { width: L.contentWidth });
   doc.moveDown(0.2);
-  doc.fontSize(L.fonts.body).font('Helvetica').fillColor(TEXT_DARK)
+  doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_DARK)
     .text(`Bill No: ${ctx.billNumber}`, L.margin, doc.y, { width: L.contentWidth * 0.48 });
   const lineY = doc.y - (L.fonts.body + 2);
-  doc.font('Helvetica').fillColor(TEXT_MUTED)
+  doc.font('Times-Roman').fillColor(TEXT_MUTED)
     .text(`Date & Time: ${ctx.dateTime}`, L.margin + L.contentWidth * 0.48, lineY, {
       width: L.contentWidth * 0.52,
       align: 'right',
     });
   doc.y = Math.max(doc.y, lineY + L.fonts.body + 4);
-  doc.fontSize(L.fonts.body).font('Helvetica').fillColor(TEXT_DARK)
+  doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_DARK)
     .text(`Patient: ${ctx.patientName}   |   UHID: ${ctx.uhid}   |   Phone: ${ctx.phone}`, L.margin, doc.y, {
       width: L.contentWidth,
     });
@@ -169,7 +169,7 @@ const renderContinuationHeader = (doc, L, ctx, rgb) => {
 };
 
 const drawSectionTitle = (doc, L, title, rgb) => {
-  doc.fontSize(L.fonts.section).font('Helvetica').fillColor(rgb).text(title.toUpperCase(), L.margin);
+  doc.fontSize(L.fonts.section).font('Times-Bold').fillColor(rgb).text(title.toUpperCase(), L.margin);
   doc.moveDown(0.2);
   doc.fillColor('black');
 };
@@ -182,14 +182,14 @@ const drawInfoBox = (doc, L, x, y, width, title, rows, rgb) => {
 
   doc.roundedRect(x, y, width, boxH, 3).lineWidth(0.75).strokeColor(BLUE_BORDER).stroke();
   doc.rect(x, y, width, headH).fill(rgb);
-  doc.fontSize(L.fonts.boxTitle).font('Helvetica').fillColor('white')
+  doc.fontSize(L.fonts.boxTitle).font('Times-Roman').fillColor('white')
     .text(title.toUpperCase(), x + 8, y + 5, { width: width - 16 });
 
   let rowY = y + headH + 6;
   rows.forEach(([label, value]) => {
-    doc.fontSize(L.fonts.body).font('Helvetica').fillColor(TEXT_MUTED)
+    doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_MUTED)
       .text(`${label}`, x + 8, rowY, { width: labelW, lineBreak: false });
-    doc.font('Helvetica').fillColor(TEXT_DARK)
+    doc.font('Times-Roman').fillColor(TEXT_DARK)
       .text(String(value || 'N/A'), x + 8 + labelW, rowY, { width: width - labelW - 16, lineBreak: false });
     rowY += rowH;
   });
@@ -212,10 +212,10 @@ const renderCorporateHeader = async (doc, L, branding, rgb) => {
   const textX = branding.logo ? L.margin + logoSize + 10 : L.margin;
   const textW = L.width - textX - L.margin;
 
-  doc.fontSize(L.fonts.hospital).font('Helvetica').fillColor(rgb)
+  doc.fontSize(L.fonts.hospital).font('Times-Bold').fillColor(rgb)
     .text(branding.hospitalName, textX, headerY + 1, { width: textW });
   if (branding.tagline) {
-    doc.fontSize(L.fonts.tagline).font('Helvetica-Oblique').fillColor(TEXT_MUTED)
+    doc.fontSize(L.fonts.tagline).font('Times-Italic').fillColor(TEXT_MUTED)
       .text(branding.tagline, textX, doc.y + 2, { width: textW });
   }
 
@@ -225,7 +225,7 @@ const renderCorporateHeader = async (doc, L, branding, rgb) => {
   if (branding.email) contactParts.push(branding.email);
   if (branding.website) contactParts.push(branding.website);
   if (contactParts.length) {
-    doc.fontSize(L.fonts.contact).font('Helvetica').fillColor(TEXT_MUTED)
+    doc.fontSize(L.fonts.contact).font('Times-Roman').fillColor(TEXT_MUTED)
       .text(contactParts.join('  |  '), textX, doc.y + 3, { width: textW });
   }
 
@@ -234,7 +234,7 @@ const renderCorporateHeader = async (doc, L, branding, rgb) => {
   if (branding.nabhAccreditation) regParts.push(`NABH: ${branding.nabhAccreditation}`);
   if (branding.nablAccreditation) regParts.push(`NABL: ${branding.nablAccreditation}`);
   if (regParts.length) {
-    doc.fontSize(L.fonts.small).font('Helvetica').fillColor(rgb)
+    doc.fontSize(L.fonts.small).font('Times-Roman').fillColor(rgb)
       .text(regParts.join('  |  '), textX, doc.y + 2, { width: textW });
   }
 
@@ -242,7 +242,7 @@ const renderCorporateHeader = async (doc, L, branding, rgb) => {
   doc.moveTo(L.margin, doc.y).lineTo(L.width - L.margin, doc.y).lineWidth(2).strokeColor(rgb).stroke();
   doc.moveDown(0.4);
 
-  doc.fontSize(L.fonts.title).font('Helvetica').fillColor(rgb)
+  doc.fontSize(L.fonts.title).font('Times-Bold').fillColor(rgb)
     .text('TAX INVOICE / BILL OF SUPPLY', L.margin, doc.y, { width: L.contentWidth, align: 'center' });
   doc.moveDown(0.35);
   doc.fillColor('black');
@@ -263,7 +263,7 @@ const renderChargesTable = (doc, L, items, rgb, onNewPage) => {
   const drawHeader = () => {
     const thY = doc.y;
     doc.rect(m, thY, cw, L.thH).fill(rgb);
-    doc.fontSize(L.fonts.table).font('Helvetica').fillColor('white');
+    doc.fontSize(L.fonts.table).font('Times-Bold').fillColor('white');
     const ty = thY + 5;
     doc.text('No', cols.sno.x + 2, ty, { width: cols.sno.w });
     doc.text('Category', cols.cat.x, ty, { width: cols.cat.w });
@@ -276,7 +276,7 @@ const renderChargesTable = (doc, L, items, rgb, onNewPage) => {
   };
 
   drawHeader();
-  doc.font('Helvetica').fontSize(L.fonts.table);
+  doc.font('Times-Roman').fontSize(L.fonts.table);
 
   (items || []).forEach((item, i) => {
     const rowH = L.rowH;
@@ -284,7 +284,7 @@ const renderChargesTable = (doc, L, items, rgb, onNewPage) => {
     ensureSpace(doc, L, rowH + 4, () => {
       onNewPage?.();
       drawHeader();
-      doc.font('Helvetica').fontSize(L.fonts.table);
+      doc.font('Times-Roman').fontSize(L.fonts.table);
     });
 
     const y = doc.y;
@@ -297,8 +297,8 @@ const renderChargesTable = (doc, L, items, rgb, onNewPage) => {
     doc.text(item.genericName || item.description || item.name || '', cols.desc.x, y, { width: cols.desc.w });
     doc.text(String(item.quantity || 1), cols.qty.x, y, { width: cols.qty.w, align: 'center' });
     doc.text(fmt(item.unitPrice), cols.rate.x, y, { width: cols.rate.w, align: 'right' });
-    doc.font('Helvetica').text(fmt(lineAmount), cols.amt.x, y, { width: cols.amt.w - 2, align: 'right' });
-    doc.font('Helvetica');
+    doc.font('Times-Roman').text(fmt(lineAmount), cols.amt.x, y, { width: cols.amt.w - 2, align: 'right' });
+    doc.font('Times-Roman');
     doc.y = y + rowH;
   });
 
@@ -330,14 +330,14 @@ const renderSummary = (doc, L, bill, subtotal, totalGST, rgb, onNewPage) => {
 
   let rowY = boxY + 10;
   rows.forEach(([label, value]) => {
-    doc.fontSize(L.fonts.body).font('Helvetica').fillColor(TEXT_MUTED).text(label, boxX + 10, rowY, { width: 90 });
-    doc.font('Helvetica').fillColor(TEXT_DARK).text(value, boxX + 10, rowY, { width: boxW - 20, align: 'right' });
+    doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_MUTED).text(label, boxX + 10, rowY, { width: 90 });
+    doc.font('Times-Roman').fillColor(TEXT_DARK).text(value, boxX + 10, rowY, { width: boxW - 20, align: 'right' });
     rowY += lineH;
   });
 
   doc.moveTo(boxX + 8, rowY + 2).lineTo(boxX + boxW - 8, rowY + 2).strokeColor(rgb).lineWidth(1).stroke();
   rowY += 8;
-  doc.fontSize(L.fonts.total).font('Helvetica').fillColor(rgb).text('Grand Total', boxX + 10, rowY);
+  doc.fontSize(L.fonts.total).font('Times-Bold').fillColor(rgb).text('Grand Total', boxX + 10, rowY);
   doc.text(fmt(bill.totalAmount), boxX + 10, rowY, { width: boxW - 20, align: 'right' });
   doc.fillColor('black');
   doc.y = boxY + boxH + 10;
@@ -348,19 +348,19 @@ const renderFooterSection = (doc, L, branding, rgb, onNewPage) => {
 
   const sigY = doc.y;
   const sigW = (L.contentWidth - 12) / 2;
-  doc.fontSize(L.fonts.body).font('Helvetica').fillColor(TEXT_DARK);
+  doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_DARK);
   doc.text('Authorized Signature', L.margin, sigY);
   doc.text('Patient Signature', L.margin + sigW + 12, sigY);
   doc.moveTo(L.margin, sigY + 26).lineTo(L.margin + sigW, sigY + 26).strokeColor(BLUE_BORDER).stroke();
   doc.moveTo(L.margin + sigW + 12, sigY + 26).lineTo(L.width - L.margin, sigY + 26).strokeColor(BLUE_BORDER).stroke();
-  doc.fontSize(L.fonts.small).font('Helvetica').fillColor(TEXT_MUTED).text('Hospital Seal Area', L.margin, sigY + 28);
+  doc.fontSize(L.fonts.small).font('Times-Roman').fillColor(TEXT_MUTED).text('Hospital Seal Area', L.margin, sigY + 28);
 
   doc.y = sigY + 42;
   doc.moveTo(L.margin, doc.y).lineTo(L.width - L.margin, doc.y).lineWidth(1).strokeColor(rgb).stroke();
   doc.moveDown(0.35);
-  doc.fontSize(L.fonts.body).font('Helvetica').fillColor(rgb)
+  doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(rgb)
     .text(branding.footerNote || 'Thank you for choosing our hospital.', L.margin, doc.y, { width: L.contentWidth, align: 'center' });
-  doc.fontSize(L.fonts.small).font('Helvetica').fillColor(TEXT_MUTED);
+  doc.fontSize(L.fonts.small).font('Times-Roman').fillColor(TEXT_MUTED);
   doc.text(`For queries: Phone: ${branding.phone || 'N/A'}  |  Email: ${branding.email || 'N/A'}`, L.margin, doc.y + 2, { width: L.contentWidth, align: 'center' });
   doc.text('This is a computer-generated invoice.', L.margin, doc.y + 2, { width: L.contentWidth, align: 'center' });
   doc.fillColor('black');
@@ -461,7 +461,7 @@ const generatePremiumInvoicePDF = async (bill, res, branding, options = {}) => {
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(i);
-    doc.fontSize(L.fonts.small).font('Helvetica').fillColor(TEXT_MUTED)
+    doc.fontSize(L.fonts.small).font('Times-Roman').fillColor(TEXT_MUTED)
       .text(`Page ${i + 1} of ${range.count}`, L.margin, L.height - 26);
     doc.text(`${b.hospitalName} · ${L.size}`, 0, L.height - 26, { align: 'center', width: L.width });
     if (range.count > 1 && i < range.count - 1) {
@@ -485,15 +485,15 @@ const generatePremiumThermalPrint = async (bill, res, branding) => {
   res.setHeader('Content-Disposition', `attachment; filename=thermal-${bill.billNumber}.pdf`);
   doc.pipe(res);
 
-  doc.fontSize(10).font('Helvetica').fillColor(rgb)
+  doc.fontSize(12).font('Times-Bold').fillColor(rgb)
     .text(b.hospitalName, { align: 'center', width: 206 });
-  if (b.phone) doc.fontSize(8).font('Helvetica').fillColor(TEXT_MUTED).text(`Ph: ${b.phone}`, { align: 'center' });
+  if (b.phone) doc.fontSize(9).font('Times-Roman').fillColor(TEXT_MUTED).text(`Ph: ${b.phone}`, { align: 'center' });
   doc.moveDown(0.2);
   doc.moveTo(10, doc.y).lineTo(216, doc.y).strokeColor(rgb).stroke();
   doc.moveDown(0.3);
 
-  doc.fontSize(9).font('Helvetica').fillColor(rgb).text(watermark, { align: 'center' });
-  doc.fontSize(8).font('Helvetica').fillColor(TEXT_DARK);
+  doc.fontSize(10).font('Times-Bold').fillColor(rgb).text(watermark, { align: 'center' });
+  doc.fontSize(9).font('Times-Roman').fillColor(TEXT_DARK);
   doc.text(`Bill: ${bill.billNumber}`);
   doc.text(`Date: ${fmtDate(bill.createdAt)}`);
   doc.text(`Time: ${fmtTime(bill.createdAt)}`);
@@ -508,8 +508,8 @@ const generatePremiumThermalPrint = async (bill, res, branding) => {
 
   (bill.items || []).forEach((item, i) => {
     const amt = (item.quantity || 1) * (item.unitPrice || 0);
-    doc.fontSize(8).font('Helvetica').fillColor(rgb).text(`${i + 1}. ${getItemCategory(item)}`);
-    doc.font('Helvetica').fillColor(TEXT_DARK).text(`${item.genericName || item.description || item.name || ''}`);
+    doc.fontSize(9.5).font('Times-Roman').fillColor(rgb).text(`${i + 1}. ${getItemCategory(item)}`);
+    doc.font('Times-Roman').fillColor(TEXT_DARK).text(`${item.genericName || item.description || item.name || ''}`);
     doc.text(`  ${item.quantity || 1} x ${fmt(item.unitPrice)} = ${fmt(amt)}`);
   });
 
@@ -520,8 +520,8 @@ const generatePremiumThermalPrint = async (bill, res, branding) => {
   doc.text(`Subtotal: ${fmt(subtotal)}`);
   doc.text(`GST: ${fmt(totalGST)}`);
   if (bill.discount > 0) doc.text(`Discount: -${fmt(bill.discountAmount)}`);
-  doc.fontSize(10).font('Helvetica').fillColor(rgb).text(`TOTAL: ${fmt(bill.totalAmount)}`);
-  doc.fontSize(8).font('Helvetica').fillColor(TEXT_DARK);
+  doc.fontSize(12).font('Times-Bold').fillColor(rgb).text(`TOTAL: ${fmt(bill.totalAmount)}`);
+  doc.fontSize(9).font('Times-Roman').fillColor(TEXT_DARK);
   doc.text(`Paid: ${fmt(bill.paidAmount)} | Due: ${fmt(bill.dueAmount)}`);
   doc.text(`Mode: ${(bill.paymentMode || 'N/A').toUpperCase()}`);
   doc.moveDown(0.4);

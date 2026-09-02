@@ -13,10 +13,11 @@ const {
 } = require('../utils/opConsultationFee');
 
 describe('resolveOpConsultationFee', () => {
-  it('uses doctor consultation fee, then department', () => {
+  it('uses doctor consultation fee including zero, then department if doctor fee is missing', () => {
     assert.equal(resolveOpConsultationFee({ consultationFee: 500 }, { consultationFee: 200 }, 'walkin'), 500);
-    assert.equal(resolveOpConsultationFee({ consultationFee: 0 }, { consultationFee: 200 }, 'walkin'), 200);
+    assert.equal(resolveOpConsultationFee({ consultationFee: 0 }, { consultationFee: 200 }, 'walkin'), 0);
     assert.equal(resolveOpConsultationFee(null, { consultationFee: 200 }, 'appointment'), 200);
+    assert.equal(resolveOpConsultationFee({ consultationFee: undefined }, { consultationFee: 200 }, 'walkin'), 200);
   });
 
   it('uses follow-up fee when set, otherwise half of consult', () => {
@@ -27,6 +28,10 @@ describe('resolveOpConsultationFee', () => {
     assert.equal(
       resolveOpConsultationFee({ consultationFee: 400, followUpFee: 0 }, { consultationFee: 200 }, 'followup'),
       200,
+    );
+    assert.equal(
+      resolveOpConsultationFee({ consultationFee: 0, followUpFee: 0 }, { consultationFee: 200 }, 'followup'),
+      0,
     );
   });
 });

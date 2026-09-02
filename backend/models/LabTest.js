@@ -115,6 +115,8 @@ const labTestSchema = new mongoose.Schema({
 
   sampleReceivedAt: Date,
   reportGeneratedAt: Date,
+  /** When false, report entered/generated time is hidden on print and preview. */
+  showReportEnteredTime: { type: Boolean, default: true },
   reportVerifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   reportApprovedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 

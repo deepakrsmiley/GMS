@@ -265,7 +265,7 @@ exports.getTodaysQueue = asyncHandler(async (req, res) => {
     .populate('doctor', 'name specialization')
     .populate('department', 'name')
     .populate('bill', 'billNumber paidAmount totalAmount dueAmount status paymentMode')
-    .sort('tokenNumber');
+    .sort('-tokenNumber');
 
   const enriched = queue.map((q) => ({
     ...q.toObject(),
@@ -304,7 +304,7 @@ exports.getDoctorQueue = asyncHandler(async (req, res) => {
   })
     .populate('patient', 'patientId name age gender phone')
     .populate('department', 'name')
-    .sort('tokenNumber');
+    .sort('-tokenNumber');
 
   res.status(200).json({
     success: true,

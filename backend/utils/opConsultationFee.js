@@ -1,9 +1,16 @@
 const EMERGENCY_SURCHARGE = 300;
 
+/** Treat 0 as a real fee. Only skip when the value is missing or invalid. */
+const finiteFee = (value) => {
+  if (value === '' || value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
 const resolveOpConsultationFee = (doctor, department, appointmentType) => {
   const isFollowUp = appointmentType === 'followup';
-  const consult = Number(doctor?.consultationFee) || Number(department?.consultationFee) || 0;
-  const follow = Number(doctor?.followUpFee) || 0;
+  const consult = finiteFee(doctor?.consultationFee) ?? finiteFee(department?.consultationFee) ?? 0;
+  const follow = finiteFee(doctor?.followUpFee) ?? 0;
   if (isFollowUp) {
     if (follow > 0) return follow;
     if (consult > 0) return Math.round(consult * 0.5);

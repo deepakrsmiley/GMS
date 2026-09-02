@@ -60,10 +60,6 @@ export default function PatientsPage() {
       bloodGroup: p.bloodGroup || '',
       email: p.email || '',
       address: { street: p.address?.street || '' },
-      emergencyContact: {
-        name: p.emergencyContact?.name || '',
-        phone: p.emergencyContact?.phone || '',
-      },
     });
     setShowAdd(true);
   };
@@ -131,15 +127,6 @@ export default function PatientsPage() {
           <Phone size={12} strokeWidth={2} />
           {r.phone || '—'}
         </span>
-      ),
-    },
-    {
-      key: 'bloodGroup',
-      header: 'Blood',
-      render: (r) => (
-        r.bloodGroup
-          ? <span className="pt-blood">{r.bloodGroup}</span>
-          : <span className="pt-blood pt-blood--empty">—</span>
       ),
     },
     {
@@ -295,14 +282,6 @@ export default function PatientsPage() {
             <div style={{ gridColumn: '1 / -1' }}>
               <label className="pt-form-label">Address</label>
               <textarea {...register('address.street')} className="input-field" rows={2} placeholder="Street address" />
-            </div>
-            <div>
-              <label className="pt-form-label">Emergency Contact</label>
-              <input {...register('emergencyContact.name')} className="input-field" placeholder="Contact name" />
-            </div>
-            <div>
-              <label className="pt-form-label">Emergency Phone</label>
-              <input {...register('emergencyContact.phone')} className="input-field" placeholder="Contact phone" />
             </div>
           </div>
 

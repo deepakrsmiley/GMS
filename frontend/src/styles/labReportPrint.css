@@ -1,20 +1,44 @@
 /**
- * labReportPrint.css
- * Structural print rules for LabReportTemplate.
+ * Lab report — print and on-screen preview.
+ * Fixed table grid so columns stay aligned; IBM Plex / Calibri for print.
  */
 
 .lab-report-root {
   background: #ffffff;
-  color: #0f172a;
+  color: #111827;
+  box-sizing: border-box;
+  font-family: 'IBM Plex Sans', Calibri, 'Segoe UI', Arial, Helvetica, sans-serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+
+.lab-report-root,
+.lab-report-root * {
+  box-sizing: border-box;
+}
+
+.lab-report-root table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  border-spacing: 0;
 }
 
 .lab-report-shell {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 .lab-report-shell > thead { display: table-header-group; }
 .lab-report-shell > tfoot { display: table-footer-group; }
 .lab-report-shell > tbody { display: table-row-group; }
+.lab-report-shell > thead > tr > td,
+.lab-report-shell > tbody > tr > td,
+.lab-report-shell > tfoot > tr > td {
+  padding: 0;
+  vertical-align: top;
+}
 
 .lab-report-section {
   break-inside: avoid;
@@ -28,12 +52,12 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  opacity: 0.06;
+  opacity: 0.05;
   z-index: 0;
 }
 .lab-report-watermark img {
-  width: 60%;
-  max-width: 420px;
+  width: 55%;
+  max-width: 380px;
   object-fit: contain;
 }
 
@@ -41,6 +65,300 @@
   position: relative;
   z-index: 1;
 }
+
+/* Header */
+.lab-report-brand {
+  margin-bottom: 6px;
+}
+.lab-report-brand td {
+  vertical-align: middle;
+  padding: 0 0 4px 0;
+  border: 0;
+}
+.lab-report-logo {
+  width: 16%;
+  text-align: left;
+}
+.lab-report-logo img {
+  height: 52px;
+  width: 52px;
+  object-fit: contain;
+  display: block;
+}
+.lab-report-brand-copy {
+  width: 64%;
+  text-align: left;
+  padding-left: 8px !important;
+}
+.lab-report-hospital-name {
+  font-family: 'Source Serif 4', 'Times New Roman', Times, serif;
+  font-size: 18pt;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+.lab-report-tagline {
+  font-size: 9pt;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.lab-report-contact,
+.lab-report-accred {
+  font-size: 8pt;
+  line-height: 1.3;
+  margin-top: 2px;
+  color: #475569;
+}
+.lab-report-marks {
+  width: 20%;
+  text-align: right;
+  vertical-align: top !important;
+}
+.lab-report-marks img {
+  height: 32px;
+  object-fit: contain;
+  display: inline-block;
+  margin-left: 6px;
+}
+
+.lab-report-title-bar {
+  border-top: 2.5px solid;
+  border-bottom: 2.5px solid;
+  text-align: center;
+  padding: 5px 8px;
+  margin: 2px 0 8px;
+}
+.lab-report-title-bar span {
+  font-size: 12.5pt;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+/* Patient particulars — 4 equal visual columns */
+.lab-report-info {
+  margin-bottom: 8px;
+}
+.lab-report-info col.c-label { width: 16%; }
+.lab-report-info col.c-value { width: 34%; }
+.lab-report-info td {
+  border: 0.7pt solid #64748b;
+  padding: 4px 7px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.lab-report-info .lbl {
+  background: #f1f5f9;
+  font-size: 7.5pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #334155;
+  white-space: nowrap;
+}
+.lab-report-info .val {
+  font-size: 10pt;
+  font-weight: 600;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.lab-report-idstrip td {
+  border: 0.7pt solid #64748b;
+  padding: 4px 8px;
+  vertical-align: middle;
+}
+.lab-report-idstrip .barcode-cell {
+  width: 82%;
+}
+.lab-report-idstrip .qr-cell {
+  width: 18%;
+  text-align: right;
+}
+.lab-report-idstrip .sid {
+  font-size: 8pt;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  margin-top: 2px;
+}
+
+/* Results table */
+.lab-report-block {
+  margin-top: 10px;
+}
+.lab-report-dept {
+  font-size: 9.5pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  border: 0.7pt solid;
+  border-bottom: 0;
+}
+
+.lab-report-results thead th {
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 0.7pt solid #64748b;
+  padding: 5px 7px;
+  vertical-align: middle;
+  text-align: left;
+}
+.lab-report-results tbody td {
+  border: 0.7pt solid #64748b;
+  padding: 5px 7px;
+  vertical-align: middle;
+  font-size: 10pt;
+  color: #111827;
+  overflow: hidden;
+}
+.lab-report-results tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.lab-report-results col.c-test { width: 34%; }
+.lab-report-results col.c-method { width: 14%; }
+.lab-report-results col.c-result { width: 15%; }
+.lab-report-results col.c-unit { width: 13%; }
+.lab-report-results col.c-range { width: 24%; }
+.lab-report-results col.c-flag { width: 14%; }
+.lab-report-results col.c-remarks { width: 16%; }
+
+.lab-report-results.has-method col.c-test { width: 24%; }
+.lab-report-results.has-method col.c-result { width: 13%; }
+.lab-report-results.has-method col.c-unit { width: 11%; }
+.lab-report-results.has-method col.c-range { width: 18%; }
+.lab-report-results.has-method col.c-flag { width: 10%; }
+
+.lab-report-results.has-remarks col.c-test { width: 26%; }
+.lab-report-results.has-remarks col.c-range { width: 18%; }
+.lab-report-results.has-remarks col.c-flag { width: 10%; }
+
+.lab-report-results.has-method.has-remarks col.c-test { width: 20%; }
+.lab-report-results.has-method.has-remarks col.c-method { width: 12%; }
+.lab-report-results.has-method.has-remarks col.c-result { width: 12%; }
+.lab-report-results.has-method.has-remarks col.c-unit { width: 10%; }
+.lab-report-results.has-method.has-remarks col.c-range { width: 16%; }
+.lab-report-results.has-method.has-remarks col.c-flag { width: 9%; }
+.lab-report-results.has-method.has-remarks col.c-remarks { width: 21%; }
+
+.lab-report-results .th-result,
+.lab-report-results .td-result {
+  text-align: right;
+}
+.lab-report-results .th-flag,
+.lab-report-results .td-flag {
+  text-align: center;
+}
+.lab-report-results .th-unit,
+.lab-report-results .td-unit,
+.lab-report-results .th-range,
+.lab-report-results .td-range {
+  text-align: left;
+}
+
+.lab-report-results .td-test {
+  font-weight: 600;
+}
+.lab-report-results .td-result {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  white-space: nowrap;
+}
+.lab-report-results .td-unit,
+.lab-report-results .td-range,
+.lab-report-results .td-method {
+  font-variant-numeric: tabular-nums lining-nums;
+  color: #1e293b;
+  white-space: nowrap;
+}
+.lab-report-results .td-range {
+  white-space: normal;
+}
+.lab-report-results .td-remarks {
+  font-style: italic;
+  font-size: 9pt;
+  color: #334155;
+}
+
+.lab-report-flag {
+  display: inline-block;
+  min-width: 18px;
+  font-size: 8.5pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 1px 5px;
+  border: 0.7pt solid;
+  line-height: 1.2;
+}
+
+.lab-report-notes {
+  margin-top: 10px;
+  border: 0.7pt solid #64748b;
+  padding: 7px 9px;
+}
+.lab-report-notes h4 {
+  margin: 0 0 4px;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lab-report-notes p {
+  margin: 0 0 3px;
+  font-size: 9.5pt;
+}
+
+.lab-report-signs {
+  margin-top: 22px;
+}
+.lab-report-signs td {
+  width: 25%;
+  text-align: center;
+  vertical-align: bottom;
+  padding: 0 8px;
+  border: 0;
+}
+.lab-report-signs img {
+  height: 28px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 4px;
+}
+.lab-report-signs .sig-line {
+  border-top: 0.8pt solid #111827;
+  padding-top: 4px;
+  font-size: 9pt;
+  font-weight: 700;
+}
+.lab-report-signs .sig-role {
+  font-size: 7.5pt;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #475569;
+  margin-top: 1px;
+}
+
+.lab-report-footer {
+  margin-top: 10px;
+  padding-top: 5px;
+  border-top: 2px solid;
+  font-size: 7.5pt;
+  color: #475569;
+}
+.lab-report-footer td {
+  border: 0;
+  padding: 2px 0;
+  vertical-align: middle;
+}
+.lab-report-footer .left { text-align: left; width: 62%; }
+.lab-report-footer .right { text-align: right; width: 38%; }
 
 @media screen {
   .lab-report-print-only {
@@ -66,15 +384,12 @@
     background: #fff !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    margin: 0 !important;
   }
 
-  body * { visibility: hidden !important; }
-
-  #lab-report-print-root,
-  #lab-report-print-root * {
-    visibility: visible !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+  /* Hide app chrome without the visibility trick that breaks table layout */
+  body > *:not(.lab-report-print-only) {
+    display: none !important;
   }
 
   .lab-report-print-only {
@@ -84,18 +399,24 @@
     visibility: visible !important;
     pointer-events: auto !important;
     z-index: auto !important;
+    width: 100% !important;
   }
 
   #lab-report-print-root {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
-    max-width: 210mm !important;
+    max-width: none !important;
+    min-height: 0 !important;
     margin: 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
     background: #fff !important;
   }
+
+  .lab-report-results thead { display: table-header-group; }
+  .lab-report-results tr { page-break-inside: avoid; }
 
   .no-print { display: none !important; }
 }

@@ -1,33 +1,9 @@
 import React, { useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { analyzeResult, FLAG_STYLES } from '../../utils/labResultAnalyzer';
+import { analyzeResult } from '../../utils/labResultAnalyzer';
 import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
 import '../../styles/labReportPrint.css';
 import { GmsDevelopedPrintLine } from '../branding/GmsDevelopedBar';
-
-/**
- * LabReportTemplate
- * ------------------------------------------------------------------
- * ONE reusable, dynamic laboratory report template that renders ANY
- * lab investigation (CBC, LFT, RFT, Lipid Profile, Culture, PCR,
- * Histopathology, or any custom test) without any code changes.
- *
- * Design language: classic diagnostic-lab report (LabCorp / SRL /
- * Dr Lal PathLabs style) — flat, rectangular, high-contrast tables,
- * no gradients, no pill badges, no drop shadows. Structure over
- * decoration.
- *
- * Everything visual — logo, hospital info, colors, fonts, signatures,
- * watermark, footer — comes from the `branding` prop (Hospital
- * Settings). Everything clinical — patient, tests, results, reference
- * ranges, comments — comes from the `labTest` prop.
- *
- * Props:
- *  - branding: the Branding document from GET /api/branding (branding.labReport holds report-specific config)
- *  - labTest:  a populated LabTest document (patient, doctor, results[], etc.)
- *  - verificationBaseUrl: optional override for the QR "verify report" URL
- * ------------------------------------------------------------------
- */
 
 const DEFAULT_LAB_REPORT_CONFIG = {
   primaryColor: '#14213d',
@@ -36,16 +12,16 @@ const DEFAULT_LAB_REPORT_CONFIG = {
   headerTextColor: '#14213d',
   tableHeaderBackgroundColor: '#14213d',
   tableHeaderTextColor: '#ffffff',
-  borderColor: '#94a3b8',
-  bodyTextColor: '#1a1a1a',
+  borderColor: '#64748b',
+  bodyTextColor: '#111827',
   reportTitleColor: '#14213d',
   criticalColor: '#b91c1c',
   normalColor: '#166534',
   footerColor: '#475569',
-  fontFamily: "'Arial', 'Helvetica Neue', sans-serif",
-  fontSize: '11px',
+  fontFamily: "'IBM Plex Sans', Calibri, 'Segoe UI', Arial, Helvetica, sans-serif",
+  fontSize: '11pt',
   paperSize: 'A4',
-  printMarginMm: 10,
+  printMarginMm: 12,
   footerText: 'This is a computer generated report and does not require a physical signature.',
   barcodeEnabled: true,
   qrCodeEnabled: true,
@@ -58,32 +34,29 @@ function fmtDateTime(value) {
   return `${d.toLocaleDateString('en-GB')} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 }
 
-function TrendArrow({ direction, color }) {
-  if (!direction) return null;
-  const points = direction === 'up' ? '5,1 9,9 1,9' : '1,1 9,1 5,9';
-  return (
-    <svg width="8" height="8" viewBox="0 0 10 10" style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: 4 }} aria-hidden="true">
-      <polygon points={points} fill={color} />
-    </svg>
-  );
+function flagLetter(flag) {
+  if (!flag || flag === 'NA' || flag === 'NORMAL' || flag === 'Normal') return '';
+  if (flag === 'CRITICAL_HIGH' || flag === 'CRITICAL_LOW' || flag === 'Critical') return 'C';
+  if (flag === 'HIGH' || flag === 'High') return 'H';
+  if (flag === 'LOW' || flag === 'Low') return 'L';
+  if (flag === 'ABNORMAL') return 'A';
+  return '';
 }
 
-/* Plain rectangular flag label — no pill, no dot, just bold colored text
-   in a thin bordered box, matching classic lab-report typography. */
-function FlagLabel({ flag, cfg }) {
-  if (!flag || flag === 'NA') return null;
-  const isCritical = flag === 'CRITICAL_LOW' || flag === 'CRITICAL_HIGH';
-  const isNormal = flag === 'NORMAL';
-  const label = flag.replace('_', ' ');
-  if (isNormal) return null; // classic reports leave normal rows unmarked
-  const color = isCritical ? '#ffffff' : cfg.accentColor;
-  const bg = isCritical ? cfg.criticalColor : 'transparent';
+function FlagMark({ flag, cfg }) {
+  const letter = flagLetter(flag);
+  if (!letter) return null;
+  const isCritical = letter === 'C';
   return (
     <span
-      className="inline-block text-[8px] font-bold uppercase tracking-wide px-1.5 py-[1px] border"
-      style={{ color, background: bg, borderColor: isCritical ? cfg.criticalColor : cfg.accentColor }}
+      className="lab-report-flag"
+      style={{
+        color: isCritical ? '#ffffff' : cfg.accentColor,
+        background: isCritical ? cfg.criticalColor : 'transparent',
+        borderColor: isCritical ? cfg.criticalColor : cfg.accentColor,
+      }}
     >
-      {label}
+      {letter}
     </span>
   );
 }
@@ -98,66 +71,38 @@ function ResultRow({ row, patient, cfg, showMethod, showRemarks }) {
         criticalHigh: row.criticalHigh,
         patient,
       }),
-    [row, patient]
+    [row, patient],
   );
 
   const flag = row.flag && row.flag !== 'NA' ? row.flag : analysis.flag;
   const displayRange = analysis.displayRange || row.normalRange || '-';
-  const isCritical = flag === 'CRITICAL_LOW' || flag === 'CRITICAL_HIGH';
-  const isAbnormal = isCritical || flag === 'HIGH' || flag === 'LOW' || flag === 'ABNORMAL';
-  const arrowDirection =
-    flag === 'HIGH' || flag === 'CRITICAL_HIGH' ? 'up' :
-    flag === 'LOW' || flag === 'CRITICAL_LOW' ? 'down' : null;
-
+  const isCritical = flag === 'CRITICAL_LOW' || flag === 'CRITICAL_HIGH' || flag === 'Critical';
+  const isAbnormal = isCritical || flag === 'HIGH' || flag === 'LOW' || flag === 'ABNORMAL' || flag === 'High' || flag === 'Low';
   const resultColor = isCritical ? cfg.criticalColor : isAbnormal ? cfg.accentColor : cfg.bodyTextColor;
+  const mark = flagLetter(flag) === 'H' || flag === 'CRITICAL_HIGH' ? ' ↑' : flagLetter(flag) === 'L' || flag === 'CRITICAL_LOW' ? ' ↓' : '';
 
   return (
-    <tr className="lab-report-section">
-      <td className="border px-2 py-[4px] align-top" style={{ borderColor: cfg.borderColor }}>
-        <span className="font-bold" style={{ color: cfg.bodyTextColor }}>{row.testName}</span>
+    <tr>
+      <td className="td-test">{row.testName}</td>
+      {showMethod && <td className="td-method">{row.method || '-'}</td>}
+      <td className="td-result" style={{ color: resultColor }}>
+        {row.value ?? '-'}{isAbnormal ? mark : ''}
       </td>
-      {showMethod && (
-        <td className="border px-2 py-[4px] align-top" style={{ borderColor: cfg.borderColor, color: cfg.bodyTextColor }}>
-          {row.method || '-'}
-        </td>
-      )}
-      <td className="border px-2 py-[4px] align-top text-right whitespace-nowrap" style={{ borderColor: cfg.borderColor }}>
-        <span className="inline-flex items-center justify-end font-bold" style={{ color: resultColor, fontVariantNumeric: 'tabular-nums' }}>
-          {row.value ?? '-'}
-          <TrendArrow direction={arrowDirection} color={resultColor} />
-        </span>
-      </td>
-      <td className="border px-2 py-[4px] align-top whitespace-nowrap" style={{ borderColor: cfg.borderColor, color: cfg.bodyTextColor }}>
-        {row.unit || ''}
-      </td>
-      <td className="border px-2 py-[4px] align-top whitespace-nowrap" style={{ borderColor: cfg.borderColor, color: cfg.bodyTextColor, fontVariantNumeric: 'tabular-nums' }}>
-        {displayRange}
-      </td>
-      <td className="border px-2 py-[4px] align-top" style={{ borderColor: cfg.borderColor }}>
-        <FlagLabel flag={flag} cfg={cfg} />
-      </td>
-      {showRemarks && (
-        <td className="border px-2 py-[4px] align-top italic" style={{ borderColor: cfg.borderColor, color: cfg.bodyTextColor }}>
-          {row.remarks || ''}
-        </td>
-      )}
+      <td className="td-unit">{row.unit || ''}</td>
+      <td className="td-range">{displayRange}</td>
+      <td className="td-flag"><FlagMark flag={flag} cfg={cfg} /></td>
+      {showRemarks && <td className="td-remarks">{row.remarks || ''}</td>}
     </tr>
   );
 }
 
-/* Patient info rendered as a genuine two-column label/value table row,
-   the way printed lab requisition slips are laid out — not floating cards. */
 function InfoRow({ pairs }) {
   return (
     <tr>
       {pairs.map(([label, value], i) => (
         <React.Fragment key={i}>
-          <td className="border px-2 py-1 bg-slate-50 font-bold text-[8.5px] uppercase tracking-wide whitespace-nowrap" style={{ borderColor: '#94a3b8', color: '#334155' }}>
-            {label}
-          </td>
-          <td className="border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: '#94a3b8', color: '#0f172a' }}>
-            {value || '-'}
-          </td>
+          <td className="lbl">{label}</td>
+          <td className="val">{value || '-'}</td>
         </React.Fragment>
       ))}
     </tr>
@@ -169,16 +114,18 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
   const patient = labTest?.patient || {};
   const doctor = labTest?.doctor || {};
   const results = useMemo(() => {
-    if (labTest?.results?.length) return labTest.results;
-    return (labTest?.tests || []).map((t) => ({
-      testName: t.testName,
-      section: t.profileName || labTest?.labType || 'RESULTS',
-      value: t.result ?? t.value ?? '',
-      unit: t.unit || '',
-      normalRange: t.normalRange || t.referenceRange || '',
-      method: t.method || '',
-      remarks: t.remarks || '',
-    }));
+    const source = labTest?.results?.length
+      ? labTest.results
+      : (labTest?.tests || []).map((t) => ({
+        testName: t.testName,
+        section: t.profileName || labTest?.labType || 'RESULTS',
+        value: t.result ?? t.value ?? '',
+        unit: t.unit || '',
+        normalRange: t.normalRange || t.referenceRange || '',
+        method: t.method || '',
+        remarks: t.remarks || '',
+      }));
+    return source.filter((row) => String(row.value ?? '').trim() !== '');
   }, [labTest]);
 
   const sections = useMemo(() => {
@@ -194,6 +141,11 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
   const showMethod = results.some((r) => r.method);
   const showRemarks = results.some((r) => r.remarks);
   const criticalRows = results.filter((r) => r.flag === 'CRITICAL_LOW' || r.flag === 'CRITICAL_HIGH');
+  const resultTableClass = [
+    'lab-report-results',
+    showMethod ? 'has-method' : '',
+    showRemarks ? 'has-remarks' : '',
+  ].filter(Boolean).join(' ');
 
   const contactLine = [branding?.address, branding?.phone && `Ph: ${branding.phone}`, branding?.email, branding?.website]
     .filter(Boolean)
@@ -207,23 +159,27 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
     .join('  |  ');
 
   const sampleId = labTest?.labNumber || '-';
-  const barcode = cfg.barcodeEnabled ? generateBarcodeSVG(sampleId, { barWidth: 1.4, height: 30 }) : null;
+  const barcode = cfg.barcodeEnabled ? generateBarcodeSVG(sampleId, { barWidth: 1.4, height: 28 }) : null;
   const qrValue = `${cfg.qrCodeVerificationBaseUrl || verificationBaseUrl || ''}${sampleId}`
     || JSON.stringify({ uhid: patient.patientId, name: patient.name, lab: sampleId });
 
-  const marginMm = cfg.printMarginMm ?? 10;
+  const marginMm = cfg.printMarginMm ?? 12;
+  const border = cfg.borderColor || '#64748b';
+  const reportFont = /Arial|Helvetica Neue/i.test(cfg.fontFamily || '')
+    ? DEFAULT_LAB_REPORT_CONFIG.fontFamily
+    : (cfg.fontFamily || DEFAULT_LAB_REPORT_CONFIG.fontFamily);
 
   return (
     <div
       id={forPrint ? 'lab-report-print-root' : undefined}
       className="lab-report-root lab-report-screen-frame"
       style={{
-        fontFamily: cfg.fontFamily,
-        fontSize: cfg.fontSize,
+        fontFamily: reportFont,
+        fontSize: '11pt',
         color: cfg.bodyTextColor,
         width: '210mm',
-        minHeight: '297mm',
-        padding: `${marginMm}mm`,
+        minHeight: forPrint ? undefined : '297mm',
+        padding: forPrint ? undefined : `${marginMm}mm`,
         position: 'relative',
       }}
     >
@@ -239,89 +195,117 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
         <thead>
           <tr>
             <td>
-              {/* ---------- HEADER ---------- */}
-              <table className="w-full border-collapse mb-2">
+              <table className="lab-report-brand">
+                <colgroup>
+                  <col className="lab-report-logo" />
+                  <col className="lab-report-brand-copy" />
+                  <col className="lab-report-marks" />
+                </colgroup>
                 <tbody>
                   <tr>
-                    <td className="w-16 align-top pr-2">
-                      {branding?.logo && <img src={branding.logo} alt="logo" className="h-14 w-14 object-contain" />}
+                    <td className="lab-report-logo">
+                      {branding?.logo && <img src={branding.logo} alt="" />}
                     </td>
-                    <td className="align-top">
+                    <td className="lab-report-brand-copy">
                       <GmsDevelopedPrintLine />
-                      <div className="text-[20px] font-bold leading-tight" style={{ color: cfg.primaryColor }}>
+                      <div className="lab-report-hospital-name" style={{ color: cfg.primaryColor }}>
                         {(branding?.hospitalName || 'HOSPITAL NAME').toUpperCase()}
                       </div>
                       {(cfg.hospitalSubtitle || branding?.tagline) && (
-                        <div className="text-[9px] font-semibold" style={{ color: cfg.secondaryColor }}>
+                        <div className="lab-report-tagline" style={{ color: cfg.secondaryColor }}>
                           {cfg.hospitalSubtitle || branding?.tagline}
                         </div>
                       )}
-                      {contactLine && <div className="text-[8px] text-slate-600 mt-0.5">{contactLine}</div>}
-                      {accreditationLine && <div className="text-[8px] font-semibold mt-0.5" style={{ color: cfg.secondaryColor }}>{accreditationLine}</div>}
+                      {contactLine && <div className="lab-report-contact">{contactLine}</div>}
+                      {accreditationLine && (
+                        <div className="lab-report-accred" style={{ color: cfg.secondaryColor }}>{accreditationLine}</div>
+                      )}
                     </td>
-                    <td className="align-top text-right w-32">
-                      {cfg.nablLogo && <img src={cfg.nablLogo} alt="NABL" className="h-8 object-contain inline-block ml-1" />}
-                      {cfg.isoLogo && <img src={cfg.isoLogo} alt="ISO" className="h-8 object-contain inline-block ml-1" />}
+                    <td className="lab-report-marks">
+                      {cfg.nablLogo && <img src={cfg.nablLogo} alt="NABL" />}
+                      {cfg.isoLogo && <img src={cfg.isoLogo} alt="ISO" />}
                     </td>
                   </tr>
                 </tbody>
               </table>
 
-              <div className="border-t-2 border-b-2 py-1 text-center" style={{ borderColor: cfg.primaryColor }}>
-                <span className="text-[13px] font-bold tracking-wide" style={{ color: cfg.primaryColor }}>
-                  LABORATORY REPORT
-                </span>
+              <div className="lab-report-title-bar" style={{ borderColor: cfg.primaryColor }}>
+                <span style={{ color: cfg.primaryColor }}>LABORATORY REPORT</span>
                 {labTest?.priority && labTest.priority !== 'routine' && (
-                  <span className="ml-2 px-1.5 py-[1px] text-[8px] font-bold border" style={{ color: cfg.criticalColor, borderColor: cfg.criticalColor }}>
+                  <span style={{
+                    marginLeft: 8,
+                    padding: '1px 6px',
+                    fontSize: '8pt',
+                    fontWeight: 700,
+                    border: `0.8pt solid ${cfg.criticalColor}`,
+                    color: cfg.criticalColor,
+                  }}
+                  >
                     {labTest.priority.toUpperCase()}
                   </span>
                 )}
               </div>
 
-              {/* ---------- PATIENT DETAILS (requisition-slip style table) ---------- */}
-              <table className="w-full border-collapse mt-2">
+              <table className="lab-report-info">
+                <colgroup>
+                  <col className="c-label" />
+                  <col className="c-value" />
+                  <col className="c-label" />
+                  <col className="c-value" />
+                </colgroup>
                 <tbody>
                   <InfoRow pairs={[
                     ['Patient Name', patient.name],
                     ['UHID', patient.patientId],
-                  ]} />
+                  ]}
+                  />
                   <InfoRow pairs={[
                     ['Age / Gender', patient.age != null ? `${patient.age} / ${patient.gender || '-'}` : patient.gender],
                     ['Lab / Sample No', labTest?.labNumber],
-                  ]} />
+                  ]}
+                  />
                   <InfoRow pairs={[
                     ['Referring Doctor', doctor.name ? `Dr. ${doctor.name}` : null],
                     ['Department', labTest?.labType],
-                  ]} />
+                  ]}
+                  />
                   <InfoRow pairs={[
                     ['Collected On', fmtDateTime(labTest?.sampleCollectedAt)],
                     ['Received On', fmtDateTime(labTest?.sampleReceivedAt)],
-                  ]} />
-                  <InfoRow pairs={[
-                    ['Reported On', fmtDateTime(labTest?.reportGeneratedAt || labTest?.updatedAt)],
-                    ['Status', labTest?.status?.replace('_', ' ')],
-                  ]} />
+                  ]}
+                  />
+                  <InfoRow pairs={
+                    labTest?.showReportEnteredTime !== false
+                      ? [
+                        ['Reported On', fmtDateTime(labTest?.reportGeneratedAt || labTest?.updatedAt)],
+                        ['Status', labTest?.status?.replace('_', ' ')],
+                      ]
+                      : [
+                        ['Status', labTest?.status?.replace('_', ' ')],
+                        ['Priority', labTest?.priority && labTest.priority !== 'routine' ? labTest.priority : 'Routine'],
+                      ]
+                  }
+                  />
                 </tbody>
               </table>
 
-              {/* Barcode + QR strip */}
               {(barcode || cfg.qrCodeEnabled) && (
-                <table className="w-full border-collapse mt-1">
+                <table className="lab-report-idstrip">
                   <tbody>
                     <tr>
-                      <td className="border px-2 py-1 align-middle" style={{ borderColor: cfg.borderColor }}>
+                      <td className="barcode-cell">
                         {barcode && (
-                          <div>
+                          <>
                             <svg width={barcode.width} height={barcode.height} viewBox={`0 0 ${barcode.width} ${barcode.height}`}>
                               <g dangerouslySetInnerHTML={{ __html: barcode.svg }} />
                             </svg>
-                            <div className="text-[7.5px] tracking-widest mt-[1px]">{sampleId}</div>
-                          </div>
+                            <div className="sid">{sampleId}</div>
+                          </>
                         )}
                       </td>
                       {cfg.qrCodeEnabled && (
-                        <td className="border px-2 py-1 align-middle text-right w-16" style={{ borderColor: cfg.borderColor }}>
-                          <QRCodeSVG value={qrValue} size={38} bgColor="transparent" fgColor={cfg.bodyTextColor} />
+                        <td className="qr-cell">
+                          <QRCodeSVG value={qrValue} size={42} bgColor="transparent" fgColor={cfg.bodyTextColor} />
                         </td>
                       )}
                     </tr>
@@ -335,35 +319,54 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
         <tbody>
           <tr>
             <td>
-              {/* ---------- CRITICAL ALERT BANNER ---------- */}
               {criticalRows.length > 0 && (
                 <div
-                  className="mt-2 px-2 py-1 text-[9px] font-bold text-white text-center lab-report-section"
-                  style={{ background: cfg.criticalColor }}
+                  className="lab-report-section"
+                  style={{
+                    marginTop: 8,
+                    padding: '5px 8px',
+                    fontSize: '9pt',
+                    fontWeight: 700,
+                    color: '#fff',
+                    textAlign: 'center',
+                    background: cfg.criticalColor,
+                  }}
                 >
                   CRITICAL VALUE ALERT: {criticalRows.map((r) => r.testName).join(', ')} — PLEASE NOTIFY THE TREATING PHYSICIAN IMMEDIATELY
                 </div>
               )}
 
-              {/* ---------- RESULT SECTIONS ---------- */}
               {sections.map((section) => (
-                <div key={section.title} className="mt-2 lab-report-section">
+                <div key={section.title} className="lab-report-block lab-report-section">
                   <div
-                    className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 border border-b-0"
-                    style={{ background: cfg.tableHeaderBackgroundColor, color: cfg.tableHeaderTextColor, borderColor: cfg.borderColor }}
+                    className="lab-report-dept"
+                    style={{
+                      background: cfg.tableHeaderBackgroundColor,
+                      color: cfg.tableHeaderTextColor,
+                      borderColor: border,
+                    }}
                   >
                     {section.title}
                   </div>
-                  <table className="w-full border-collapse">
+                  <table className={resultTableClass}>
+                    <colgroup>
+                      <col className="c-test" />
+                      {showMethod && <col className="c-method" />}
+                      <col className="c-result" />
+                      <col className="c-unit" />
+                      <col className="c-range" />
+                      <col className="c-flag" />
+                      {showRemarks && <col className="c-remarks" />}
+                    </colgroup>
                     <thead>
-                      <tr style={{ background: '#e2e8f0', color: '#1e293b' }}>
-                        <th className="border text-left px-2 py-1 text-[8.5px] font-bold uppercase" style={{ borderColor: cfg.borderColor }}>Test Name</th>
-                        {showMethod && <th className="border text-left px-2 py-1 text-[8.5px] font-bold uppercase" style={{ borderColor: cfg.borderColor }}>Method</th>}
-                        <th className="border text-right px-2 py-1 text-[8.5px] font-bold uppercase" style={{ borderColor: cfg.borderColor }}>Result</th>
-                        <th className="border text-left px-2 py-1 text-[8.5px] font-bold uppercase" style={{ borderColor: cfg.borderColor }}>Unit</th>
-                        <th className="border text-left px-2 py-1 text-[8.5px] font-bold uppercase" style={{ borderColor: cfg.borderColor }}>Reference Range</th>
-                        <th className="border text-left px-2 py-1 text-[8.5px] font-bold uppercase" style={{ borderColor: cfg.borderColor }}>Flag</th>
-                        {showRemarks && <th className="border text-left px-2 py-1 text-[8.5px] font-bold uppercase" style={{ borderColor: cfg.borderColor }}>Remarks</th>}
+                      <tr>
+                        <th>Investigation</th>
+                        {showMethod && <th>Method</th>}
+                        <th className="th-result">Result</th>
+                        <th className="th-unit">Unit</th>
+                        <th className="th-range">Biological Ref. Interval</th>
+                        <th className="th-flag">Flag</th>
+                        {showRemarks && <th>Remarks</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -382,22 +385,20 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
                 </div>
               ))}
 
-              {/* ---------- COMMENTS / INTERPRETATION ---------- */}
               {(labTest?.interpretation || labTest?.impression || labTest?.conclusion || labTest?.doctorComments || labTest?.labComments || labTest?.recommendation || labTest?.remarks) && (
-                <div className="mt-2 border px-2 py-1.5 lab-report-section" style={{ borderColor: cfg.borderColor }}>
-                  <div className="text-[8.5px] font-bold uppercase tracking-wide mb-1" style={{ color: cfg.primaryColor }}>Clinical Notes</div>
-                  {labTest?.interpretation && <p className="text-[9px] mb-1"><span className="font-bold">Interpretation: </span>{labTest.interpretation}</p>}
-                  {labTest?.impression && <p className="text-[9px] mb-1"><span className="font-bold">Impression: </span>{labTest.impression}</p>}
-                  {labTest?.conclusion && <p className="text-[9px] mb-1"><span className="font-bold">Conclusion: </span>{labTest.conclusion}</p>}
-                  {labTest?.doctorComments && <p className="text-[9px] mb-1"><span className="font-bold">Doctor's Comments: </span>{labTest.doctorComments}</p>}
-                  {labTest?.labComments && <p className="text-[9px] mb-1"><span className="font-bold">Lab Comments: </span>{labTest.labComments}</p>}
-                  {labTest?.recommendation && <p className="text-[9px] mb-1"><span className="font-bold">Recommendation: </span>{labTest.recommendation}</p>}
-                  {labTest?.remarks && <p className="text-[9px]"><span className="font-bold">Remarks: </span>{labTest.remarks}</p>}
+                <div className="lab-report-notes lab-report-section" style={{ borderColor: border }}>
+                  <h4 style={{ color: cfg.primaryColor }}>Clinical notes</h4>
+                  {labTest?.interpretation && <p><strong>Interpretation: </strong>{labTest.interpretation}</p>}
+                  {labTest?.impression && <p><strong>Impression: </strong>{labTest.impression}</p>}
+                  {labTest?.conclusion && <p><strong>Conclusion: </strong>{labTest.conclusion}</p>}
+                  {labTest?.doctorComments && <p><strong>Doctor&apos;s comments: </strong>{labTest.doctorComments}</p>}
+                  {labTest?.labComments && <p><strong>Lab comments: </strong>{labTest.labComments}</p>}
+                  {labTest?.recommendation && <p><strong>Recommendation: </strong>{labTest.recommendation}</p>}
+                  {labTest?.remarks && <p><strong>Remarks: </strong>{labTest.remarks}</p>}
                 </div>
               )}
 
-              {/* ---------- SIGNATURES ---------- */}
-              <table className="w-full border-collapse mt-8 lab-report-section">
+              <table className="lab-report-signs lab-report-section">
                 <tbody>
                   <tr>
                     {[
@@ -406,16 +407,10 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
                       { label: 'Consultant', name: doctor.name ? `Dr. ${doctor.name}` : null, sig: cfg.doctorSignature },
                       { label: 'Authorized Signatory', name: labTest?.reportApprovedBy?.name, sig: cfg.authorizedSignature },
                     ].map((sig) => (
-                      <td key={sig.label} className="text-center align-bottom" style={{ width: '25%' }}>
-                        {sig.sig ? (
-                          <img src={sig.sig} alt={sig.label} className="h-8 object-contain mx-auto mb-0.5" />
-                        ) : (
-                          <div className="h-8" />
-                        )}
-                        <div className="border-t pt-0.5 text-[8px] font-bold mx-4" style={{ borderColor: cfg.bodyTextColor }}>
-                          {sig.name || '\u00A0'}
-                        </div>
-                        <div className="text-[7.5px] text-slate-600 uppercase tracking-wide">{sig.label}</div>
+                      <td key={sig.label}>
+                        {sig.sig ? <img src={sig.sig} alt="" /> : <div style={{ height: 28 }} />}
+                        <div className="sig-line">{sig.name || '\u00A0'}</div>
+                        <div className="sig-role">{sig.label}</div>
                       </td>
                     ))}
                   </tr>
@@ -428,10 +423,14 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
         <tfoot>
           <tr>
             <td>
-              <div className="mt-3 pt-1 border-t-2 flex items-center justify-between text-[7.5px]" style={{ borderColor: cfg.primaryColor, color: cfg.footerColor }}>
-                <span>{cfg.footerText}</span>
-                <span>Printed on {fmtDateTime(new Date())} &middot; Lab No: {sampleId}</span>
-              </div>
+              <table className="lab-report-footer" style={{ borderColor: cfg.primaryColor, color: cfg.footerColor }}>
+                <tbody>
+                  <tr>
+                    <td className="left">{cfg.footerText}</td>
+                    <td className="right">Printed on {fmtDateTime(new Date())} · Lab No: {sampleId}</td>
+                  </tr>
+                </tbody>
+              </table>
             </td>
           </tr>
         </tfoot>
