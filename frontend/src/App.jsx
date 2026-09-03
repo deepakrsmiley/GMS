@@ -17,6 +17,7 @@ const OrganizationsPage = lazy(() => import('./pages/OrganizationsPage'));
 const PatientsPage = lazy(() => import('./pages/PatientsPage'));
 const PatientProfilePage = lazy(() => import('./pages/PatientProfile/PatientProfilePage'));
 const OPQueuePage = lazy(() => import('./pages/OPQueuePage'));
+const OPRegistrationPage = lazy(() => import('./pages/OPRegistrationPage'));
 const DoctorConsultationPage = lazy(() => import('./pages/DoctorConsultationPage'));
 const IPAdmissionsPage = lazy(() => import('./pages/IPAdmissionsPage'));
 const IPAdmissionDetailPage = lazy(() => import('./pages/IPAdmissionDetailPage'));
@@ -98,6 +99,7 @@ export default function App() {
             <Route path="/how-to-use" element={<ProtectedRoute routeKey="how-to-use"><HowToUsePage /></ProtectedRoute>} />
             <Route path="/patients" element={<ProtectedRoute routeKey="patients"><PatientsPage /></ProtectedRoute>} />
             <Route path="/patients/:id/profile" element={<ProtectedRoute routeKey="patients"><PatientProfilePage /></ProtectedRoute>} />
+            <Route path="/op-registration" element={<ProtectedRoute routeKey="op-registration"><OPRegistrationPage /></ProtectedRoute>} />
             <Route path="/op-queue" element={<ProtectedRoute routeKey="op-queue"><OPQueuePage /></ProtectedRoute>} />
             <Route path="/consultation/:opId" element={<ProtectedRoute routeKey="consultation"><DoctorConsultationPage /></ProtectedRoute>} />
             <Route path="/ip-admissions" element={<ProtectedRoute routeKey="ip-admissions"><IPAdmissionsPage /></ProtectedRoute>} />

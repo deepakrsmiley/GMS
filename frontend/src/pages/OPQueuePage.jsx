@@ -5,11 +5,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, CheckCircle2, Stethoscope, AlertCircle, RefreshCw, Pill,
-  FlaskConical, Bed, Building2, User,
+  FlaskConical, Bed, User,
   Users, ClipboardList, Calendar, Timer, XCircle,
   Search, UserPlus, Footprints, Flag, Link2, RotateCcw, Send, Info,
-  Hourglass, Phone, CreditCard, X, Printer, Settings2, MoreVertical, Pencil,
-  FileText, UserSearch, CalendarDays, BarChart3,
+  Hourglass, Phone, CreditCard, X, Printer, Settings2, MoreVertical,
+  FileText, Eye,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSelector } from 'react-redux';
@@ -24,7 +24,6 @@ import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 import { hasPermission } from '../constants/permissions';
 import { SYSTEM_NAME } from '../constants/branding';
 import { istCalendarDate } from '../utils/istDate';
-import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import '../styles/opQueue.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -117,21 +116,58 @@ const waitClass = (mins) => {
 const statusPill = (status) => {
   if (status === 'waiting') return { cls: 'opq-status--waiting', Icon: Clock, label: 'Waiting' };
   if (status === 'in_consultation') return { cls: 'opq-status--consult', Icon: Stethoscope, label: 'In Consultation' };
+  if (status === 'sent_to_pharmacy') return { cls: 'opq-status--pharmacy', Icon: Pill, label: 'Pharmacy' };
+  if (status === 'sent_to_lab') return { cls: 'opq-status--lab', Icon: FlaskConical, label: 'Lab' };
   if (status === 'admitted') return { cls: 'opq-status--admitted', Icon: Bed, label: 'Admitted' };
   if (['cancelled', 'no_show'].includes(status)) return { cls: 'opq-status--danger', Icon: AlertCircle, label: statusConfig[status]?.label || status };
-  if (['completed', 'consultation_completed', 'sent_to_pharmacy', 'pharmacy_completed', 'sent_to_lab', 'discharged'].includes(status)) {
+  if (['completed', 'consultation_completed', 'pharmacy_completed', 'discharged'].includes(status)) {
     return { cls: 'opq-status--done', Icon: CheckCircle2, label: statusConfig[status]?.label || 'Completed' };
   }
   return { cls: 'opq-status--muted', Icon: Clock, label: statusConfig[status]?.label || status };
 };
 
-function MiniSpark({ color }) {
-  return (
-    <svg width="72" height="28" viewBox="0 0 72 28" fill="none" aria-hidden>
-      <path d="M1 18 C12 16 16 8 24 11 S38 24 46 15 S60 6 71 12" stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" />
-    </svg>
-  );
-}
+const fmtInr = (n) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '₹0';
+  return `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+};
+
+/** Consultation bill payment state for Doctor Queue cards. */
+const billPayPill = (bill) => {
+  if (!bill || typeof bill !== 'object' || Array.isArray(bill)) {
+    return { state: 'none', cls: 'opq-pay--none', label: 'No bill', detail: 'Consultation bill not created' };
+  }
+  if (bill.status === 'cancelled' || bill.status === 'refunded') {
+    return { state: 'cancelled', cls: 'opq-pay--none', label: 'Bill cancelled', detail: bill.billNumber || '' };
+  }
+  const total = Number(bill.totalAmount) || 0;
+  const paid = Number(bill.paidAmount) || 0;
+  const dueRaw = Number(bill.dueAmount);
+  const due = Number.isFinite(dueRaw) ? dueRaw : Math.max(0, total - paid - (Number(bill.advanceAmount) || 0));
+
+  if (bill.status === 'paid' || due <= 0) {
+    return {
+      state: 'paid',
+      cls: 'opq-pay--paid',
+      label: 'Paid',
+      detail: total ? `${fmtInr(paid)} / ${fmtInr(total)}` : (bill.billNumber || 'Settled'),
+    };
+  }
+  if (paid > 0 || bill.status === 'partial') {
+    return {
+      state: 'partial',
+      cls: 'opq-pay--partial',
+      label: 'Partial',
+      detail: `Paid ${fmtInr(paid)} · Due ${fmtInr(due)}`,
+    };
+  }
+  return {
+    state: 'unpaid',
+    cls: 'opq-pay--unpaid',
+    label: 'Unpaid',
+    detail: total ? `Due ${fmtInr(due || total)}` : (bill.billNumber || 'Pending payment'),
+  };
+};
 
 export default function OPQueuePage() {
   const navigate = useNavigate();
@@ -162,6 +198,7 @@ export default function OPQueuePage() {
   const [printData, setPrintData] = useState(null); // { branding, op } for OPPaperTemplate
   const [billPrint, setBillPrint] = useState(null); // { bill, op }
   const [serviceOp, setServiceOp] = useState(null);
+  const [detailsItem, setDetailsItem] = useState(null);
   const qc = useQueryClient();
 
   const { data: queue, isLoading, refetch } = useQuery({
@@ -518,69 +555,54 @@ export default function OPQueuePage() {
     };
   }, [typeFiltered, waiting, completed]);
 
-  const doctorSchedule = useMemo(() => {
-    const map = new Map();
-    typeFiltered.forEach((q) => {
-      const id = q.doctor?._id || q.doctor || 'unassigned';
-      if (!map.has(id)) {
-        map.set(id, {
-          id,
-          name: formatDoctorName(q.doctor?.name),
-          spec: q.doctor?.specialization || q.department?.name || 'OPD',
-          count: 0,
-        });
-      }
-      map.get(id).count += 1;
-    });
-    return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 6);
-  }, [typeFiltered]);
-
-  const exportQueue = () => {
-    const rows = [
-      ['#', 'Patient', 'UHID', 'Age', 'Gender', 'Token', 'Doctor', 'Department', 'Time', 'Wait (mins)', 'Status'],
-      ...typeFiltered.map((item, i) => [
-        i + 1,
-        item.patient?.name || '',
-        item.patient?.patientId || '',
-        item.patient?.age ?? '',
-        item.patient?.gender || '',
-        item.tokenNumber || '',
-        formatDoctorName(item.doctor?.name),
-        item.department?.name || '',
-        item.tokenDate || item.createdAt || '',
-        item.waitingMinutes || 0,
-        statusConfig[item.status]?.label || item.status,
-      ]),
-    ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `op-queue-${queueDate}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const statCards = [
-    { key: 'waiting', label: 'Waiting', sub: 'Patients in queue', count: waiting.length, icon: Clock, tone: 'blue', spark: '#3b82f6' },
-    { key: 'in_consultation', label: 'In Consultation', sub: 'Currently with doctor', count: inConsult.length, icon: User, tone: 'orange', spark: '#f97316' },
-    { key: 'completed', label: 'Completed', sub: 'Today completed', count: completed.length, icon: CheckCircle2, tone: 'green', spark: '#10b981' },
-    { key: 'admitted', label: 'Admitted', sub: 'Today admitted', count: admitted.length, icon: Users, tone: 'purple', spark: '#8b5cf6' },
+    { key: 'waiting', label: 'Waiting', sub: 'Patients in queue', count: waiting.length, icon: Clock, tone: 'blue' },
+    { key: 'in_consultation', label: 'In Consultation', sub: 'Currently with doctor', count: inConsult.length, icon: User, tone: 'orange' },
+    { key: 'completed', label: 'Completed', sub: 'Today completed', count: completed.length, icon: CheckCircle2, tone: 'green' },
+    { key: 'admitted', label: 'Admitted', sub: 'Today admitted', count: admitted.length, icon: Users, tone: 'purple' },
   ];
 
+  const isActiveConsult = (item) => ['waiting', 'in_consultation'].includes(item.status);
+
   const viewItem = (item) => {
-    if (item.status === 'admitted') navigate('/ip-admissions');
-    else navigate(`/consultation/${item._id}`);
+    if (item.status === 'admitted') {
+      navigate('/ip-admissions');
+      return;
+    }
+    if (isActiveConsult(item)) {
+      navigate(`/consultation/${item._id}`);
+      return;
+    }
+    setDetailsItem(item);
   };
 
   const activeTabMeta = TABS.find((t) => t.key === activeTab);
   const showingTo = queueSearchTerm ? activeItems.length : Math.min(visibleCount, activeItems.length);
 
+  const chipList = (items, empty = '—') => (
+    items?.length
+      ? items.map((n) => <span key={n} className="opq-chip">{n}</span>)
+      : <span className="opq-chip opq-chip--empty">{empty}</span>
+  );
+
   return (
-    <div className="opq">
-      <WorkflowStrip flow="op" current={canRegister ? 'register' : 'consult'} />
-      <div className="opq-toolbar">
+    <div className="opq opq--corp">
+      <div className="opq-hero">
+        <div className="opq-hero-left">
+          <div className="opq-hero-badge"><Stethoscope size={18} /></div>
+          <div>
+            <h1 className="opq-page-title">Doctor Queue</h1>
+            <p className="opq-page-sub">
+              {fmtDate(new Date(queueDate))} · {summary.total} patients today · Avg wait {summary.avg}
+            </p>
+          </div>
+        </div>
+        <button type="button" className="opq-btn-icon" onClick={() => refetch()} title="Refresh">
+          <RefreshCw size={16} />
+        </button>
+      </div>
+
+      <div className="opq-toolbar opq-toolbar--corp">
         <div className="opq-search-wrap">
           <Search size={15} />
           <input
@@ -602,7 +624,7 @@ export default function OPQueuePage() {
           </select>
         )}
         <select className="opq-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-          <option value="">All Consultation Types</option>
+          <option value="">All Types</option>
           <option value="walkin">Walk-in</option>
           <option value="appointment">Appointment</option>
           <option value="followup">Follow-up</option>
@@ -618,26 +640,9 @@ export default function OPQueuePage() {
             setFollowLiveDay(next === istCalendarDate());
           }}
         />
-        <div className="opq-toolbar-actions">
-          <button type="button" className="opq-btn-export" onClick={exportQueue}>
-            <FileText size={15} /> Export Report
-          </button>
-          <button type="button" className="opq-btn-icon" onClick={() => refetch()} title="Refresh">
-            <RefreshCw size={16} />
-          </button>
-          {canRegister && (
-            <button
-              type="button"
-              className="opq-btn-add"
-              onClick={() => { resetRegForm(); loadFeeMasters(); setShowAdd(true); }}
-            >
-              <Plus size={16} /> Add Patient
-            </button>
-          )}
-        </div>
       </div>
 
-      <div className="opq-stats">
+      <div className="opq-stats opq-stats--corp">
         {statCards.map((s) => (
           <button
             key={s.key}
@@ -651,15 +656,13 @@ export default function OPQueuePage() {
             <div className="opq-stat-copy">
               <div className="opq-stat-count">{s.count}</div>
               <div className="opq-stat-label">{s.label}</div>
-              <div className="opq-stat-sub">{s.sub}</div>
             </div>
-            <MiniSpark color={s.spark} />
           </button>
         ))}
       </div>
 
-      <div className="opq-layout">
-        <div className="opq-panel">
+      <div className="opq-board">
+        <div className="opq-board-head">
           <div className="opq-tabs">
             {TABS.map((t) => (
               <button
@@ -668,10 +671,17 @@ export default function OPQueuePage() {
                 className={`opq-tab${activeTab === t.key ? ' is-active' : ''}`}
                 onClick={() => setActiveTab(t.key)}
               >
-                {t.label} ({tabData[t.key]?.length || 0})
+                {t.label}
+                <em>{tabData[t.key]?.length || 0}</em>
               </button>
             ))}
           </div>
+          <div className="opq-board-meta">
+            <span><Users size={13} /> {summary.total} today</span>
+            <span><Clock size={13} /> Wait {summary.avg}</span>
+            <span><Timer size={13} /> Longest {summary.longest}</span>
+          </div>
+        </div>
 
           {isLoading ? (
             <div className="opq-empty">Loading queue...</div>
@@ -686,135 +696,177 @@ export default function OPQueuePage() {
               <span>
                 {queueSearchTerm
                   ? 'Try another name, UHID, phone, or token number.'
-                  : 'All caught up. Great job.'}
+                  : 'When reception registers a patient, they appear here instantly.'}
               </span>
             </div>
           ) : (
             <>
-              <div className="opq-table-wrap">
-                <table className="opq-table">
-                  <thead>
-                    <tr>
-                      {['#', 'Patient Details', 'Token No.', 'Doctor', 'Time', 'Wait Time', 'Status', 'Actions'].map((h) => (
-                        <th key={h}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleItems.map((item, i) => {
-                      const pill = statusPill(item.status);
-                      const waitMins = item.status === 'waiting' ? (item.waitingMinutes || 0) : 0;
-                      const when = item.tokenDate || item.createdAt;
-                      return (
-                        <tr key={item._id}>
-                          <td className="opq-idx">{i + 1}</td>
-                          <td>
-                            <div className="opq-patient">
-                              <div className={`opq-avatar ${avatarColor(item.patient?._id || item._id)}`}>
-                                {initials(item.patient?.name)}
-                              </div>
-                              <div>
-                                <div className="opq-patient-name">{item.patient?.name || '—'}</div>
-                                <div className="opq-patient-meta">
-                                  {item.patient?.age != null ? `${item.patient.age} Y` : '—'}
-                                  {item.patient?.gender ? ` / ${item.patient.gender}` : ''}
-                                  {'  '}
-                                  {item.patient?.patientId || ''}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td><span className="opq-token">{tokenLabel(item.tokenNumber)}</span></td>
-                          <td>
-                            <div className="opq-doc-name">{formatDoctorName(item.doctor?.name)}</div>
-                            <div className="opq-doc-spec">{item.doctor?.specialization || item.department?.name || '—'}</div>
-                          </td>
-                          <td>
-                            <div className="opq-time">{fmtTime(when)}</div>
-                            <div className="opq-date-sub">{when ? fmtDate(new Date(when)) : '—'}</div>
-                          </td>
-                          <td>
+              <div className="opq-cards">
+                {visibleItems.map((item, i) => {
+                  const pill = statusPill(item.status);
+                  const pay = billPayPill(item.bill);
+                  const waitMins = item.status === 'waiting' ? (item.waitingMinutes || 0) : 0;
+                  const when = item.tokenDate || item.createdAt;
+                  const labs = item.labNames || [];
+                  const procs = item.procedureNames || [];
+                  const rxs = item.rxNames || [];
+                  const active = isActiveConsult(item);
+                  return (
+                    <article key={item._id} className={`opq-visit${active ? ' is-active-visit' : ''}`}>
+                      <div className="opq-visit-top">
+                        <div className="opq-visit-id">
+                          <span className="opq-visit-rank">#{i + 1}</span>
+                          <span className="opq-token">{tokenLabel(item.tokenNumber)}</span>
+                          <span className={`opq-status ${pill.cls}`}>
+                            <pill.Icon size={13} />
+                            {pill.label}
+                          </span>
+                          <span className={`opq-pay ${pay.cls}`} title={pay.detail}>
+                            <CreditCard size={13} />
+                            {pay.label}
+                          </span>
+                          {item.status === 'waiting' && (
                             <span className={`opq-wait ${waitClass(waitMins)}`}>
-                              {item.status === 'waiting' ? formatWait(waitMins) : '—'}
+                              Wait {formatWait(waitMins)}
                             </span>
-                          </td>
-                          <td>
-                            <span className={`opq-status ${pill.cls}`}>
-                              <pill.Icon size={13} />
-                              {pill.label}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="opq-actions">
-                              <button type="button" className="opq-view" onClick={() => viewItem(item)}>View</button>
-                              <div className="relative">
-                                <button
-                                  type="button"
-                                  className="opq-kebab"
-                                  title="More actions"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setOpenMenuId((id) => (id === item._id ? null : item._id));
-                                  }}
-                                >
-                                  <MoreVertical size={16} />
+                          )}
+                        </div>
+                        <div className="opq-visit-actions">
+                          <button type="button" className="opq-btn-ghost" onClick={() => setDetailsItem(item)}>
+                            <Eye size={14} /> Details
+                          </button>
+                          <button
+                            type="button"
+                            className={active ? 'opq-btn-primary' : 'opq-btn-ghost'}
+                            onClick={() => viewItem(item)}
+                          >
+                            {active ? (<><Stethoscope size={14} /> Consult</>) : 'Open'}
+                          </button>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              className="opq-kebab"
+                              title="More actions"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenMenuId((id) => (id === item._id ? null : item._id));
+                              }}
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                            {openMenuId === item._id && (
+                              <div className="opq-menu" onClick={(e) => e.stopPropagation()}>
+                                <button type="button" onClick={() => { setOpenMenuId(null); setDetailsItem(item); }}>
+                                  <Eye size={14} /> View full details
                                 </button>
-                                {openMenuId === item._id && (
-                                  <div className="opq-menu" onClick={(e) => e.stopPropagation()}>
-                                    <button type="button" onClick={() => { setOpenMenuId(null); printConsultationBill(item); }}>
-                                      <Printer size={14} /> Print A5 receipt
-                                    </button>
-                                    <button type="button" onClick={() => { setOpenMenuId(null); printOPPaper(item); }}>
-                                      <FileText size={14} /> Print OP paper
-                                    </button>
-                                    {item.status === 'waiting' && (
-                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/consultation/${item._id}`); }}>
-                                        <Stethoscope size={14} /> Open consultation
-                                      </button>
-                                    )}
-                                    {item.status === 'in_consultation' && (
-                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/consultation/${item._id}`); }}>
-                                        <Stethoscope size={14} /> Continue
-                                      </button>
-                                    )}
-                                    {canLogServices && item.status !== 'cancelled' && item.status !== 'no_show' && (
-                                      <button type="button" onClick={() => { setOpenMenuId(null); setServiceOp(item); }}>
-                                        <Settings2 size={14} /> Services
-                                      </button>
-                                    )}
-                                    {item.patient?._id && item.status !== 'cancelled' && item.status !== 'no_show' && (
-                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/lab?patient=${item.patient._id}&op=${item._id}`); }}>
-                                        <FlaskConical size={14} /> Lab
-                                      </button>
-                                    )}
-                                    {canAdmit && item.status !== 'admitted' && item.patient?._id && (
-                                      <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/ip-admissions?patient=${item.patient._id}&op=${item._id}`); }}>
-                                        <Bed size={14} /> Admit to IP
-                                      </button>
-                                    )}
-                                    {item.status === 'waiting' && (
-                                      <button
-                                        type="button"
-                                        className="is-danger"
-                                        onClick={() => { setOpenMenuId(null); statusMut.mutate({ id: item._id, status: 'no_show' }); }}
-                                      >
-                                        <XCircle size={14} /> No show
-                                      </button>
-                                    )}
-                                  </div>
+                                {active && (
+                                  <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/consultation/${item._id}`); }}>
+                                    <Stethoscope size={14} /> Open consultation
+                                  </button>
+                                )}
+                                <button type="button" onClick={() => { setOpenMenuId(null); printConsultationBill(item); }}>
+                                  <Printer size={14} /> Print A5 receipt
+                                </button>
+                                <button type="button" onClick={() => { setOpenMenuId(null); printOPPaper(item); }}>
+                                  <FileText size={14} /> Print OP paper
+                                </button>
+                                {canLogServices && item.status !== 'cancelled' && item.status !== 'no_show' && (
+                                  <button type="button" onClick={() => { setOpenMenuId(null); setServiceOp(item); }}>
+                                    <Settings2 size={14} /> Add procedure
+                                  </button>
+                                )}
+                                {canAdmit && item.status !== 'admitted' && item.patient?._id && (
+                                  <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/ip-admissions?patient=${item.patient._id}&op=${item._id}`); }}>
+                                    <Bed size={14} /> Admit to IP
+                                  </button>
+                                )}
+                                {item.status === 'waiting' && (
+                                  <button
+                                    type="button"
+                                    className="is-danger"
+                                    onClick={() => { setOpenMenuId(null); statusMut.mutate({ id: item._id, status: 'no_show' }); }}
+                                  >
+                                    <XCircle size={14} /> No show
+                                  </button>
                                 )}
                               </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="opq-visit-main">
+                        <div className="opq-visit-patient">
+                          <div className={`opq-avatar ${avatarColor(item.patient?._id || item._id)}`}>
+                            {initials(item.patient?.name)}
+                          </div>
+                          <div>
+                            <div className="opq-patient-name">{item.patient?.name || '—'}</div>
+                            <div className="opq-patient-meta">
+                              {item.patient?.patientId || '—'}
+                              {' · '}
+                              {item.patient?.age != null ? `${item.patient.age}Y` : '—'}
+                              {item.patient?.gender ? ` / ${item.patient.gender}` : ''}
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            <div className="opq-patient-meta">
+                              {formatDoctorName(item.doctor?.name)}
+                              {item.department?.name ? ` · ${item.department.name}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="opq-visit-when">
+                          <div className="opq-kv">
+                            <span className="opq-k">OP date</span>
+                            <span className="opq-v">{when ? fmtDate(new Date(when)) : '—'}</span>
+                          </div>
+                          <div className="opq-kv">
+                            <span className="opq-k">Time</span>
+                            <span className="opq-v">{fmtTime(when)}</span>
+                          </div>
+                          <div className="opq-kv">
+                            <span className="opq-k">Type</span>
+                            <span className="opq-v" style={{ textTransform: 'capitalize' }}>
+                              {item.appointmentType || 'walkin'}
+                            </span>
+                          </div>
+                          <div className="opq-kv">
+                            <span className="opq-k">Bill</span>
+                            <span className={`opq-v opq-v-pay ${pay.cls}`}>{pay.label}{pay.detail ? ` · ${pay.detail}` : ''}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="opq-visit-clinical">
+                        <div className="opq-clin-block">
+                          <span className="opq-clin-label">Diagnosis</span>
+                          <div className="opq-clin-body">{item.diagnosis || <span className="opq-muted">Not entered</span>}</div>
+                        </div>
+                        <div className="opq-clin-block">
+                          <span className="opq-clin-label">Prescription → Pharmacy</span>
+                          <div className="opq-chip-row">{chipList(rxs, 'No Rx')}</div>
+                        </div>
+                        <div className="opq-clin-block">
+                          <span className="opq-clin-label">Lab → Lab desk</span>
+                          <div className="opq-chip-row">{chipList(labs, 'No lab')}</div>
+                        </div>
+                        <div className="opq-clin-block">
+                          <span className="opq-clin-label">Procedure</span>
+                          <div className="opq-chip-row">{chipList(procs, 'No procedure')}</div>
+                        </div>
+                      </div>
+
+                      {item.chiefComplaint ? (
+                        <div className="opq-visit-complaint">
+                          <span>Complaint</span> {item.chiefComplaint}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
               </div>
               <div className="opq-foot">
                 <span className="opq-foot-count">
-                  Showing 1 to {showingTo} of {activeItems.length} entries
+                  Showing 1 to {showingTo} of {activeItems.length}
                 </span>
                 {showingTo < activeItems.length && (
                   <button type="button" className="opq-load" onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}>
@@ -824,471 +876,137 @@ export default function OPQueuePage() {
               </div>
             </>
           )}
-        </div>
-
-        <div className="opq-side">
-          <div className="opq-card">
-            <div className="opq-card-head">
-              <h3 className="opq-card-title">Queue Summary</h3>
-              <span className="opq-card-date"><Calendar size={13} /> {fmtDate(new Date(queueDate))}</span>
-            </div>
-            {[
-              { icon: Users, label: 'Total Patients Today', value: summary.total, bg: 'bg-blue-50', color: 'text-blue-600' },
-              { icon: Clock, label: 'Average Wait Time', value: summary.avg, bg: 'bg-amber-50', color: 'text-amber-600' },
-              { icon: Timer, label: 'Longest Wait Time', value: summary.longest, bg: 'bg-purple-50', color: 'text-purple-600' },
-              { icon: CheckCircle2, label: 'Completed Today', value: summary.completedToday, bg: 'bg-emerald-50', color: 'text-emerald-600' },
-              { icon: XCircle, label: 'Cancelled', value: summary.cancelled, bg: 'bg-red-50', color: 'text-red-600' },
-            ].map((row) => (
-              <div key={row.label} className="opq-sum-row">
-                <div className={`opq-sum-ico ${row.bg} ${row.color}`}><row.icon size={15} /></div>
-                <span className="opq-sum-label">{row.label}</span>
-                <span className="opq-sum-val">{row.value}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="opq-card">
-            <div className="opq-card-head">
-              <h3 className="opq-card-title">Quick Actions</h3>
-            </div>
-            <div className="opq-quick">
-              <button type="button" onClick={() => { if (canRegister) { resetRegForm(); loadFeeMasters(); setShowAdd(true); } else navigate('/patients'); }}>
-                <span className="opq-quick-ico bg-blue-50 text-blue-600"><UserPlus size={16} /></span>
-                New Registration
-              </button>
-              <button type="button" onClick={() => navigate('/patients')}>
-                <span className="opq-quick-ico bg-emerald-50 text-emerald-600"><UserSearch size={16} /></span>
-                Find Patient
-              </button>
-              <button type="button" onClick={() => navigate('/appointments')}>
-                <span className="opq-quick-ico bg-violet-50 text-violet-600"><CalendarDays size={16} /></span>
-                Today&apos;s Appointments
-              </button>
-              <button type="button" onClick={() => navigate('/reports')}>
-                <span className="opq-quick-ico bg-orange-50 text-orange-600"><BarChart3 size={16} /></span>
-                Queue Analytics
-              </button>
-            </div>
-          </div>
-
-          <div className="opq-card">
-            <div className="opq-card-head">
-              <h3 className="opq-card-title">Today&apos;s Schedule</h3>
-            </div>
-            {doctorSchedule.length === 0 ? (
-              <p className="text-xs text-slate-400 py-2">No doctors on this date&apos;s queue.</p>
-            ) : doctorSchedule.map((d) => (
-              <div key={d.id} className="opq-sched">
-                <div className={`opq-avatar ${avatarColor(d.id)}`}>{initials(d.name)}</div>
-                <div>
-                  <div className="opq-sched-name">{d.name}</div>
-                  <div className="opq-sched-spec">{d.spec}</div>
-                </div>
-                <span className="opq-sched-count">{d.count}</span>
-              </div>
-            ))}
-            <button type="button" className="opq-sched-more" onClick={() => navigate('/appointments')}>
-              View Full Schedule
-            </button>
-          </div>
-        </div>
       </div>
 
       <div className="opq-page-foot">
         <span>© {new Date().getFullYear()} {branding.systemName || SYSTEM_NAME}. All rights reserved.</span>
-        <span>Version 2.0.0</span>
+        <span>Doctor Queue</span>
       </div>
 
-      {/* Register Patient in OP Queue Modal */}
-      <AnimatePresence>
-        {showAdd && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={closeRegForm}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }}
-              className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden z-10 flex flex-col"
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 flex-shrink-0">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Register Patient in OP Queue</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">Collect doctor consultation fee, add to queue, print A5 receipt</p>
-                </div>
-                <button type="button" onClick={closeRegForm} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-                  <X size={20} />
-                </button>
+      <Modal
+        isOpen={!!detailsItem}
+        onClose={() => setDetailsItem(null)}
+        title="Visit full details"
+        subtitle={detailsItem ? `${detailsItem.patient?.name || 'Patient'} · ${tokenLabel(detailsItem.tokenNumber)}` : ''}
+        size="lg"
+      >
+        {detailsItem && (
+          <div className="opq-details">
+            <div className="opq-details-grid">
+              <div>
+                <div className="opq-details-k">Patient</div>
+                <div className="opq-details-v">{detailsItem.patient?.name || '—'}</div>
               </div>
-
-              <form onSubmit={handleSubmit((d) => registerMut.mutate(d))} className="flex flex-col overflow-hidden flex-1">
-                <div className="overflow-y-auto px-6 py-5 space-y-6">
-                  {/* Search Patient */}
-                  <div>
-                    <label className="text-sm font-bold text-slate-800 block mb-2">Search Patient</label>
-                    <div className="flex gap-3">
-                      <div className="relative flex-1">
-                        <input
-                          type="text" placeholder="Search by Name, UHID, Phone, Email..."
-                          value={patientSearch} onChange={handlePatientSearchChange}
-                          className="w-full pl-4 pr-11 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <button
-                          type="button"
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center transition-colors"
-                          onClick={() => {
-                            const term = patientSearch.trim();
-                            if (term.length < 2) return;
-                            if (patientSearchTimer.current) clearTimeout(patientSearchTimer.current);
-                            api.get(`/patients/search?q=${encodeURIComponent(term)}`)
-                              .then((r) => setPatients(r.data.data || []))
-                              .catch((err) => {
-                                setPatients([]);
-                                toast.error(err?.response?.data?.message || 'Patient search failed');
-                              })
-                              .finally(() => setPatientSearchDone(true));
-                          }}
-                        >
-                          <Search size={15} className="text-white" />
-                        </button>
-                        {patients.length > 0 && (
-                          <div className="absolute mt-1 w-full border border-slate-200 rounded-xl overflow-hidden shadow-lg bg-white z-30">
-                            {patients.map((p) => (
-                              <button key={p._id} type="button" onClick={() => pickPatient(p)}
-                                className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm transition-colors border-b border-slate-100 last:border-0">
-                                <span className="font-medium text-slate-900">{p.name}</span>
-                                <span className="text-slate-400 ml-2">{p.patientId} • {p.phone}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {patientSearchDone && patientSearch.trim().length >= 2 && !selectedPatient && patients.length === 0 && (
-                          <div className="absolute mt-1 w-full border border-slate-200 rounded-xl shadow-lg bg-white z-30 px-4 py-3 text-sm text-slate-500">
-                            No matching patient. Check the name, UHID, or phone, or use Add New Patient.
-                          </div>
-                        )}
-                      </div>
-                      <button type="button" onClick={() => setShowQuickAdd(true)}
-                        className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors whitespace-nowrap flex-shrink-0">
-                        <UserPlus size={16} /> Add New Patient
-                      </button>
-                    </div>
-                    <input type="hidden" {...register('patient', { required: true })} />
-                  </div>
-
-                  {/* Consultation Details */}
-                  <div>
-                    <div className="flex items-center gap-2 text-blue-600 mb-4 pb-2 border-b-2 border-blue-100">
-                      <Stethoscope size={16} />
-                      <h3 className="text-sm font-bold">Consultation Details</h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Doctor *</label>
-                        <div className="relative">
-                          <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <select {...register('doctor', { required: true })} className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-                            <option value="">Select Doctor</option>
-                            {doctors.map((d) => (
-                              <option key={d._id} value={d._id}>{formatDoctorName(d.name)}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Department *</label>
-                        <input type="hidden" {...register('department', { required: true })} />
-                        <div className="relative">
-                          <Building2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <select value={watch('department') || ''} onChange={(e) => setValue('department', e.target.value)} disabled={!!selectedDoctorId}
-                            className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:bg-slate-50 disabled:cursor-not-allowed">
-                            <option value="">Select Department</option>
-                            {departments.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Visit Type *</label>
-                        <div className="relative">
-                          <Footprints size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <select {...register('appointmentType', { required: true })} className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-                            <option value="walkin">Walk-in</option>
-                            <option value="appointment">Appointment</option>
-                            <option value="followup">Follow-up</option>
-                            <option value="emergency">Emergency</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {selectedDoctor && (
-                      <div className="mt-4 bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-2 text-sm text-blue-900">
-                        <h4 className="font-semibold flex items-center gap-1.5"><Stethoscope size={15} /> Doctor Consultation Details</h4>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <p className="text-slate-500">Consultation Fee (master)</p>
-                            <p className="font-semibold text-sm text-slate-900">₹{finiteFee(selectedDoctor.consultationFee) ?? finiteFee(selectedDept?.consultationFee) ?? 0}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500">Follow-up Fee (master)</p>
-                            <p className="font-semibold text-sm text-slate-900">
-                              ₹{finiteFee(selectedDoctor.followUpFee) ?? Math.round((finiteFee(selectedDoctor.consultationFee) ?? finiteFee(selectedDept?.consultationFee) ?? 0) * 0.5)}
-                            </p>
-                          </div>
-                          {selectedDoctor.qualification && (
-                            <div className="col-span-2">
-                              <p className="text-slate-500">Qualification & Specialization</p>
-                              <p className="font-medium text-slate-900">{selectedDoctor.qualification} {selectedDoctor.specialization && `(${selectedDoctor.specialization})`}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="mt-4 bg-emerald-50 rounded-xl p-4 border border-emerald-100">
-                      <div className="flex items-center gap-2 text-emerald-700 mb-3">
-                        <CreditCard size={15} />
-                        <h4 className="text-sm font-semibold">Consultation amount</h4>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 mb-1.5 flex items-center gap-1.5">
-                            <Pencil size={12} /> Amount (auto from doctor — edit here)
-                          </label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              placeholder={selectedDoctor ? String(consultFee) : 'Select doctor'}
-                              {...register('consultationFee', {
-                                onChange: (e) => applyConsultFee(e.target.value),
-                              })}
-                              className="w-full pl-7 pr-20 py-2.5 text-sm bg-white border border-emerald-300 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                            {feeIsEdited && (
-                              <button
-                                type="button"
-                                onClick={resetConsultFeeToMaster}
-                                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 px-2 py-1 rounded-lg"
-                              >
-                                Reset
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            {selectedDoctor
-                              ? `Master ₹${consultFee.toLocaleString('en-IN')}${surcharge > 0 ? ` + ₹${surcharge} emergency` : ''}${feeIsEdited ? ' · edited for this visit' : ''}`
-                              : 'Select a doctor — amount fills automatically. You can edit it on this form.'}
-                          </p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Amount paid</label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              {...register('paidAmount')}
-                              className="w-full pl-7 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            Total billed: ₹{billTotal.toLocaleString('en-IN')}
-                            {surcharge > 0 ? ` (includes ₹${surcharge} emergency)` : ''}
-                          </p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Payment mode</label>
-                          <select {...register('paymentMode')} className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                            <option value="cash">Cash</option>
-                            <option value="upi">UPI</option>
-                            <option value="card">Card</option>
-                            <option value="online">Online</option>
-                            <option value="cheque">Cheque</option>
-                            <option value="insurance">Insurance</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 block mb-1.5">Purpose of payment</label>
-                          <input
-                            {...register('paymentPurpose')}
-                            placeholder="Doctor consultation fee"
-                            className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4 mt-4">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Priority *</label>
-                        <div className="relative">
-                          <Flag size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <select {...register('priority', { required: true })} className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-                            <option value="normal">Normal</option>
-                            <option value="urgent">Urgent</option>
-                            <option value="emergency">Emergency</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Queue For *</label>
-                        <div className="relative">
-                          <ClipboardList size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <select {...register('queueFor', { required: true })} className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none">
-                            <option value="Consultation">Consultation</option>
-                            <option value="Procedure">Procedure</option>
-                            <option value="Lab">Lab (after doctor — not lab-only)</option>
-                            <option value="Pharmacy">Pharmacy</option>
-                            <option value="Follow-up">Follow-up</option>
-                          </select>
-                        </div>
-                        {queueFor === 'Lab' && (
-                          <p className="text-[11px] text-amber-700 mt-1.5 leading-snug">
-                            This still creates a <strong>consultation bill</strong>. Lab-only patients (no doctor): register in Patients, then Lab Orders — do not use OP Queue.
-                          </p>
-                        )}
-                      </div>
-                      <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 flex items-center gap-2.5">
-                        <Hourglass size={22} className="text-blue-500 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="text-[11px] text-blue-500 leading-tight">Expected Wait Time</p>
-                          <p className="text-sm font-bold text-blue-700 leading-tight truncate">{expectedWait}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Chief Complaint / Diagnosis (Optional)</label>
-                        <textarea {...register('chiefComplaint')} rows={3}
-                          placeholder="Enter main complaint, diagnosis, or reason for visit..."
-                          className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Ref By (Optional)</label>
-                        <div className="relative">
-                          <User size={15} className="absolute left-3 top-3 text-slate-400 pointer-events-none" />
-                          <input {...register('referredBy')} placeholder="Select referrer"
-                            className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Additional Information */}
-                  <div>
-                    <div className="flex items-center gap-2 text-blue-600 mb-4 pb-2 border-b-2 border-blue-100">
-                      <Link2 size={16} />
-                      <h3 className="text-sm font-bold">Additional Information</h3>
-                    </div>
-                    <div className="grid grid-cols-4 gap-4">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Date</label>
-                        <div className="relative">
-                          <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <input type="date" {...register('visitDate')} className="w-full pl-9 pr-2 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                        <p className="text-[11px] text-slate-400 mt-1">Past dates allowed (e.g. yesterday).</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Time</label>
-                        <div className="relative">
-                          <Clock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <input type="time" {...register('visitTime')} className="w-full pl-9 pr-2 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">Mobile Number</label>
-                        <div className="relative">
-                          <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <input {...register('mobileNumber')} placeholder="Enter mobile number"
-                            className="w-full pl-9 pr-2 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 block mb-1.5">UHID (Optional)</label>
-                        <div className="relative">
-                          <CreditCard size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                          <input {...register('uhid')} placeholder="Enter UHID"
-                            className="w-full pl-9 pr-2 py-2.5 text-sm bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Info banner */}
-                  <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-700">
-                    <Info size={16} className="mt-0.5 flex-shrink-0" />
-                    Patient is added to the doctor queue. Consultation fee comes from the doctor master. After payment, an A5 receipt prints with consultation only (no medicines or scans).
-                  </div>
+              <div>
+                <div className="opq-details-k">Token</div>
+                <div className="opq-details-v">{tokenLabel(detailsItem.tokenNumber)}</div>
+              </div>
+              <div>
+                <div className="opq-details-k">OP date &amp; time</div>
+                <div className="opq-details-v">
+                  {detailsItem.tokenDate || detailsItem.createdAt
+                    ? `${fmtDate(new Date(detailsItem.tokenDate || detailsItem.createdAt))} · ${fmtTime(detailsItem.tokenDate || detailsItem.createdAt)}`
+                    : '—'}
                 </div>
-
-                {/* Footer */}
-                <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 flex-shrink-0">
-                  <button type="button" onClick={resetRegForm}
-                    className="flex items-center gap-2 text-sm font-medium px-4 py-2.5 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors">
-                    <RotateCcw size={15} /> Reset Form
-                  </button>
-                  <div className="flex gap-3">
-                    <button type="button" onClick={closeRegForm}
-                      className="px-5 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
-                      Cancel
-                    </button>
-                    <button type="submit" disabled={registerMut.isPending}
-                      className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-sm shadow-blue-600/20">
-                      <Send size={15} /> {registerMut.isPending ? 'Adding...' : 'Add to Queue & Print A5'}
-                    </button>
-                  </div>
+              </div>
+              <div>
+                <div className="opq-details-k">UHID · Age / Sex</div>
+                <div className="opq-details-v">
+                  {detailsItem.patient?.patientId || '—'} · {detailsItem.patient?.age ?? '—'} / {detailsItem.patient?.gender || '—'}
                 </div>
-              </form>
-            </motion.div>
+              </div>
+              <div>
+                <div className="opq-details-k">Doctor</div>
+                <div className="opq-details-v">{formatDoctorName(detailsItem.doctor?.name)}</div>
+              </div>
+              <div>
+                <div className="opq-details-k">Department</div>
+                <div className="opq-details-v">{detailsItem.department?.name || '—'}</div>
+              </div>
+              <div>
+                <div className="opq-details-k">Status</div>
+                <div className="opq-details-v">{statusConfig[detailsItem.status]?.label || detailsItem.status}</div>
+              </div>
+              <div>
+                <div className="opq-details-k">Consultation bill</div>
+                <div className="opq-details-v">
+                  {(() => {
+                    const pay = billPayPill(detailsItem.bill);
+                    return (
+                      <span className={`opq-pay ${pay.cls}`} title={pay.detail}>
+                        <CreditCard size={13} />
+                        {pay.label}
+                        {pay.detail ? ` · ${pay.detail}` : ''}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+              <div>
+                <div className="opq-details-k">Complaint</div>
+                <div className="opq-details-v">{detailsItem.chiefComplaint || '—'}</div>
+              </div>
+            </div>
+
+            <div className="opq-details-block">
+              <div className="opq-details-k">Diagnosis</div>
+              <div className="opq-details-v">{detailsItem.diagnosis || 'Not recorded'}</div>
+            </div>
+            <div className="opq-details-block">
+              <div className="opq-details-k">Clinical notes</div>
+              <div className="opq-details-v">{detailsItem.consultationNotes || '—'}</div>
+            </div>
+            <div className="opq-details-block">
+              <div className="opq-details-k">Prescription (Pharmacy)</div>
+              {(detailsItem.rxNames || []).length ? (
+                <div className="opq-details-tags">
+                  {(detailsItem.rxNames || []).map((n) => (
+                    <span key={n} className="opq-details-tag opq-details-tag--rx">{n}</span>
+                  ))}
+                </div>
+              ) : (
+                <div className="opq-details-v">None</div>
+              )}
+            </div>
+            <div className="opq-details-block">
+              <div className="opq-details-k">Lab orders (Lab desk)</div>
+              {(detailsItem.labNames || []).length ? (
+                <div className="opq-details-tags">
+                  {(detailsItem.labNames || []).map((n) => <span key={n} className="opq-details-tag">{n}</span>)}
+                </div>
+              ) : (
+                <div className="opq-details-v">None</div>
+              )}
+            </div>
+            <div className="opq-details-block">
+              <div className="opq-details-k">Procedures</div>
+              {(detailsItem.procedureNames || []).length ? (
+                <div className="opq-details-tags">
+                  {(detailsItem.procedureNames || []).map((n) => (
+                    <span key={n} className="opq-details-tag opq-details-tag--proc">{n}</span>
+                  ))}
+                </div>
+              ) : (
+                <div className="opq-details-v">None</div>
+              )}
+            </div>
+
+            <div className="opq-details-actions">
+              {isActiveConsult(detailsItem) && (
+                <button
+                  type="button"
+                  className="opq-btn-add"
+                  onClick={() => { setDetailsItem(null); navigate(`/consultation/${detailsItem._id}`); }}
+                >
+                  <Stethoscope size={15} /> Open consultation
+                </button>
+              )}
+              <button type="button" className="opq-btn-export" onClick={() => setDetailsItem(null)}>
+                Close
+              </button>
+            </div>
           </div>
         )}
-      </AnimatePresence>
-
-      {/* Quick Add New Patient Modal (nested) */}
-      <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Add New Patient" size="md">
-        <form onSubmit={handleQuickSubmit((d) => quickAddMut.mutate(d))} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-              <input {...registerQuick('name', { required: true })} className="input-field" placeholder="Patient full name" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
-              <input {...registerQuick('phone', { required: true })} className="input-field" placeholder="Mobile number" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Age *</label>
-              <input {...registerQuick('age', { required: true, min: 0 })} type="number" className="input-field" placeholder="Age in years" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
-              <select {...registerQuick('gender', { required: true })} className="input-field">
-                <option value="">Select gender</option>
-                <option>Male</option>
-                <option>Female</option>
-                <option>Other</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input {...registerQuick('email')} type="email" className="input-field" placeholder="Email address" />
-            </div>
-          </div>
-          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
-            <button type="button" onClick={() => setShowQuickAdd(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={quickAddMut.isPending} className="btn-primary">
-              {quickAddMut.isPending ? 'Adding...' : 'Add Patient'}
-            </button>
-          </div>
-        </form>
       </Modal>
 
       <OPServiceUsageModal

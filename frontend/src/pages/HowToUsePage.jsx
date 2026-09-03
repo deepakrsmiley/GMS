@@ -81,9 +81,9 @@ export default function HowToUsePage() {
           <ol>
             <li>Reception: <Link to="/patients" className="text-blue-600">Patients</Link> — search phone/name/UHID. Register only if new.</li>
             <li>Optional: <Link to="/appointments" className="text-blue-600">Appointments</Link> for a future slot. On the day, still make an OP token.</li>
-            <li><Link to="/op-queue" className="text-blue-600">OP Registration</Link> — department + doctor. Token. Status = Waiting.</li>
+            <li><Link to="/op-registration" className="text-blue-600">OP Registration</Link> — department + doctor. Token. Status = Waiting.</li>
+            <li>Doctor: <Link to="/op-queue" className="text-blue-600">Doctor Queue</Link> → Consult → diagnosis, lab, procedures.</li>
             <li>Optional TV: <Link to="/queue-display" className="text-blue-600">TV Queue Display</Link>.</li>
-            <li>Doctor: same OP page → Doctor Queue → open patient → consultation (notes, Rx, lab, services).</li>
             <li>Need a bed? Admit from OP / IP — do not skip UHID.</li>
             <li>Pharmacist dispenses. Lab collects sample and enters results.</li>
             <li>Cashier: <Link to="/billing" className="text-blue-600">Billing</Link> — load unbilled charges, collect, print. Bill is last.</li>

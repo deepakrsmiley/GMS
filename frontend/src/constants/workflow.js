@@ -36,7 +36,7 @@ export const WORKFLOWS = {
     id: 'op',
     title: 'Outpatient',
     steps: [
-      { id: 'register', label: 'OP token', hint: 'Reception', to: '/op-queue' },
+      { id: 'register', label: 'OP token', hint: 'Reception', to: '/op-registration' },
       { id: 'wait', label: 'Waiting', hint: 'TV queue', to: '/queue-display' },
       { id: 'consult', label: 'Consultation', hint: 'Doctor', to: '/op-queue' },
       { id: 'rx', label: 'Rx / lab / services', hint: 'During consult', to: '/op-queue' },
@@ -112,7 +112,7 @@ export const ROLE_PLAYBOOKS = {
     title: 'Reception — your day',
     steps: [
       { label: 'Search UHID first', to: '/patients', detail: 'Never create a second file for the same person.' },
-      { label: 'Book appointment or OP token', to: '/op-queue', detail: 'Walk-in → OP Registration. Booked → Appointments then token.' },
+      { label: 'Book appointment or OP token', to: '/op-registration', detail: 'Walk-in → OP Registration. Booked → Appointments then token.' },
       { label: 'Admit only with a free bed', to: '/ip-admissions', detail: 'Emergency: still create UHID, then IP with type Emergency.' },
       { label: 'Discharge after bill is paid', to: '/ip-admissions', detail: 'Cashier settles Billing → Pending Discharge first.' },
     ],
@@ -196,6 +196,7 @@ export const playbookStepsForUser = (user) => {
     const segment = path.split('/').filter(Boolean)[0];
     const moduleMap = {
       patients: 'patients',
+      'op-registration': 'op',
       'op-queue': 'op',
       'queue-display': 'op',
       appointments: 'appointments',

@@ -267,10 +267,72 @@ exports.getTodaysQueue = asyncHandler(async (req, res) => {
     .populate('bill', 'billNumber paidAmount totalAmount dueAmount status paymentMode')
     .sort('-tokenNumber');
 
-  const enriched = queue.map((q) => ({
-    ...q.toObject(),
-    waitingMinutes: q.status === 'waiting' ? getWaitingMinutes(q) : 0,
-  }));
+  const opIds = queue.map((q) => q._id);
+  const [labDocs, rxDocs] = opIds.length
+    ? await Promise.all([
+      LabTest.find({
+        opRegistration: { $in: opIds },
+        status: { $ne: 'cancelled' },
+      })
+        .select('opRegistration testProfile profiles labNumber status labType createdAt')
+        .sort('createdAt'),
+      Prescription.find({
+        opRegistration: { $in: opIds },
+        status: { $ne: 'cancelled' },
+      })
+        .select('opRegistration medicines status')
+        .populate('medicines.medicine', 'name genericName'),
+    ])
+    : [[], []];
+
+  const labsByOp = new Map();
+  labDocs.forEach((lab) => {
+    const key = String(lab.opRegistration);
+    if (!labsByOp.has(key)) labsByOp.set(key, []);
+    labsByOp.get(key).push(lab);
+  });
+
+  const rxByOp = new Map();
+  rxDocs.forEach((rx) => {
+    const key = String(rx.opRegistration);
+    if (!rxByOp.has(key)) rxByOp.set(key, []);
+    rxByOp.get(key).push(rx);
+  });
+
+  const enriched = queue.map((q) => {
+    const obj = q.toObject();
+    const labs = labsByOp.get(String(q._id)) || [];
+    const labNames = [...new Set(
+      labs.flatMap((l) => {
+        const fromProfiles = Array.isArray(l.profiles) ? l.profiles : [];
+        const fromProfile = l.testProfile
+          ? String(l.testProfile).split(' + ').map((s) => s.trim()).filter(Boolean)
+          : [];
+        return [...fromProfiles, ...fromProfile];
+      }).filter(Boolean),
+    )];
+    const rxs = rxByOp.get(String(q._id)) || [];
+    const rxNames = [...new Set(
+      rxs.flatMap((rx) => (rx.medicines || []).map((m) => (
+        m.medicine?.name || m.medicineName || ''
+      ))).filter(Boolean),
+    )];
+    const procedures = (obj.serviceUsages || []).map((u) => ({
+      name: u.serviceName,
+      category: u.category,
+      quantity: u.quantity,
+      unitPrice: u.unitPrice,
+    }));
+    return {
+      ...obj,
+      waitingMinutes: q.status === 'waiting' ? getWaitingMinutes(q) : 0,
+      labs,
+      labNames,
+      rxNames,
+      procedureNames: procedures.map((p) => p.name).filter(Boolean),
+      procedures,
+    };
+  });
 
   const stats = {
     waiting: queue.filter((q) => q.status === 'waiting').length,
@@ -284,7 +346,21 @@ exports.getTodaysQueue = asyncHandler(async (req, res) => {
 });
 
 exports.getPendingPharmacy = asyncHandler(async (req, res) => {
-  const queue = await OPRegistration.find({ status: 'sent_to_pharmacy' })
+  // Patients the doctor sent to pharmacy, plus any visit that still has an active Rx.
+  const rxOpIds = await Prescription.distinct('opRegistration', {
+    opRegistration: { $ne: null },
+    status: { $nin: ['cancelled', 'dispensed'] },
+  });
+
+  const queue = await OPRegistration.find({
+    $or: [
+      { status: 'sent_to_pharmacy' },
+      {
+        _id: { $in: rxOpIds.filter(Boolean) },
+        status: { $nin: ['cancelled', 'no_show', 'discharged', 'pharmacy_completed', 'admitted'] },
+      },
+    ],
+  })
     .populate('patient', 'patientId name age gender phone allergies chronicConditions')
     .populate('doctor', 'name specialization')
     .populate('department', 'name')

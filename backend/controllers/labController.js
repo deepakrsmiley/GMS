@@ -214,7 +214,8 @@ exports.createLabTest = asyncHandler(async (req, res, next) => {
     const opDoc = await OPRegistration.findById(body.opRegistration).select('status');
     if (opDoc) {
       const patch = { $addToSet: { labTests: labTest._id } };
-      if (!['admitted', 'discharged', 'cancelled', 'no_show'].includes(opDoc.status)) {
+      // Keep pharmacy queue if Rx already sent; lab desk still sees the LabTest order.
+      if (!['admitted', 'discharged', 'cancelled', 'no_show', 'sent_to_pharmacy'].includes(opDoc.status)) {
         patch.$set = { status: 'sent_to_lab' };
       }
       await OPRegistration.updateOne({ _id: opDoc._id }, patch);

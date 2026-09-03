@@ -129,6 +129,26 @@ function PendingPharmacyPanel({ canDispense, canBillPharmacy }) {
     [manualCharges],
   );
 
+  const doctorRxLines = useMemo(() => {
+    const rows = [];
+    (visitDetail?.prescriptions || []).forEach((rx) => {
+      (rx.medicines || []).forEach((m, idx) => {
+        rows.push({
+          key: `${rx._id || 'rx'}-${m._id || idx}`,
+          medicineId: m.medicine?._id || m.medicine || '',
+          name: m.medicine?.name || m.medicineName || 'Medicine',
+          genericName: m.medicine?.genericName || '',
+          dosage: m.dosage || '',
+          frequency: m.frequency || '',
+          duration: m.duration || '',
+          quantity: Number(m.quantity) || 1,
+          instructions: m.instructions || '',
+        });
+      });
+    });
+    return rows;
+  }, [visitDetail?.prescriptions]);
+
   useEffect(() => {
     if (!selectedOpId && pending?.length) setSelectedOpId(pending[0]._id);
   }, [pending, selectedOpId]);
@@ -171,6 +191,61 @@ function PendingPharmacyPanel({ canDispense, canBillPharmacy }) {
     ]);
     setMedQuery("");
     setMedResults([]);
+  };
+
+  const loadDoctorRx = async () => {
+    if (!doctorRxLines.length) {
+      toast.error("No doctor prescription on this visit");
+      return;
+    }
+    const loaded = [];
+    for (const line of doctorRxLines) {
+      try {
+        let med = null;
+        let batchOpt = null;
+        if (line.medicineId) {
+          const r = await api.get(`/pharmacy/search?q=${encodeURIComponent(line.name)}`);
+          const found = (r.data.data || []).find((m) => String(m._id) === String(line.medicineId))
+            || (r.data.data || [])[0];
+          if (found) {
+            const opts = flattenMedicineBatchOptions([found]);
+            batchOpt = opts[0] || null;
+            med = found;
+          }
+        } else {
+          const r = await api.get(`/pharmacy/search?q=${encodeURIComponent(line.name)}`);
+          const found = (r.data.data || [])[0];
+          if (found) {
+            const opts = flattenMedicineBatchOptions([found]);
+            batchOpt = opts[0] || null;
+            med = found;
+          }
+        }
+        if (med && batchOpt) {
+          loaded.push({
+            medicine: med._id,
+            name: med.name,
+            genericName: med.genericName || "",
+            dosage: [line.dosage, line.frequency, line.duration].filter(Boolean).join(" · "),
+            quantity: line.quantity || 1,
+            unitPrice: Number(batchOpt.unitPrice || med.sellingPrice || 0),
+            mrp: Number(batchOpt.mrp || med.mrp || med.sellingPrice || 0),
+            gstPercent: Number(med.gstPercent || 0),
+            available: Number(batchOpt.available || med.currentStock || 0),
+            batchNumber: batchOpt.batchNumber || "",
+            expiryDate: batchOpt.expiryDate || null,
+          });
+        } else {
+          toast.error(`Not in stock: ${line.name}`);
+        }
+      } catch {
+        toast.error(`Could not load ${line.name}`);
+      }
+    }
+    if (loaded.length) {
+      setItems(loaded);
+      toast.success(`Loaded ${loaded.length} medicine(s) from doctor Rx`);
+    }
   };
 
   const updateItem = (index, patch) => {
@@ -485,6 +560,36 @@ function PendingPharmacyPanel({ canDispense, canBillPharmacy }) {
                 </p>
               </div>
             </div>
+
+            {doctorRxLines.length > 0 && (
+              <div className="mt-3 rounded-xl border border-orange-100 bg-orange-50/60 px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700 flex items-center gap-1.5">
+                    <Pill size={13} /> Doctor prescription
+                  </p>
+                  <button
+                    type="button"
+                    onClick={loadDoctorRx}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-orange-600 text-white hover:bg-orange-700"
+                  >
+                    Load into bill
+                  </button>
+                </div>
+                <ul className="space-y-1.5">
+                  {doctorRxLines.map((line) => (
+                    <li key={line.key} className="text-sm text-slate-800 flex justify-between gap-3">
+                      <span>
+                        <span className="font-medium">{line.name}</span>
+                        <span className="text-slate-500 text-xs ml-2">
+                          {[line.dosage, line.frequency, line.duration].filter(Boolean).join(" · ")}
+                        </span>
+                      </span>
+                      <span className="text-xs text-slate-500 shrink-0">Qty {line.quantity}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="px-5 py-2.5 bg-slate-50 border-b border-blue-50 text-[11px] text-slate-500 flex items-center gap-2">

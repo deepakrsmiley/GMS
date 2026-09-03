@@ -15,6 +15,7 @@ export const ALL_MODULE_IDS = HOSPITAL_MODULES.map((m) => m.id);
 
 export const ROUTE_TO_MODULE = {
   patients: 'patients',
+  'op-registration': 'op',
   'op-queue': 'op',
   consultation: 'op',
   'queue-display': 'op',
