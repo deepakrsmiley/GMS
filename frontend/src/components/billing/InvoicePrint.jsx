@@ -139,7 +139,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
 
   if (!data) return null;
 
-  const primaryColor = branding.primaryColor || '#1a6b3c';
+  const primaryColor = branding.primaryColor || '#4338ca';
   const textColor = getContrastColor(primaryColor);
   const lightColor = primaryColor + '15';
   const isA5 = paperSize === 'A5';
@@ -247,10 +247,10 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
             {/* Left */}
             <div style={{ display:'flex', gap:16, alignItems:'center', flex:1 }}>
               {branding.logo
-                ? <img src={branding.logo} alt="" style={{ width:72, height:72, objectFit:'contain' }}/>
+                ? <img src={branding.logo} alt="" style={{ width:88, height:88, objectFit:'contain' }}/>
                 : (
                   <div style={{
-                    width:72, height:72, background:lightColor,
+                    width:88, height:88, background:lightColor,
                     border:`2px solid ${primaryColor}`, borderRadius:8,
                     display:'flex', alignItems:'center', justifyContent:'center',
                     fontWeight:400, fontSize:11, color:primaryColor, textAlign:'center',
@@ -261,7 +261,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
                 )
               }
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:24, fontWeight:500, color:primaryColor, lineHeight:1.1, letterSpacing:'-0.5px' }}>
+                <div style={{ fontSize:28, fontWeight:600, color:primaryColor, lineHeight:1.1, letterSpacing:'-0.5px' }}>
                   {branding.hospitalName || 'Healthcare Center'}
                 </div>
                 <div style={{ fontSize:12, color:'#374151', marginTop:4, fontWeight:400 }}>

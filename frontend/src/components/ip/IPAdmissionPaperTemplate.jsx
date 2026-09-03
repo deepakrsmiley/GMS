@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
 import '../../styles/ipAdmissionPrint.css';
-import { GmsDevelopedPrintLine } from '../branding/GmsDevelopedBar';
 
 /**
  * IPAdmissionPaperTemplate — A4 inpatient admission slip.
@@ -159,7 +158,6 @@ export default function IPAdmissionPaperTemplate({ branding, admission }) {
             <div className="ip-logo-fallback" aria-hidden>H</div>
           )}
           <div className="ip-header-titles">
-            <GmsDevelopedPrintLine />
             <div className="ip-hospital-name">{hospitalName}</div>
             {taglineLines.length > 0 && (
               <div className="ip-taglines">

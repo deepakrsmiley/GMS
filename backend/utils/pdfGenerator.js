@@ -5,7 +5,7 @@ const { generatePremiumInvoicePDF, generatePremiumThermalPrint } = require('./in
 
 const PAGE = { width: 595.28, height: 841.89 };
 const MARGIN = 45;
-const BLUE = '#1e40af';
+const BLUE = '#4338ca';
 const TEXT_MUTED = '#64748b';
 const TEXT_DARK = '#1e3a5f';
 
@@ -142,13 +142,13 @@ const generateLabReportPDF = async (labTest, res, branding) => {
   const headerTop = doc.y;
   if (logoBuffer) {
     try {
-      doc.image(logoBuffer, margin, headerTop, { fit: [44, 44], align: 'center', valign: 'center' });
+      doc.image(logoBuffer, margin, headerTop, { fit: [58, 58], align: 'center', valign: 'center' });
     } catch { /* skip invalid logo */ }
   }
 
-  const headerTextX = logoBuffer ? margin + 54 : margin;
-  const headerTextWidth = logoBuffer ? contentWidth - 54 : contentWidth;
-  doc.font('Helvetica-Bold').fontSize(15.5).fillColor(brandColor)
+  const headerTextX = logoBuffer ? margin + 68 : margin;
+  const headerTextWidth = logoBuffer ? contentWidth - 68 : contentWidth;
+  doc.font('Helvetica-Bold').fontSize(18).fillColor(brandColor)
     .text(b.hospitalName || 'Hospital Name', headerTextX, headerTop, { width: headerTextWidth, align: logoBuffer ? 'left' : 'center' });
   if (b.tagline) {
     doc.font('Helvetica-Oblique').fontSize(7.2).fillColor('#475569')
@@ -165,7 +165,7 @@ const generateLabReportPDF = async (labTest, res, branding) => {
       .text(accreditationLine, headerTextX, doc.y + 1, { width: headerTextWidth, align: logoBuffer ? 'left' : 'center' });
   }
 
-  doc.y = Math.max(doc.y, headerTop + (logoBuffer ? 46 : 36)) + 6;
+  doc.y = Math.max(doc.y, headerTop + (logoBuffer ? 60 : 40)) + 6;
   doc.roundedRect(margin, doc.y, contentWidth, 20, 4).fillAndStroke(brandColor, brandColor);
   doc.font('Helvetica-Bold').fontSize(10.5).fillColor('white')
     .text('LABORATORY RESULT REPORT', margin, doc.y + 5.5, { width: contentWidth, align: 'center' });
@@ -460,7 +460,7 @@ const drawDischargePageFrame = (doc) => {
   const w = PAGE.width - DS_MARGIN * 2;
   const h = PAGE.height - DS_MARGIN * 2;
   doc.save();
-  doc.lineWidth(1.5).strokeColor('#1e3a8a').rect(x, y, w, h).stroke();
+  doc.lineWidth(1.5).strokeColor('#312e81').rect(x, y, w, h).stroke();
   doc.lineWidth(0.6).strokeColor('#93c5fd').rect(x + 3.5, y + 3.5, w - 7, h - 7).stroke();
   doc.restore();
   doc.x = DS_MARGIN + DS_INNER;

@@ -42,6 +42,7 @@ function numberToWords(num) {
 
 export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
   const { branding } = useBranding();
+  const brandColor = branding.primaryColor || '#4338ca';
   const data = sale || bill;
 
   if (!data) return null;
@@ -79,12 +80,12 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
       {/* Toolbar */}
       <div style={{
         position:'fixed',top:0,left:0,right:0,zIndex:10001,
-        background:'#1a6b3c',display:'flex',gap:10,padding:'8px 16px',
+        background:brandColor,display:'flex',gap:10,padding:'8px 16px',
         justifyContent:'flex-end'
       }}>
         <button onClick={() => window.print()} style={{
           display:'flex',alignItems:'center',gap:6,padding:'6px 18px',
-          background:'#fff',color:'#1a6b3c',border:'none',borderRadius:6,
+          background:'#fff',color:brandColor,border:'none',borderRadius:6,
           fontWeight:700,fontSize:13,cursor:'pointer'
         }}>
           <Printer size={15}/> Print
@@ -107,27 +108,27 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
         {/* Invoice Root */}
         <div id="ph-invoice-print" style={{
           background:'#fff',width:794,fontFamily:'Arial, sans-serif',
-          fontSize:11,color:'#111',border:'2px solid #1a6b3c',
+          fontSize:11,color:'#111',border:'2px solid #4338ca',
           boxShadow:'0 4px 32px rgba(0,0,0,0.25)'
         }}>
 
           {/* ═══ HEADER ═══ */}
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px 8px',borderBottom:'2px solid #1a6b3c'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px 8px',borderBottom:`2px solid ${branding.primaryColor || '#4338ca'}`}}>
             {/* Left: logo + name + address */}
-            <div style={{display:'flex',gap:10,alignItems:'center'}}>
+            <div style={{display:'flex',gap:12,alignItems:'center'}}>
               {branding.logo ? (
-                <img src={branding.logo} alt="" style={{width:64,height:64,objectFit:'contain'}}/>
+                <img src={branding.logo} alt="" style={{width:80,height:80,objectFit:'contain'}}/>
               ) : (
-                <div style={{width:64,height:64,background:'#e8f5e9',border:'2px solid #1a6b3c',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:10,color:'#1a6b3c',textAlign:'center',padding:2}}>
+                <div style={{width:80,height:80,background:'#eef2ff',border:`2px solid ${branding.primaryColor || '#4338ca'}`,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:11,color:branding.primaryColor || '#4338ca',textAlign:'center',padding:2}}>
                   MEDI<br/>CARE
                 </div>
               )}
               <div>
-                <div style={{fontSize:26,fontWeight:900,color:'#1a6b3c',lineHeight:1.1}}>
+                <div style={{fontSize:30,fontWeight:900,color:branding.primaryColor || '#4338ca',lineHeight:1.1}}>
                   {branding.hospitalName || 'MediCare'}
                 </div>
                 {branding.tagline && (
-                  <div style={{fontSize:13,fontWeight:700,color:'#1a6b3c'}}>{branding.tagline}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:branding.primaryColor || '#4338ca'}}>{branding.tagline}</div>
                 )}
                 <div style={{fontSize:10.5,color:'#333',marginTop:3,display:'flex',gap:4,alignItems:'center'}}>
                   <span>📍</span>
@@ -143,10 +144,10 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
 
             {/* Right: promo box */}
             <div style={{
-              border:'2px solid #1a6b3c',borderRadius:8,padding:'10px 18px',
+              border:`2px solid ${branding.primaryColor || '#4338ca'}`,borderRadius:8,padding:'10px 18px',
               textAlign:'center',minWidth:120
             }}>
-              <div style={{fontSize:13,fontWeight:800,color:'#1a6b3c',whiteSpace:'nowrap'}}>
+              <div style={{fontSize:13,fontWeight:800,color:branding.primaryColor || '#4338ca',whiteSpace:'nowrap'}}>
                 Buy 1 Get 1 Free
               </div>
             </div>
@@ -174,7 +175,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                 <span style={{fontWeight:800}}>GSTIN : N/A</span>
               )}
             </div>
-            <div style={{fontSize:17,fontWeight:900,color:'#1a6b3c',letterSpacing:'0.06em',textAlign:'center',padding:'0 24px'}}>
+            <div style={{fontSize:17,fontWeight:900,color:brandColor,letterSpacing:'0.06em',textAlign:'center',padding:'0 24px'}}>
               TAX INVOICE
             </div>
             <div style={{fontSize:11,fontWeight:700,textAlign:'right'}}>
@@ -187,7 +188,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
             {/* Customer box */}
             <div style={{borderRight:'1px solid #888'}}>
               <div style={{
-                background:'#1a6b3c',color:'#fff',fontWeight:700,
+                background:brandColor,color:'#fff',fontWeight:700,
                 fontSize:11,textAlign:'center',padding:'4px'
               }}>Customer Detail</div>
               <div style={{padding:'6px 10px'}}>
@@ -218,7 +219,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                     {data.patient?.patientId && (
                       <tr>
                         <td style={{fontWeight:700,paddingBottom:2}}>UHID</td>
-                        <td style={{paddingBottom:2,fontFamily:"ui-monospace,monospace",fontWeight:700,color:'#1d4ed8'}}>{data.patient.patientId}</td>
+                        <td style={{paddingBottom:2,fontFamily:"ui-monospace,monospace",fontWeight:700,color:'#3730a3'}}>{data.patient.patientId}</td>
                       </tr>
                     )}
                     {branding.gstNumber && (
@@ -254,7 +255,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
           {/* ═══ ITEMS TABLE ═══ */}
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:10,borderBottom:'1px solid #888'}}>
             <thead>
-              <tr style={{background:'#1a6b3c',color:'#fff'}}>
+              <tr style={{background:brandColor,color:'#fff'}}>
                 <th style={TH}>Sr.<br/>No.</th>
                 <th style={{...TH,textAlign:'left',width:'22%'}}>Name of Product / Service</th>
                 <th style={TH}>Batch No</th>
@@ -316,7 +317,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                 <td style={TD_C}></td>
                 <td style={TD_R}><b>{fmt2(taxableValue - totalGst > 0 ? taxableValue - totalGst : taxableValue)}</b></td>
                 <td style={TD_C} colSpan={2}></td>
-                <td style={{...TD_R,fontSize:13,fontWeight:900,color:'#1a6b3c'}}>
+                <td style={{...TD_R,fontSize:13,fontWeight:900,color:brandColor}}>
                   {fmtINR(grandTotal)}
                 </td>
               </tr>
@@ -425,7 +426,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                     fontSize:7,color:'#888',flexShrink:0,
                     background:'repeating-linear-gradient(45deg,#f0f0f0,#f0f0f0 2px,#fff 2px,#fff 8px)'
                   }}>QR</div>
-                  <div style={{fontSize:10,fontWeight:700,color:'#1a6b3c'}}>Pay using UPI</div>
+                  <div style={{fontSize:10,fontWeight:700,color:brandColor}}>Pay using UPI</div>
                 </div>
               </div>
             </div>
@@ -436,7 +437,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                 Certified that the particulars given above are<br/>true and correct.
               </div>
               <div>
-                <div style={{fontWeight:800,fontSize:12,color:'#1a6b3c',marginTop:16}}>
+                <div style={{fontWeight:800,fontSize:12,color:brandColor,marginTop:16}}>
                   For {branding.hospitalName || 'Medicare Wholesale Pharmacy'}
                 </div>
                 <div style={{fontSize:10,color:'#555',marginTop:32,borderTop:'1px solid #aaa',paddingTop:4}}>
@@ -490,7 +491,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
             left: 0 !important; top: 0 !important;
             width: 100% !important;
             box-shadow: none !important;
-            border: 2px solid #1a6b3c !important;
+            border: 2px solid #4338ca !important;
             z-index: 99999;
           }
         }

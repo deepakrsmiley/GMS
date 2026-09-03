@@ -56,9 +56,9 @@
 }
 
 .tvq-logo {
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 0.5rem;
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 0.65rem;
   object-fit: cover;
   background: #fff;
   border: 2px solid rgba(255, 255, 255, 0.25);
@@ -79,7 +79,7 @@
 }
 
 .tvq-hospital-name {
-  font-size: 1.45rem;
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -500,7 +500,7 @@
   white-space: nowrap;
 }
 
-.tvq-badge--waiting { background: #dbeafe; color: #1e40af; }
+.tvq-badge--waiting { background: #e0e7ff; color: #4338ca; }
 .tvq-badge--in_consultation { background: #ccfbf1; color: #0f766e; }
 .tvq-badge--consultation_completed { background: #ede9fe; color: #6d28d9; }
 .tvq-badge--completed { background: #e2e8f0; color: #475569; }
@@ -508,7 +508,7 @@
 .tvq-badge--pharmacy_completed { background: #e2e8f0; color: #475569; }
 .tvq-badge--sent_to_lab { background: #fef3c7; color: #b45309; }
 .tvq-badge--admitted { background: #cffafe; color: #0e7490; }
-.tvq-badge--pending { background: #dbeafe; color: #1e40af; }
+.tvq-badge--pending { background: #e0e7ff; color: #4338ca; }
 .tvq-badge--sample_collected { background: #fef3c7; color: #b45309; }
 .tvq-badge--processing { background: #f3e8ff; color: #7e22ce; }
 .tvq-badge--cancelled { background: #e2e8f0; color: #64748b; }
@@ -617,7 +617,7 @@
 }
 
 .tvq-doc-status--consult { background: #ccfbf1; color: #0f766e; }
-.tvq-doc-status--available { background: #dbeafe; color: #1e40af; }
+.tvq-doc-status--available { background: #e0e7ff; color: #4338ca; }
 .tvq-doc-status--free { background: #f1f5f9; color: #64748b; }
 
 .tvq-doc-meta {
@@ -653,7 +653,7 @@
   color: var(--tvq-text);
 }
 
-.tvq-announce-text--op { color: #1e40af; }
+.tvq-announce-text--op { color: #4338ca; }
 .tvq-announce-text--lab { color: #0f766e; }
 .tvq-announce-text--pharma { color: #6b21a8; }
 .tvq-announce-text--sched { color: #c2410c; }
@@ -684,7 +684,7 @@
 }
 
 .tvq-voice-icon--active {
-  background: #dbeafe;
+  background: #e0e7ff;
   animation: tvq-soft-pulse 1.8s ease-in-out infinite;
 }
 

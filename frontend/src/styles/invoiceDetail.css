@@ -1,12 +1,12 @@
 /* Corporate Invoice Details modal */
 .inv-detail {
-  --id-navy: #1e40af;
-  --id-accent: #2563eb;
+  --id-navy: #4338ca;
+  --id-accent: #4338ca;
   --id-ink: #0f172a;
   --id-muted: #64748b;
   --id-line: #e2e8f0;
   --id-soft: #f8fafc;
-  --id-blue-soft: #eff6ff;
+  --id-blue-soft: #eef2ff;
   --id-ok: #059669;
   --id-warn: #d97706;
   --id-danger: #dc2626;
@@ -20,7 +20,7 @@
   --id-muted: #94a3b8;
   --id-line: #334155;
   --id-soft: #0f172a;
-  --id-blue-soft: rgba(37, 99, 235, 0.12);
+  --id-blue-soft: rgba(67, 56, 202, 0.12);
 }
 
 .inv-detail__hero {
@@ -30,7 +30,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 20px 24px;
-  background: linear-gradient(135deg, #1e40af 0%, #2563eb 55%, #3b82f6 100%);
+  background: linear-gradient(135deg, #4338ca 0%, #4338ca 55%, #6366f1 100%);
   color: #fff;
 }
 
@@ -276,7 +276,7 @@
 
 .inv-detail__btn:hover {
   background: var(--id-blue-soft);
-  border-color: #bfdbfe;
+  border-color: #c7d2fe;
   color: var(--id-navy);
 }
 

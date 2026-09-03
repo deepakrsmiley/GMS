@@ -15,7 +15,7 @@ export default function GmsDevelopedBar({ superAdmin = false, clientHospital = f
 
 export function GmsDevelopedMark({ className = '' }) {
   return (
-    <p className={`text-[10px] font-semibold uppercase tracking-wider text-blue-600 ${className}`}>
+    <p className={`text-[10px] font-semibold uppercase tracking-wider text-white/70 ${className}`}>
       {DEVELOPED_BY_LABEL}
     </p>
   );
@@ -24,14 +24,32 @@ export function GmsDevelopedMark({ className = '' }) {
 export function GmsDevelopedPrintLine() {
   return (
     <div style={{
-      fontSize: 9,
-      letterSpacing: '0.12em',
-      textTransform: 'uppercase',
-      color: '#64748b',
-      fontWeight: 600,
-      marginBottom: 4,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 8,
+      paddingBottom: 6,
+      borderBottom: '1px solid #e2e8f0',
     }}>
-      {DEVELOPED_BY_LABEL}
+      <img
+        src={SOFTWARE_LOGO}
+        alt=""
+        style={{ height: 36, width: 'auto', objectFit: 'contain' }}
+      />
+      <div>
+        <div style={{
+          fontSize: 10,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: '#2563eb',
+          fontWeight: 700,
+        }}>
+          {DEVELOPED_BY_LABEL}
+        </div>
+        <div style={{ fontSize: 9, color: '#64748b', fontWeight: 600 }}>
+          Galactic Medical Systems
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 /* Corporate notifications panel */
 .hms-notif {
-  --n-accent: #2563eb;
+  --n-accent: #4338ca;
   --n-border: #e5e7eb;
   --n-muted: #6b7280;
   --n-text: #111827;
@@ -71,7 +71,7 @@
 }
 
 .hms-notif__actions button:hover {
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(67, 56, 202, 0.08);
 }
 
 .hms-notif__list {
@@ -100,11 +100,11 @@
 }
 
 .hms-notif__item:hover {
-  background: rgba(37, 99, 235, 0.06);
+  background: rgba(67, 56, 202, 0.06);
 }
 
 .hms-notif__item.is-unread {
-  background: rgba(37, 99, 235, 0.05);
+  background: rgba(67, 56, 202, 0.05);
   box-shadow: inset 3px 0 0 var(--n-accent);
 }
 
@@ -124,8 +124,8 @@
   letter-spacing: 0.04em;
   padding: 2px 7px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: #eef2ff;
+  color: #3730a3;
 }
 
 .hms-notif__chip.pharmacy,
@@ -138,7 +138,7 @@
 .hms-notif__chip.asset { background: #f3e8ff; color: #7e22ce; }
 .hms-notif__chip.system,
 .hms-notif__chip.error { background: #fef2f2; color: #b91c1c; }
-.hms-notif__chip.chat { background: #eff6ff; color: #1d4ed8; }
+.hms-notif__chip.chat { background: #eef2ff; color: #3730a3; }
 
 .hms-notif__time {
   font-size: 10px;

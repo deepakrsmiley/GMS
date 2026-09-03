@@ -1,7 +1,7 @@
 /* Corporate HMS Chat panel */
 .hms-chat {
-  --chat-accent: #2563eb;
-  --chat-accent-soft: #eff6ff;
+  --chat-accent: #4338ca;
+  --chat-accent-soft: #eef2ff;
   --chat-border: #e5e7eb;
   --chat-muted: #6b7280;
   --chat-text: #111827;
@@ -30,7 +30,7 @@
   --chat-text: #f9fafb;
   --chat-surface: #1f2937;
   --chat-rail: #111827;
-  --chat-accent-soft: rgba(37, 99, 235, 0.15);
+  --chat-accent-soft: rgba(67, 56, 202, 0.15);
 }
 
 .hms-chat__close {
@@ -95,7 +95,7 @@
 }
 
 .hms-chat__tab:hover {
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(67, 56, 202, 0.08);
   color: var(--chat-accent);
 }
 
@@ -174,11 +174,11 @@
 
 .hms-chat__msg.is-mine .hms-chat__bubble {
   background: var(--chat-accent-soft);
-  border-color: rgba(37, 99, 235, 0.25);
+  border-color: rgba(67, 56, 202, 0.25);
 }
 
 .hms-chat__msg.is-mention .hms-chat__bubble {
-  border-color: rgba(37, 99, 235, 0.45);
+  border-color: rgba(67, 56, 202, 0.45);
   box-shadow: inset 3px 0 0 var(--chat-accent);
 }
 
@@ -317,7 +317,7 @@
 
 .hms-chat__input:focus {
   border-color: var(--chat-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 3px rgba(67, 56, 202, 0.15);
 }
 
 .hms-chat__send {

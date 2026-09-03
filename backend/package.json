@@ -9,6 +9,7 @@
     "seed:gms-admin": "node scripts/seedGmsSuperAdmin.js",
     "verify:hospital-counts": "node scripts/verifyHospitalCounts.js",
     "import:srinivasa-stock": "node scripts/importSrinivasaStock.js",
+    "apply:soft-indigo": "node scripts/applySoftIndigoBranding.js",
     "fix:tenant-indexes": "node scripts/fixTenantUniqueIndexes.js"
   },
   "dependencies": {

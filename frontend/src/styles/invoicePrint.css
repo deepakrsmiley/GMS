@@ -1,9 +1,9 @@
 /* White & blue corporate hospital invoice */
 
 .invoice-print-root {
-  --inv-primary: #1e40af;
-  --inv-blue-light: #eff6ff;
-  --inv-blue-border: #bfdbfe;
+  --inv-primary: #4338ca;
+  --inv-blue-light: #eef2ff;
+  --inv-blue-border: #c7d2fe;
   --inv-text: #1e3a5f;
   --inv-muted: #64748b;
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;

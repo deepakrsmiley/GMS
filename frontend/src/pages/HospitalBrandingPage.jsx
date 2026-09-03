@@ -24,7 +24,7 @@ export default function HospitalBrandingPage() {
         gstNumber: branding.gstNumber,
         nabhAccreditation: branding.nabhAccreditation,
         nablAccreditation: branding.nablAccreditation,
-        primaryColor: branding.primaryColor || '#2563eb',
+        primaryColor: branding.primaryColor || '#4338ca',
         invoiceTerms: branding.invoiceTerms,
         paymentUrl: branding.paymentUrl,
         footerNote: branding.footerNote,
@@ -69,7 +69,7 @@ export default function HospitalBrandingPage() {
   const phone = watch('phone');
   const gstNumber = watch('gstNumber');
   const nabh = watch('nabhAccreditation');
-  const primaryColor = watch('primaryColor') || '#2563eb';
+  const primaryColor = watch('primaryColor') || '#4338ca';
   const footerNote = watch('footerNote');
   const bankName = watch('bankName');
   const bankBranch = watch('bankBranch');
@@ -95,7 +95,7 @@ export default function HospitalBrandingPage() {
           <h2 className="hb-head__title">Hospital Branding</h2>
           <p className="hb-head__sub">
             This identity belongs to the client hospital, not to GMS.
-            Sri Sanjeevi bills keep the Sri Sanjeevi name. GMS developed stays at the top.
+            Sri Sanjeevi bills keep the Sri Sanjeevi name.
           </p>
         </div>
       </div>
@@ -194,7 +194,7 @@ export default function HospitalBrandingPage() {
                     className="hb-field"
                     value={primaryColor}
                     onChange={(e) => setValue('primaryColor', e.target.value)}
-                    placeholder="#2563eb"
+                    placeholder="#4338ca"
                   />
                 </div>
               </div>

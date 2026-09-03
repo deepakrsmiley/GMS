@@ -260,18 +260,18 @@ export default function OPConsultationReceipt({ bill, op, onClose }) {
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             {branding.logo ? (
-              <img src={branding.logo} alt="" style={{ width: 52, height: 52, objectFit: 'contain' }} />
+              <img src={branding.logo} alt="" style={{ width: 68, height: 68, objectFit: 'contain' }} />
             ) : (
               <div style={{
-                width: 52,
-                height: 52,
+                width: 68,
+                height: 68,
                 border: '1.5px solid #111',
                 borderRadius: '50%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: 800,
-                fontSize: 13,
+                fontSize: 14,
               }}
               >
                 {hospitalName.slice(0, 2).toUpperCase()}
@@ -280,7 +280,7 @@ export default function OPConsultationReceipt({ bill, op, onClose }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
                 fontFamily: "'Times New Roman', Times, serif",
-                fontSize: 26,
+                fontSize: 30,
                 fontWeight: 700,
                 lineHeight: 1.1,
                 color: '#111',

@@ -3,11 +3,11 @@
 .rb-shell {
   --rb-ink: #1e293b;
   --rb-muted: #64748b;
-  --rb-line: #dbeafe;
+  --rb-line: #e0e7ff;
   --rb-surface: #ffffff;
-  --rb-canvas: #eff6ff;
-  --rb-navy: #2563eb;
-  --rb-accent: #2563eb;
+  --rb-canvas: #eef2ff;
+  --rb-navy: #4338ca;
+  --rb-accent: #4338ca;
   font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
   color: var(--rb-ink);
 }
@@ -18,8 +18,8 @@
   --rb-line: #1e3a5f;
   --rb-surface: #1e293b;
   --rb-canvas: #0f172a;
-  --rb-navy: #3b82f6;
-  --rb-accent: #3b82f6;
+  --rb-navy: #6366f1;
+  --rb-accent: #6366f1;
 }
 
 .rb-shell * {
@@ -250,7 +250,7 @@
 }
 
 .rb-table tbody tr:hover {
-  background: #eff6ff;
+  background: #eef2ff;
 }
 
 .dark .rb-table tbody tr:hover {
@@ -284,7 +284,7 @@
 .rb-badge--occupied { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
 .rb-badge--cleaning { background: #fffbeb; border-color: #fde68a; color: #b45309; }
 .rb-badge--maintenance { background: #f8fafc; border-color: #cbd5e1; color: #475569; }
-.rb-badge--reserved { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+.rb-badge--reserved { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
 
 .rb-label {
   display: block;

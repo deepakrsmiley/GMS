@@ -8,13 +8,13 @@
   --pbr-canvas: #f1f5f9;
   --pbr-navy: #0b1f3a;
   --pbr-navy-mid: #132a4a;
-  --pbr-accent: #1d4ed8;
-  --pbr-accent-soft: #eff6ff;
+  --pbr-accent: #3730a3;
+  --pbr-accent-soft: #eef2ff;
   --pbr-positive: #047857;
   --pbr-negative: #b91c1c;
   --pbr-warn: #b45309;
   --pbr-morning: #b45309;
-  --pbr-night: #1e3a8a;
+  --pbr-night: #312e81;
   font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
   color: var(--pbr-ink);
   max-width: 1600px;
@@ -31,7 +31,7 @@
   --pbr-canvas: #0f172a;
   --pbr-navy: #0b1220;
   --pbr-navy-mid: #152238;
-  --pbr-accent: #3b82f6;
+  --pbr-accent: #6366f1;
   --pbr-accent-soft: #1e3a5f;
 }
 
@@ -456,9 +456,9 @@
 }
 
 .pbr-badge--night {
-  background: #eff6ff;
+  background: #eef2ff;
   color: var(--pbr-night);
-  border: 1px solid #bfdbfe;
+  border: 1px solid #c7d2fe;
 }
 
 .pbr-badge--paid {
@@ -627,7 +627,7 @@
 }
 
 .pbr-mode-pill--cash { background: #f0fdf4; border-color: #bbf7d0; }
-.pbr-mode-pill--upi { background: #eff6ff; border-color: #bfdbfe; }
+.pbr-mode-pill--upi { background: #eef2ff; border-color: #c7d2fe; }
 .pbr-mode-pill--card { background: #f5f3ff; border-color: #ddd6fe; }
 
 .pbr-mode-pill .val {
@@ -800,7 +800,7 @@
 }
 
 .pbr-mode--cash { background: #dcfce7; color: #15803d; }
-.pbr-mode--card { background: #dbeafe; color: #1d4ed8; }
+.pbr-mode--card { background: #e0e7ff; color: #3730a3; }
 .pbr-mode--upi { background: #ede9fe; color: #6d28d9; }
 .pbr-mode--cheque, .pbr-mode--insurance, .pbr-mode--online, .pbr-mode--multiple, .pbr-mode--other {
   background: #f1f5f9;

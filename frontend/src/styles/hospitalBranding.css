@@ -3,11 +3,11 @@
 .hb-shell {
   --hb-ink: #1e293b;
   --hb-muted: #64748b;
-  --hb-line: #dbeafe;
+  --hb-line: #e0e7ff;
   --hb-surface: #ffffff;
-  --hb-canvas: #eff6ff;
-  --hb-accent: #2563eb;
-  --hb-accent-hover: #1d4ed8;
+  --hb-canvas: #eef2ff;
+  --hb-accent: #4338ca;
+  --hb-accent-hover: #3730a3;
   font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
   color: var(--hb-ink);
 }
@@ -18,8 +18,8 @@
   --hb-line: #1e3a5f;
   --hb-surface: #1e293b;
   --hb-canvas: #0f172a;
-  --hb-accent: #3b82f6;
-  --hb-accent-hover: #60a5fa;
+  --hb-accent: #6366f1;
+  --hb-accent-hover: #818cf8;
 }
 
 .hb-head {
@@ -145,7 +145,7 @@
 .hb-field:focus {
   outline: none;
   border-color: var(--hb-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.15);
 }
 
 .hb-logo-row {

@@ -46,7 +46,7 @@ function openPrintWindow(title, html) {
       .pbr-summary{display:flex;gap:20px;background:#0b1f3a;color:#fff;padding:12px 16px;margin-bottom:14px}
       .pbr-mode{display:inline-block;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;border-radius:10px}
       .pbr-mode--cash{background:#dcfce7;color:#15803d}
-      .pbr-mode--card{background:#dbeafe;color:#1d4ed8}
+      .pbr-mode--card{background:#dbeafe;color:#3730a3}
       .pbr-mode--upi{background:#ede9fe;color:#6d28d9}
       .no-print{display:none !important}
       .print-only{display:table-row-group}

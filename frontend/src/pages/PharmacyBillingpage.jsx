@@ -30,7 +30,7 @@ function calcTotals(items) {
 }
 
 // ── Shift: Morning 7AM-7PM | Night 7PM-7AM ───────────────────
-const SHIFT_COLORS = { morning: "#f59e0b", night: "#1e40af" };
+const SHIFT_COLORS = { morning: "#f59e0b", night: "#4338ca" };
 const SHIFT_LABELS = {
   morning: "Morning  7AM - 7PM",
   night: "Night  7PM - 7AM",
@@ -342,7 +342,7 @@ function ShiftReport() {
         td { padding: 7px 10px; border-top: 1px solid #e2e8f0; font-size: 12px; }
         .green { color: #16a34a; } .red { color: #dc2626; }
         .badge { display:inline-block; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:700; color:#fff; }
-        .morning { background:#f59e0b; } .night { background:#1e40af; }
+        .morning { background:#f59e0b; } .night { background:#4338ca; }
         @media print { button { display: none; } }
       </style></head><body>${contents}</body></html>
     `);
@@ -688,7 +688,7 @@ function ShiftReport() {
                             style={{
                               ...tdS,
                               fontWeight: 700,
-                              color: "#1d4ed8",
+                              color: "#3730a3",
                               fontFamily: "ui-monospace, monospace",
                             }}
                           >
@@ -1427,7 +1427,7 @@ function StaffReport() {
                 >
                   {[
                     ["Cash", totCash, "#f0fdf4", "#16a34a"],
-                    ["UPI", totUpi, "#eff6ff", "#2563eb"],
+                    ["UPI", totUpi, "#eef2ff", "#4338ca"],
                     ["Card", totCard, "#faf5ff", "#7c3aed"],
                   ].map(([label, val, bg, color]) => (
                     <div
@@ -1606,7 +1606,7 @@ function BillsList({ bills, loading, onEdit, onPay, onRefresh }) {
               {bills.map((b) => (
                 <tr key={b._id} style={{ borderTop: "1px solid #f1f5f9" }}>
                   <td style={tdS}>
-                    <span style={{ fontWeight: 700, color: "#1d4ed8", fontFamily: "ui-monospace, monospace" }}>
+                    <span style={{ fontWeight: 700, color: "#3730a3", fontFamily: "ui-monospace, monospace" }}>
                       {b.patient?.patientId || "—"}
                     </span>
                   </td>

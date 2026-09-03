@@ -3,12 +3,12 @@
 .bems {
   --bems-ink: #1e293b;
   --bems-muted: #64748b;
-  --bems-line: #dbeafe;
-  --bems-line-strong: #bfdbfe;
+  --bems-line: #e0e7ff;
+  --bems-line-strong: #c7d2fe;
   --bems-surface: #ffffff;
-  --bems-canvas: #eff6ff;
-  --bems-accent: #2563eb;
-  --bems-accent-hover: #1d4ed8;
+  --bems-canvas: #eef2ff;
+  --bems-accent: #4338ca;
+  --bems-accent-hover: #3730a3;
   --bems-ok: #047857;
   --bems-warn: #b45309;
   --bems-bad: #b91c1c;
@@ -23,11 +23,11 @@
   --bems-ink: #f1f5f9;
   --bems-muted: #94a3b8;
   --bems-line: #1e3a5f;
-  --bems-line-strong: #1e40af;
+  --bems-line-strong: #4338ca;
   --bems-surface: #1e293b;
   --bems-canvas: #0f172a;
-  --bems-accent: #3b82f6;
-  --bems-accent-hover: #60a5fa;
+  --bems-accent: #6366f1;
+  --bems-accent-hover: #818cf8;
 }
 
 .bems-head {
@@ -237,7 +237,7 @@
 }
 
 .dark .bems-table tr:hover td {
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(67, 56, 202, 0.08);
 }
 
 .bems-table .bems-mono {
@@ -416,7 +416,7 @@
 .bems-field:focus {
   outline: none;
   border-color: var(--bems-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.15);
 }
 
 .bems-form textarea {
@@ -570,7 +570,7 @@
 .bems-qr-bar input:focus {
   outline: none;
   border-color: var(--bems-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.15);
 }
 
 .bems-toolbar {

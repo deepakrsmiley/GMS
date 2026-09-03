@@ -21,7 +21,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #dbeafe;
+  background: #e0e7ff;
   color: var(--am-accent);
   flex-shrink: 0;
 }
@@ -107,7 +107,7 @@
 
 .mer-compare__col--next {
   border-color: var(--am-line-strong);
-  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.06);
+  box-shadow: 0 0 0 1px rgba(67, 56, 202, 0.06);
 }
 
 .mer-compare__label {
@@ -182,7 +182,7 @@
 
 .mer-scope__btn--active {
   border-color: var(--am-accent);
-  background: #eff6ff;
+  background: #eef2ff;
   color: var(--am-accent);
 }
 

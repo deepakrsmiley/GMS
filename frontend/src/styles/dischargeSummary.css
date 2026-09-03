@@ -2,9 +2,9 @@
 .ds-paper {
   --ds-ink: #0f172a;
   --ds-muted: #64748b;
-  --ds-line: #bfdbfe;
-  --ds-accent: #2563eb;
-  --ds-canvas: #eff6ff;
+  --ds-line: #c7d2fe;
+  --ds-accent: #4338ca;
+  --ds-canvas: #eef2ff;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
 }
 
@@ -39,7 +39,7 @@
 .ds-section__check input {
   width: 15px;
   height: 15px;
-  accent-color: #2563eb;
+  accent-color: #4338ca;
   flex-shrink: 0;
 }
 
@@ -114,7 +114,7 @@
   margin: 0.85rem 0 0.55rem;
   padding: 0.45rem 0.65rem;
   border-radius: 0.4rem;
-  background: linear-gradient(90deg, #1e40af 0%, #2563eb 100%);
+  background: linear-gradient(90deg, #4338ca 0%, #4338ca 100%);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -152,7 +152,7 @@
   min-height: auto;
   height: auto;
   overflow: hidden;        /* clip to paper box */
-  border: 2px solid #1e3a8a;
+  border: 2px solid #312e81;
   background: #fff;
   color: #111;
   padding: 1.35rem 1.25rem 1.2rem;
@@ -160,7 +160,7 @@
   font-size: 12px;
   line-height: 1.4;
   box-shadow:
-    inset 0 0 0 1px #93c5fd,
+    inset 0 0 0 1px #a5b4fc,
     0 8px 20px rgba(15, 23, 42, 0.18);
   z-index: 1;
 }
@@ -179,9 +179,9 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #1e40af;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  color: #4338ca;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
   border-radius: 999px;
   padding: 0.15rem 0.5rem;
   pointer-events: none;
@@ -220,12 +220,13 @@
 .ds-preview-paper h1,
 .ds-preview-sheet h1 {
   text-align: center;
-  font-size: 15px;
+  font-size: 20px;
   margin: 0;
   line-height: 1.25;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   padding-right: 4rem;
+  color: #4338ca;
 }
 
 .ds-preview-paper .ds-title,
@@ -268,8 +269,8 @@
 }
 
 .ds-preview-paper {
-  border: 2px solid #1e3a8a;
-  box-shadow: inset 0 0 0 1px #93c5fd;
+  border: 2px solid #312e81;
+  box-shadow: inset 0 0 0 1px #a5b4fc;
   background: #fff;
   color: #111;
   padding: 1.1rem 1.25rem;

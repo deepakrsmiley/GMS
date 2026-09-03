@@ -16,7 +16,7 @@ const DEFAULTS = {
   gstNumber: '',
   nabhAccreditation: '',
   nablAccreditation: '',
-  primaryColor: '#1e40af',
+  primaryColor: '#4338ca',
   invoiceTerms: 'Payment is due upon receipt. All disputes are subject to local jurisdiction. Medicines once sold will not be taken back.',
   paymentUrl: '',
   footerNote: 'Thank you for choosing our hospital.',

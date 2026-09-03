@@ -1,6 +1,6 @@
 .wf-strip {
   background: #fff;
-  border: 1px solid #dbeafe;
+  border: 1px solid #e0e7ff;
   border-radius: 0.75rem;
   padding: 0.75rem 1rem 0.9rem;
   margin-bottom: 0.25rem;
@@ -43,17 +43,17 @@
   min-height: 100%;
 }
 .wf-strip__step--now .wf-strip__link {
-  background: #eff6ff;
-  border-color: #bfdbfe;
+  background: #eef2ff;
+  border-color: #c7d2fe;
 }
 .dark .wf-strip__step--now .wf-strip__link {
-  background: #1e3a8a40;
-  border-color: #1d4ed8;
+  background: #312e8140;
+  border-color: #3730a3;
 }
 .wf-strip__num {
   font-size: 10px;
   font-weight: 700;
-  color: #2563eb;
+  color: #4338ca;
 }
 .wf-strip__step--done .wf-strip__num { color: #059669; }
 .wf-strip__step--todo .wf-strip__num { color: #94a3b8; }
@@ -70,7 +70,7 @@
 
 .wf-playbook {
   background: #fff;
-  border: 1px solid #dbeafe;
+  border: 1px solid #e0e7ff;
   border-radius: 1rem;
   padding: 1.1rem 1.25rem;
 }
@@ -90,7 +90,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #2563eb;
+  color: #4338ca;
   margin: 0;
 }
 .wf-playbook__title {
@@ -103,7 +103,7 @@
 .wf-playbook__all {
   font-size: 12px;
   font-weight: 600;
-  color: #2563eb;
+  color: #4338ca;
   white-space: nowrap;
 }
 .wf-playbook__list {
@@ -147,7 +147,7 @@
   width: 1.35rem;
   height: 1.35rem;
   border-radius: 999px;
-  background: #2563eb;
+  background: #4338ca;
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -167,7 +167,7 @@
   margin: 0.75rem 0 1.25rem;
 }
 .wf-guide__tab {
-  border: 1px solid #dbeafe;
+  border: 1px solid #e0e7ff;
   background: #fff;
   color: #334155;
   font-size: 13px;
@@ -182,8 +182,8 @@
   color: #cbd5e1;
 }
 .wf-guide__tab.is-on {
-  background: #2563eb;
-  border-color: #2563eb;
+  background: #4338ca;
+  border-color: #4338ca;
   color: #fff;
 }
 .wf-guide h2 {
@@ -213,14 +213,14 @@
   margin: 0.5rem 0 1rem;
 }
 .wf-guide th, .wf-guide td {
-  border: 1px solid #dbeafe;
+  border: 1px solid #e0e7ff;
   padding: 0.45rem 0.6rem;
   text-align: left;
   vertical-align: top;
 }
 .dark .wf-guide th, .dark .wf-guide td { border-color: #1e3a5f; }
-.wf-guide th { background: #eff6ff; }
-.dark .wf-guide th { background: #1e3a8a40; }
+.wf-guide th { background: #eef2ff; }
+.dark .wf-guide th { background: #312e8140; }
 .wf-wrong {
   background: #fef2f2;
   border: 1px solid #fecaca;

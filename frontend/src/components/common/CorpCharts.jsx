@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const CORP_BLUE = '#2563eb';
+export const CORP_BLUE = '#4338ca';
 export const CORP_BLUE_LIGHT = '#93c5fd';
 export const CORP_EMERALD = '#059669';
 export const CORP_AMBER = '#d97706';
@@ -14,7 +14,7 @@ export const CORP_PALETTE = [
   CORP_AMBER,
   CORP_INDIGO,
   CORP_ROSE,
-  '#0ea5e9',
+  '#818cf8',
   '#8b5cf6',
   '#14b8a6',
 ];
@@ -24,7 +24,7 @@ export const corpTooltipStyle = {
     background: '#ffffff',
     border: '1px solid #dbeafe',
     borderRadius: 10,
-    boxShadow: '0 8px 24px rgba(37, 99, 235, 0.08)',
+    boxShadow: '0 8px 24px rgba(67, 56, 202, 0.08)',
     padding: '10px 12px',
     fontSize: 12,
   },
@@ -39,7 +39,7 @@ export const corpTooltipStyle = {
     fontSize: 12,
     paddingTop: 2,
   },
-  cursor: { fill: 'rgba(37, 99, 235, 0.06)' },
+  cursor: { fill: 'rgba(67, 56, 202, 0.06)' },
 };
 
 export function CorpChartCard({

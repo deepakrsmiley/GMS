@@ -23,7 +23,7 @@
   gap: 10px;
   letter-spacing: -0.02em;
 }
-.opq-page-title svg { color: #1e40af; }
+.opq-page-title svg { color: #4338ca; }
 .opq-page-sub {
   margin: 4px 0 0;
   font-size: 13px;
@@ -74,7 +74,7 @@
 }
 .opq-select:focus,
 .opq-date:focus,
-.opq-search:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+.opq-search:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
 
 .opq-toolbar-actions {
   margin-left: auto;
@@ -118,7 +118,7 @@
   padding: 0 16px;
   border: none;
   border-radius: 12px;
-  background: #2563eb;
+  background: #4338ca;
   color: #fff;
   font-size: 13.5px;
   font-weight: 600;
@@ -126,9 +126,9 @@
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.22);
+  box-shadow: 0 4px 12px rgba(67, 56, 202, 0.22);
 }
-.opq-btn-add:hover { background: #1d4ed8; }
+.opq-btn-add:hover { background: #3730a3; }
 
 .opq-stats {
   display: grid;
@@ -150,7 +150,7 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .opq-stat:hover { border-color: #dbe4f0; }
-.opq-stat.is-active { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12); }
+.opq-stat.is-active { border-color: #a5b4fc; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12); }
 
 .opq-stat-icon {
   width: 42px;
@@ -161,7 +161,7 @@
   justify-content: center;
   flex-shrink: 0;
 }
-.opq-stat-icon--blue { background: #eff6ff; color: #2563eb; }
+.opq-stat-icon--blue { background: #eef2ff; color: #4338ca; }
 .opq-stat-icon--orange { background: #fff7ed; color: #ea580c; }
 .opq-stat-icon--green { background: #ecfdf5; color: #059669; }
 .opq-stat-icon--purple { background: #f5f3ff; color: #7c3aed; }
@@ -263,8 +263,8 @@
   display: inline-flex;
   padding: 5px 10px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1e40af;
+  background: #eef2ff;
+  color: #4338ca;
   font-size: 12px;
   font-weight: 650;
 }
@@ -315,7 +315,7 @@
   white-space: nowrap;
 }
 .opq-tab:hover { color: #334155; }
-.opq-tab.is-active { color: #2563eb; }
+.opq-tab.is-active { color: #4338ca; }
 .opq-tab.is-active::after {
   content: '';
   position: absolute;
@@ -323,7 +323,7 @@
   right: 0;
   bottom: 0;
   height: 2px;
-  background: #2563eb;
+  background: #4338ca;
   border-radius: 2px 2px 0 0;
 }
 
@@ -385,8 +385,8 @@
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
+  background: #eef2ff;
+  color: #4338ca;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -414,7 +414,7 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.opq-status--waiting { background: #eff6ff; color: #2563eb; }
+.opq-status--waiting { background: #eef2ff; color: #4338ca; }
 .opq-status--consult { background: #fff7ed; color: #c2410c; }
 .opq-status--pharmacy { background: #fff7ed; color: #ea580c; }
 .opq-status--lab { background: #ecfeff; color: #0e7490; }
@@ -456,13 +456,13 @@
 .opq-view {
   background: none;
   border: none;
-  color: #2563eb;
+  color: #4338ca;
   font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
   padding: 4px 2px;
 }
-.opq-view:hover { color: #1d4ed8; }
+.opq-view:hover { color: #3730a3; }
 .opq-kebab {
   width: 32px;
   height: 32px;
@@ -518,8 +518,8 @@
   height: 56px;
   margin: 0 auto 12px;
   border-radius: 16px;
-  background: #eff6ff;
-  color: #93c5fd;
+  background: #eef2ff;
+  color: #a5b4fc;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -632,8 +632,8 @@
   height: 26px;
   padding: 0 8px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
+  background: #eef2ff;
+  color: #4338ca;
   font-size: 12px;
   font-weight: 800;
   display: flex;
@@ -644,15 +644,15 @@
   width: 100%;
   margin-top: 8px;
   height: 36px;
-  border: 1px solid #dbeafe;
-  background: #eff6ff;
-  color: #2563eb;
+  border: 1px solid #e0e7ff;
+  background: #eef2ff;
+  color: #4338ca;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
-.opq-sched-more:hover { background: #dbeafe; }
+.opq-sched-more:hover { background: #e0e7ff; }
 
 .opq-page-foot {
   display: flex;
@@ -673,7 +673,7 @@
   gap: 12px;
   padding: 16px 18px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 55%, #2563eb 100%);
+  background: linear-gradient(135deg, #312e81 0%, #4338ca 55%, #4338ca 100%);
   color: #fff;
   box-shadow: 0 10px 28px rgba(30, 64, 175, 0.2);
 }
@@ -710,7 +710,7 @@
 }
 .opq-stats--corp .opq-stat-sub { display: none; }
 .opq-stats--corp .opq-stat.is-active {
-  border-color: #1e40af;
+  border-color: #4338ca;
   box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.12);
 }
 
@@ -756,8 +756,8 @@
   justify-content: center;
 }
 .opq-board .opq-tab.is-active em {
-  background: #dbeafe;
-  color: #1e40af;
+  background: #e0e7ff;
+  color: #4338ca;
 }
 .opq-board-meta {
   display: flex;
@@ -789,11 +789,11 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .opq-visit:hover {
-  border-color: #bfdbfe;
+  border-color: #c7d2fe;
   box-shadow: 0 8px 24px rgba(30, 64, 175, 0.06);
 }
 .opq-visit.is-active-visit {
-  border-color: #93c5fd;
+  border-color: #a5b4fc;
   background: linear-gradient(180deg, #f8fbff 0%, #fff 40%);
 }
 
@@ -842,11 +842,11 @@
 .opq-btn-ghost:hover { background: #f8fafc; }
 .opq-btn-primary {
   border: none;
-  background: #1e40af;
+  background: #4338ca;
   color: #fff;
   box-shadow: 0 4px 10px rgba(30, 64, 175, 0.2);
 }
-.opq-btn-primary:hover { background: #1e3a8a; }
+.opq-btn-primary:hover { background: #312e81; }
 
 .opq-visit-main {
   display: grid;
@@ -920,8 +920,8 @@
   align-items: center;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1e40af;
+  background: #eef2ff;
+  color: #4338ca;
   font-size: 11px;
   font-weight: 700;
   max-width: 100%;

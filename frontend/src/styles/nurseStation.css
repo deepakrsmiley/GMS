@@ -97,7 +97,7 @@
 
 .ns-card.is-active {
   border-color: var(--am-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.15);
   background: var(--am-canvas);
 }
 
@@ -126,8 +126,8 @@
   font-weight: 700;
   padding: 0.2rem 0.45rem;
   border-radius: 6px;
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #e0e7ff;
+  color: #3730a3;
   white-space: nowrap;
 }
 
@@ -333,7 +333,7 @@
 }
 
 .ns-status.pending { background: #fff7ed; color: #c2410c; }
-.ns-status.acknowledged { background: #eff6ff; color: #1d4ed8; }
+.ns-status.acknowledged { background: #eef2ff; color: #3730a3; }
 .ns-status.done { background: #ecfdf5; color: #047857; }
 
 .ns-print-only {

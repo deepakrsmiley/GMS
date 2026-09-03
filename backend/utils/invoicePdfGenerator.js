@@ -2,9 +2,9 @@ const PDFDocument = require('pdfkit');
 const { fetchImageBuffer } = require('./pdfBranding');
 const brandingService = require('../services/brandingService');
 
-const BLUE = '#1e40af';
-const BLUE_LIGHT = '#eff6ff';
-const BLUE_BORDER = '#bfdbfe';
+const BLUE = '#4338ca';
+const BLUE_LIGHT = '#eef2ff';
+const BLUE_BORDER = '#c7d2fe';
 const TEXT_DARK = '#111827';
 const TEXT_MUTED = '#374151';
 
@@ -15,9 +15,9 @@ const LAYOUTS = {
     width: 595.28,
     height: 841.89,
     margin: 42,
-    logo: 52,
+    logo: 64,
     fonts: {
-      hospital: 20,
+      hospital: 22,
       tagline: 12,
       contact: 11,
       title: 16,
@@ -39,9 +39,9 @@ const LAYOUTS = {
     width: 419.53,
     height: 595.28,
     margin: 26,
-    logo: 40,
+    logo: 52,
     fonts: {
-      hospital: 16,
+      hospital: 18,
       tagline: 11,
       contact: 10,
       title: 13,

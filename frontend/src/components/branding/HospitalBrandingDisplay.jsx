@@ -14,10 +14,10 @@ export default function HospitalBrandingDisplay({
         <img
           src={branding.logo}
           alt={branding.hospitalName}
-          className="w-10 h-10 object-contain rounded-lg mt-2"
+          className="w-14 h-14 object-contain rounded-xl mt-2 bg-white p-0.5"
         />
       )}
-      <p className="text-sm font-semibold text-white mt-1 truncate">{branding.hospitalName}</p>
+      <p className="text-base font-bold text-white mt-1.5 leading-snug line-clamp-2">{branding.hospitalName}</p>
       {branding.tagline && (
         <p className="text-xs text-gray-400 truncate">{branding.tagline}</p>
       )}

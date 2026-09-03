@@ -3,11 +3,11 @@
 .pt-shell {
   --pt-ink: #0f172a;
   --pt-muted: #64748b;
-  --pt-line: #dbeafe;
+  --pt-line: #e0e7ff;
   --pt-surface: #ffffff;
-  --pt-canvas: #eff6ff;
-  --pt-navy: #1e40af;
-  --pt-accent: #2563eb;
+  --pt-canvas: #eef2ff;
+  --pt-navy: #4338ca;
+  --pt-accent: #4338ca;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
   color: var(--pt-ink);
 }
@@ -18,12 +18,12 @@
   --pt-line: #1e3a5f;
   --pt-surface: #1e293b;
   --pt-canvas: #0f172a;
-  --pt-navy: #1e3a8a;
-  --pt-accent: #3b82f6;
+  --pt-navy: #312e81;
+  --pt-accent: #6366f1;
 }
 
 .pt-masthead {
-  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #312e81 0%, #4338ca 100%);
   color: #fff;
   border-radius: 0.5rem;
   padding: 1.1rem 1.35rem;
@@ -79,7 +79,7 @@
 
 .pt-btn--primary {
   background: #fff;
-  color: #1e40af;
+  color: #4338ca;
 }
 
 .pt-btn--primary:hover {
@@ -143,7 +143,7 @@
 
 .pt-search input:focus {
   border-color: var(--pt-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 3px rgba(67, 56, 202, 0.12);
 }
 
 .pt-toolbar__hint {
@@ -217,7 +217,7 @@
   width: 2.15rem;
   height: 2.15rem;
   border-radius: 0.4rem;
-  background: linear-gradient(145deg, #2563eb, #1e40af);
+  background: linear-gradient(145deg, #4338ca, #4338ca);
   color: #fff;
   display: flex;
   align-items: center;
@@ -298,16 +298,16 @@
   text-transform: uppercase;
   padding: 0.4rem 0.65rem;
   border-radius: 0.3rem;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .pt-admit:hover {
-  background: #dbeafe;
-  border-color: #93c5fd;
+  background: #e0e7ff;
+  border-color: #a5b4fc;
 }
 
 .pt-form-grid {

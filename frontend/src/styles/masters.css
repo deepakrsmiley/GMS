@@ -3,11 +3,11 @@
 .masters-shell {
   --ms-ink: #1e293b;
   --ms-muted: #64748b;
-  --ms-line: #dbeafe;
+  --ms-line: #e0e7ff;
   --ms-surface: #ffffff;
-  --ms-canvas: #eff6ff;
-  --ms-navy: #2563eb;
-  --ms-accent: #2563eb;
+  --ms-canvas: #eef2ff;
+  --ms-navy: #4338ca;
+  --ms-accent: #4338ca;
   font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
   color: var(--ms-ink);
   max-width: 1600px;
@@ -19,8 +19,8 @@
   --ms-line: #1e3a5f;
   --ms-surface: #1e293b;
   --ms-canvas: #0f172a;
-  --ms-navy: #3b82f6;
-  --ms-accent: #3b82f6;
+  --ms-navy: #6366f1;
+  --ms-accent: #6366f1;
 }
 
 .masters-masthead {
@@ -132,7 +132,7 @@
 }
 
 .masters-rail__item.is-active {
-  background: #eff6ff;
+  background: #eef2ff;
   color: var(--ms-accent);
   border-left-color: var(--ms-accent);
 }

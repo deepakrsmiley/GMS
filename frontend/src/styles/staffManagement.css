@@ -3,11 +3,11 @@
 .staff-shell {
   --st-ink: #1e293b;
   --st-muted: #64748b;
-  --st-line: #dbeafe;
+  --st-line: #e0e7ff;
   --st-surface: #ffffff;
-  --st-canvas: #eff6ff;
-  --st-navy: #2563eb;
-  --st-accent: #2563eb;
+  --st-canvas: #eef2ff;
+  --st-navy: #4338ca;
+  --st-accent: #4338ca;
   font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
   color: var(--st-ink);
 }
@@ -18,8 +18,8 @@
   --st-line: #1e3a5f;
   --st-surface: #1e293b;
   --st-canvas: #0f172a;
-  --st-navy: #3b82f6;
-  --st-accent: #3b82f6;
+  --st-navy: #6366f1;
+  --st-accent: #6366f1;
 }
 
 .staff-masthead {
@@ -250,8 +250,8 @@
 
 .staff-perm-btn--accent {
   color: var(--st-accent);
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: #c7d2fe;
+  background: #eef2ff;
 }
 
 .staff-perm-hint {

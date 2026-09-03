@@ -7,10 +7,10 @@ export default function SystemBrandingLogo({
   className = '',
 }) {
   const sizes = {
-    sm: 'max-w-[180px]',
-    md: 'max-w-[240px]',
-    lg: 'max-w-[320px]',
-    xl: 'max-w-[400px]',
+    sm: 'max-w-[220px]',
+    md: 'max-w-[300px]',
+    lg: 'max-w-[380px]',
+    xl: 'max-w-[460px]',
   };
 
   return (

@@ -3,7 +3,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { analyzeResult } from '../../utils/labResultAnalyzer';
 import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
 import '../../styles/labReportPrint.css';
-import { GmsDevelopedPrintLine } from '../branding/GmsDevelopedBar';
 
 const DEFAULT_LAB_REPORT_CONFIG = {
   primaryColor: '#14213d',
@@ -206,7 +205,6 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
                       {branding?.logo && <img src={branding.logo} alt="" />}
                     </td>
                     <td className="lab-report-brand-copy">
-                      <GmsDevelopedPrintLine />
                       <div className="lab-report-hospital-name" style={{ color: cfg.primaryColor }}>
                         {(branding?.hospitalName || 'HOSPITAL NAME').toUpperCase()}
                       </div>

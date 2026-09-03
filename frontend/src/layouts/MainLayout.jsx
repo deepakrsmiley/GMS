@@ -29,7 +29,7 @@ export default function MainLayout() {
     if (user?._id) initSocket(user._id, user.role);
   }, [user]);
 
-  const contentOffset = isDesktop ? (sidebarOpen ? 'lg:ml-64' : 'lg:ml-16') : 'ml-0';
+  const contentOffset = isDesktop ? (sidebarOpen ? 'lg:ml-[268px]' : 'lg:ml-[72px]') : 'ml-0';
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] overflow-hidden bg-gray-50 dark:bg-gray-950 pt-7">

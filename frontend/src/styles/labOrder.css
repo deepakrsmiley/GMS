@@ -3,10 +3,10 @@
 .lo-form {
   --lo-ink: #1e293b;
   --lo-muted: #64748b;
-  --lo-line: #dbeafe;
+  --lo-line: #e0e7ff;
   --lo-surface: #ffffff;
-  --lo-canvas: #eff6ff;
-  --lo-accent: #2563eb;
+  --lo-canvas: #eef2ff;
+  --lo-accent: #4338ca;
   font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
   color: var(--lo-ink);
   display: flex;
@@ -20,7 +20,7 @@
   --lo-line: #1e3a5f;
   --lo-surface: #1e293b;
   --lo-canvas: #0f172a;
-  --lo-accent: #3b82f6;
+  --lo-accent: #6366f1;
 }
 
 .lo-form * {
@@ -101,7 +101,7 @@
 .lo-field:focus {
   outline: none;
   border-color: var(--lo-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.15);
 }
 
 .lo-grid-2 {
@@ -500,8 +500,8 @@
 
 .lo-type-chip.is-active {
   border-color: var(--lo-accent);
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #e0e7ff;
+  color: #3730a3;
 }
 
 .lo-profile {

@@ -250,7 +250,7 @@ export default function InvoiceDetailPanel({
         <div className="inv-detail__history">
           <div className="inv-detail__hist-card">
             <div className="inv-detail__hist-head">
-              <History size={15} color="#2563eb" />
+              <History size={15} color="#4338ca" />
               <h3>Edit History</h3>
               <span className="inv-detail__hist-count">{detailData.editHistory?.length || 0}</span>
             </div>
@@ -300,7 +300,7 @@ export default function InvoiceDetailPanel({
 
           <div className="inv-detail__hist-card">
             <div className="inv-detail__hist-head">
-              <Printer size={15} color="#2563eb" />
+              <Printer size={15} color="#4338ca" />
               <h3>Reprint History</h3>
               <span className="inv-detail__hist-count">{detailData.printCount || 0}</span>
             </div>

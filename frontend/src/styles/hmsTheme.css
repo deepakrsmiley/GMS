@@ -1,0 +1,114 @@
+/* Soft Indigo HMS theme — default + branding overrides via --hms-* */
+:root {
+  --hms-primary: #4338ca;
+  --hms-primary-hover: #3730a3;
+  --hms-primary-deep: #312e81;
+  --hms-accent: #818cf8;
+  --hms-primary-soft: #e0e7ff;
+  --hms-primary-muted: #eef2ff;
+  --hms-primary-border: #c7d2fe;
+  --hms-on-primary: #ffffff;
+}
+
+body {
+  background-color: color-mix(in srgb, var(--hms-primary-muted) 55%, white);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--hms-primary-muted);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hms-primary-border);
+}
+
+.btn-primary {
+  background-color: var(--hms-primary) !important;
+  color: var(--hms-on-primary) !important;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--hms-primary-hover) !important;
+}
+
+.btn-secondary:hover {
+  background-color: var(--hms-primary-muted) !important;
+}
+
+.corp-card,
+.kpi-card {
+  border-color: var(--hms-primary-border) !important;
+}
+
+.table-row-hover:hover {
+  background-color: color-mix(in srgb, var(--hms-primary-soft) 70%, white) !important;
+}
+
+.corp-tabs {
+  background-color: var(--hms-primary-muted) !important;
+  border-color: var(--hms-primary-border) !important;
+}
+
+.corp-tab:hover {
+  color: var(--hms-primary) !important;
+}
+
+.corp-tab-active {
+  color: var(--hms-primary) !important;
+}
+
+.badge-blue {
+  background-color: var(--hms-primary-muted) !important;
+  color: var(--hms-primary) !important;
+  border-color: var(--hms-primary-border) !important;
+}
+
+.input-field:focus {
+  --tw-ring-color: var(--hms-accent);
+  border-color: transparent;
+}
+
+/* Common Tailwind blue utility overrides used across HMS chrome */
+.bg-blue-600,
+.hover\:bg-blue-600:hover {
+  background-color: var(--hms-primary) !important;
+}
+.hover\:bg-blue-700:hover {
+  background-color: var(--hms-primary-hover) !important;
+}
+.bg-blue-50,
+.hover\:bg-blue-50:hover {
+  background-color: var(--hms-primary-muted) !important;
+}
+.bg-blue-100 {
+  background-color: var(--hms-primary-soft) !important;
+}
+.text-blue-600,
+.text-blue-700,
+.hover\:text-blue-700:hover {
+  color: var(--hms-primary) !important;
+}
+.border-blue-100,
+.border-blue-200 {
+  border-color: var(--hms-primary-border) !important;
+}
+.border-l-blue-600 {
+  border-left-color: var(--hms-primary) !important;
+}
+.shadow-blue-200,
+.shadow-blue-600\/20 {
+  --tw-shadow-color: color-mix(in srgb, var(--hms-primary) 25%, transparent) !important;
+}
+.from-blue-50,
+.from-blue-50\/60 {
+  --tw-gradient-from: var(--hms-primary-muted) var(--tw-gradient-from-position);
+}
+.from-blue-600 {
+  --tw-gradient-from: var(--hms-primary) var(--tw-gradient-from-position);
+}
+.to-indigo-50,
+.to-blue-50 {
+  --tw-gradient-to: var(--hms-primary-muted) var(--tw-gradient-to-position);
+}
+.ring-blue-500,
+.focus\:ring-blue-500:focus {
+  --tw-ring-color: var(--hms-accent) !important;
+}

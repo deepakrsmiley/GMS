@@ -90,7 +90,7 @@ function drawMaternityDischargeAdvicePage(doc, page, margin, maternityAdvice = {
   const outerW = page.width - margin * 2;
   const outerH = page.height - margin * 2;
   doc.save();
-  doc.lineWidth(1.4).strokeColor('#1e3a8a').rect(margin, margin, outerW, outerH).stroke();
+  doc.lineWidth(1.4).strokeColor('#312e81').rect(margin, margin, outerW, outerH).stroke();
   doc.lineWidth(0.5).strokeColor('#93c5fd').rect(margin + 3, margin + 3, outerW - 6, outerH - 6).stroke();
   doc.restore();
 
