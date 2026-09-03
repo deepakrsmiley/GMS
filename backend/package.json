@@ -8,6 +8,7 @@
     "migrate:organization": "node scripts/migrateOrganization.js",
     "seed:gms-admin": "node scripts/seedGmsSuperAdmin.js",
     "verify:hospital-counts": "node scripts/verifyHospitalCounts.js",
+    "import:srinivasa-stock": "node scripts/importSrinivasaStock.js",
     "fix:tenant-indexes": "node scripts/fixTenantUniqueIndexes.js"
   },
   "dependencies": {
