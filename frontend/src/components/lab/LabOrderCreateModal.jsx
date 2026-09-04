@@ -19,6 +19,19 @@ import '../../styles/labOrder.css';
 
 const emptyCustom = () => [{ testName: '', price: '' }];
 
+const asDoctorId = (value) => {
+  if (!value) return '';
+  if (typeof value === 'object') return String(value._id || '');
+  return String(value);
+};
+
+const formatDoctorOption = (d) => {
+  if (!d?.name) return 'Doctor';
+  const cleaned = String(d.name).replace(/^(dr\.?\s*)+/i, '').trim();
+  const label = cleaned ? `Dr. ${cleaned}` : 'Doctor';
+  return d.specialization ? `${label} — ${d.specialization}` : label;
+};
+
 /**
  * Corporate lab create / append modal.
  * - requestMode (Reception/Nurse/Doctor): pick lab type → packages
@@ -51,6 +64,14 @@ export default function LabOrderCreateModal({
   const [sampleType, setSampleType] = useState('blood');
   const [priority, setPriority] = useState('routine');
   const [notes, setNotes] = useState('');
+  const [doctorId, setDoctorId] = useState('');
+
+  const { data: doctors = [] } = useQuery({
+    queryKey: ['allDoctors'],
+    queryFn: () => api.get('/staff/doctors').then((r) => r.data.data || []).catch(() => []),
+    staleTime: 5 * 60 * 1000,
+    enabled: isOpen,
+  });
 
   const { data: priceList = [] } = useQuery({
     queryKey: ['test-master'],
@@ -74,6 +95,7 @@ export default function LabOrderCreateModal({
     setSampleType('blood');
     setPriority('routine');
     setNotes('');
+    setDoctorId(isAppend && appendTo ? asDoctorId(appendTo.doctor) : '');
     if (isAppend && appendTo) {
       setPatientId(appendTo.patient?._id || appendTo.patient || '');
       setPatientSearch(appendTo.patient?.name
@@ -93,6 +115,19 @@ export default function LabOrderCreateModal({
       setIpAdmission(initialIpId || '');
     }
   }, [isOpen, mode, isAppend, appendTo, initialPatient, initialOpId, initialIpId]);
+
+  useEffect(() => {
+    if (!isOpen || isAppend || !initialOpId) return undefined;
+    let cancelled = false;
+    api.get(`/op/${initialOpId}`)
+      .then((r) => {
+        if (cancelled) return;
+        const id = asDoctorId(r.data?.data?.doctor);
+        if (id) setDoctorId((prev) => prev || id);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOpen, isAppend, initialOpId]);
 
   useEffect(() => {
     if (patientSearch.trim().length < 2 || isAppend) { setPatients([]); return; }
@@ -192,6 +227,7 @@ export default function LabOrderCreateModal({
         opRegistration: opRegistration || undefined,
         ipAdmission: ipAdmission || undefined,
         orderSource: orderSource || undefined,
+        doctor: doctorId || undefined,
       };
 
       if (isAppend) {
@@ -200,6 +236,7 @@ export default function LabOrderCreateModal({
           tests,
           totalAmount,
           notes: notes || undefined,
+          doctor: doctorId || undefined,
         });
       }
       return api.post('/lab', payload);
@@ -481,6 +518,18 @@ export default function LabOrderCreateModal({
               <span className="lo-section__title">Order details</span>
             </div>
             <div className="lo-section__body lo-details-grid">
+              <div className="lo-span-2">
+                <label className="lo-label">Referring doctor</label>
+                <select className="lo-field" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
+                  <option value="">Select doctor</option>
+                  {doctorId && !doctors.some((d) => asDoctorId(d) === doctorId) && appendTo?.doctor && (
+                    <option value={doctorId}>{formatDoctorOption(appendTo.doctor)}</option>
+                  )}
+                  {doctors.map((d) => (
+                    <option key={d._id} value={d._id}>{formatDoctorOption(d)}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="lo-label">Sample</label>
                 <select className="lo-field" value={sampleType} onChange={(e) => setSampleType(e.target.value)}>

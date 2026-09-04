@@ -83,6 +83,19 @@ const emptyManualRow = () => ({
   custom: true,
 });
 
+const asDoctorId = (value) => {
+  if (!value) return '';
+  if (typeof value === 'object') return String(value._id || '');
+  return String(value);
+};
+
+const formatDoctorOption = (d) => {
+  if (!d?.name) return 'Doctor';
+  const cleaned = String(d.name).replace(/^(dr\.?\s*)+/i, '').trim();
+  const label = cleaned ? `Dr. ${cleaned}` : 'Doctor';
+  return d.specialization ? `${label} — ${d.specialization}` : label;
+};
+
 /** Build result rows grouped by CBC / LFT / RFT profile order */
 const buildResultFields = (labOrder) => {
   const profileNames = (labOrder.profiles?.length
@@ -221,6 +234,7 @@ export default function LabPage() {
   const [resultFields, setResultFields] = useState([]);
   const [showReportEnteredTime, setShowReportEnteredTime] = useState(true);
   const [reportEnteredAt, setReportEnteredAt] = useState('');
+  const [referringDoctorId, setReferringDoctorId] = useState('');
 
   useEffect(() => {
     const urlTab = searchParams.get('tab');
@@ -283,6 +297,12 @@ export default function LabPage() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const { data: doctorsList = [] } = useQuery({
+    queryKey: ['allDoctors'],
+    queryFn: () => api.get('/staff/doctors').then((r) => r.data.data || []).catch(() => []),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const openNewOrder = () => {
     setAppendTo(null);
     setPrefillPatient(null);
@@ -316,6 +336,7 @@ export default function LabPage() {
       setShowResults(null);
       resReset();
       setResultFields([]);
+      setReferringDoctorId('');
     },
     onError: (err) => toast.error(err?.response?.data?.message || 'Failed to save'),
   });
@@ -387,6 +408,7 @@ export default function LabPage() {
     setResultFields(buildResultFields(row));
     setShowReportEnteredTime(row.showReportEnteredTime !== false);
     setReportEnteredAt(toDatetimeLocal(row.reportGeneratedAt));
+    setReferringDoctorId(asDoctorId(row.doctor));
     resReset({ remarks: row.remarks || '' });
     setShowResults(row);
   };
@@ -825,7 +847,7 @@ export default function LabPage() {
 
       <Modal
         isOpen={!!showResults}
-        onClose={() => { setShowResults(null); resReset(); setResultFields([]); }}
+        onClose={() => { setShowResults(null); resReset(); setResultFields([]); setReferringDoctorId(''); }}
         title={`${showResults?.status === 'completed' ? 'Edit Report' : 'Enter Results'} — ${showResults?.labNumber}`}
         size="2xl"
       >
@@ -842,6 +864,7 @@ export default function LabPage() {
               data: {
                 results,
                 remarks: d.remarks,
+                doctor: referringDoctorId || null,
                 showReportEnteredTime,
                 reportGeneratedAt: showReportEnteredTime && reportEnteredAt
                   ? new Date(reportEnteredAt).toISOString()
@@ -856,6 +879,27 @@ export default function LabPage() {
               Profile: {showResults.testProfile}
             </div>
           )}
+          <div>
+            <label className="block text-sm font-semibold mb-1">Referring doctor</label>
+            <select
+              className="input-field"
+              value={referringDoctorId}
+              onChange={(e) => setReferringDoctorId(e.target.value)}
+            >
+              <option value="">Select doctor</option>
+              {showResults?.doctor && referringDoctorId && !doctorsList.some((d) => asDoctorId(d) === referringDoctorId) && (
+                <option value={asDoctorId(showResults.doctor)}>
+                  {formatDoctorOption(showResults.doctor)}
+                </option>
+              )}
+              {doctorsList.map((d) => (
+                <option key={d._id} value={d._id}>{formatDoctorOption(d)}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Stored hospital doctors. This name prints as Referring Doctor on the report.
+            </p>
+          </div>
           <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
             <input
               type="checkbox"
@@ -1023,6 +1067,9 @@ export default function LabPage() {
                     ...showResults,
                     results,
                     remarks: getResValues('remarks') || showResults.remarks,
+                    doctor: doctorsList.find((d) => asDoctorId(d) === referringDoctorId)
+                      || (asDoctorId(showResults.doctor) === referringDoctorId ? showResults.doctor : null)
+                      || (referringDoctorId ? { _id: referringDoctorId } : null),
                     reportGeneratedAt: showReportEnteredTime && reportEnteredAt
                       ? new Date(reportEnteredAt).toISOString()
                       : showResults.reportGeneratedAt,

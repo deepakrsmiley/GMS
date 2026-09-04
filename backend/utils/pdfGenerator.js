@@ -49,6 +49,12 @@ const accreditationParts = (branding) => [
 
 const escapeReportText = (value, fallback = '') => String(value ?? fallback);
 
+const formatPdfDoctorName = (name) => {
+  if (!name) return '-';
+  const cleaned = String(name).replace(/^(dr\.?\s*)+/i, '').trim();
+  return cleaned ? `Dr. ${cleaned}` : '-';
+};
+
 const splitNormalRange = (normalRange) => {
   const rangeText = String(normalRange || '');
   const values = rangeText.match(/[<>]?\s*\d+(?:\.\d+)?/g) || [];
@@ -183,7 +189,7 @@ const generateLabReportPDF = async (labTest, res, branding) => {
     ...(labTest.showReportEnteredTime !== false ? [['Analysis Date', reportDate || '-']] : []),
     ['Operator', printedBy],
     ['Department', labTest.labType || '-'],
-    ['Physician', labTest.doctor?.name ? `Dr. ${labTest.doctor.name}` : '-'],
+    ['Physician', formatPdfDoctorName(labTest.doctor?.name)],
   ];
   const colWidth = contentWidth / 4;
   fields.forEach(([label, value], index) => {

@@ -95,6 +95,13 @@ function ResultRow({ row, patient, cfg, showMethod, showRemarks }) {
   );
 }
 
+const formatReferringDoctor = (doctor) => {
+  const name = typeof doctor === 'string' ? doctor : doctor?.name;
+  if (!name) return null;
+  const cleaned = String(name).replace(/^(dr\.?\s*)+/i, '').trim();
+  return cleaned ? `Dr. ${cleaned}` : null;
+};
+
 function InfoRow({ pairs }) {
   return (
     <tr>
@@ -262,7 +269,7 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
                   ]}
                   />
                   <InfoRow pairs={[
-                    ['Referring Doctor', doctor.name ? `Dr. ${doctor.name}` : null],
+                    ['Referring Doctor', formatReferringDoctor(doctor)],
                     ['Department', labTest?.labType],
                   ]}
                   />

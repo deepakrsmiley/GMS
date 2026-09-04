@@ -16,6 +16,12 @@ const { pharmacistBillScopeError } = require('../utils/billingAccess');
 
 const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
 
+const asObjectId = (value) => {
+  if (!value) return undefined;
+  const id = typeof value === 'object' ? String(value._id || '') : String(value);
+  return /^[a-fA-F0-9]{24}$/.test(id) ? id : undefined;
+};
+
 const resolveOrderSource = (body, user) => {
   if (body.orderSource && ['reception', 'lab_desk', 'nurse_ip', 'doctor', 'other'].includes(body.orderSource)) {
     return body.orderSource;
@@ -207,23 +213,33 @@ exports.createLabTest = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Select at least one lab test / profile', 400));
   }
 
+  const OPRegistration = require('../models/OPRegistration');
+  const IPAdmission = require('../models/IPAdmission');
+
+  let doctorId = asObjectId(body.doctor);
+  let opDoc = null;
+  if (body.opRegistration) {
+    opDoc = await OPRegistration.findById(body.opRegistration).select('status doctor');
+    if (!doctorId) doctorId = asObjectId(opDoc?.doctor);
+  }
+  if (!doctorId && body.ipAdmission) {
+    const ipDoc = await IPAdmission.findById(body.ipAdmission).select('doctor');
+    doctorId = asObjectId(ipDoc?.doctor);
+  }
+  body.doctor = doctorId;
+
   const labTest = await LabTest.create(body);
 
-  if (body.opRegistration) {
-    const OPRegistration = require('../models/OPRegistration');
-    const opDoc = await OPRegistration.findById(body.opRegistration).select('status');
-    if (opDoc) {
-      const patch = { $addToSet: { labTests: labTest._id } };
-      // Keep pharmacy queue if Rx already sent; lab desk still sees the LabTest order.
-      if (!['admitted', 'discharged', 'cancelled', 'no_show', 'sent_to_pharmacy'].includes(opDoc.status)) {
-        patch.$set = { status: 'sent_to_lab' };
-      }
-      await OPRegistration.updateOne({ _id: opDoc._id }, patch);
+  if (opDoc) {
+    const patch = { $addToSet: { labTests: labTest._id } };
+    // Keep pharmacy queue if Rx already sent; lab desk still sees the LabTest order.
+    if (!['admitted', 'discharged', 'cancelled', 'no_show', 'sent_to_pharmacy'].includes(opDoc.status)) {
+      patch.$set = { status: 'sent_to_lab' };
     }
+    await OPRegistration.updateOne({ _id: opDoc._id }, patch);
   }
 
   if (body.ipAdmission) {
-    const IPAdmission = require('../models/IPAdmission');
     await IPAdmission.findByIdAndUpdate(body.ipAdmission, {
       $addToSet: { labTests: labTest._id },
     });
@@ -301,6 +317,9 @@ exports.addTestsToLabOrder = asyncHandler(async (req, res, next) => {
 
   if (req.body.notes) {
     lab.notes = [lab.notes, req.body.notes].filter(Boolean).join('\n');
+  }
+  if (req.body.doctor !== undefined) {
+    lab.doctor = asObjectId(req.body.doctor) || undefined;
   }
 
   await lab.save();
@@ -426,23 +445,28 @@ exports.enterResults = asyncHandler(async (req, res, next) => {
     ? parsedEnteredAt
     : (existing.reportGeneratedAt || new Date());
 
+  const resultUpdate = {
+    results: analyzedResults,
+    remarks: req.body.remarks,
+    interpretation: req.body.interpretation,
+    clinicalNotes: req.body.clinicalNotes,
+    doctorComments: req.body.doctorComments,
+    labComments: req.body.labComments,
+    recommendation: req.body.recommendation,
+    impression: req.body.impression,
+    conclusion: req.body.conclusion,
+    status: 'completed',
+    reportGeneratedAt,
+    showReportEnteredTime,
+    reportVerifiedBy: req.user._id,
+  };
+  if (req.body.doctor !== undefined) {
+    resultUpdate.doctor = asObjectId(req.body.doctor) || null;
+  }
+
   const test = await LabTest.findByIdAndUpdate(
     req.params.id,
-    {
-      results: analyzedResults,
-      remarks: req.body.remarks,
-      interpretation: req.body.interpretation,
-      clinicalNotes: req.body.clinicalNotes,
-      doctorComments: req.body.doctorComments,
-      labComments: req.body.labComments,
-      recommendation: req.body.recommendation,
-      impression: req.body.impression,
-      conclusion: req.body.conclusion,
-      status: 'completed',
-      reportGeneratedAt,
-      showReportEnteredTime,
-      reportVerifiedBy: req.user._id,
-    },
+    resultUpdate,
     { new: true }
   )
     .populate('patient', 'patientId name age gender')
