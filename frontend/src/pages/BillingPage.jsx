@@ -129,6 +129,22 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
   // ── Mirrors backend CATEGORY_TYPE_MAP so manually-added charges get the
   // correct `type` for stock/audit logic without extra round-trips.
+  const BILLING_SAVE_TIMEOUT = 60000;
+  const asRefId = (value) => {
+    if (!value) return undefined;
+    if (typeof value === 'object') return value._id || undefined;
+    return value;
+  };
+  const billingErrorMessage = (err, fallback) => {
+    if (!err?.response) {
+      if (err?.code === 'ECONNABORTED' || /timeout/i.test(err?.message || '')) {
+        return 'Saving the bill timed out. Wait a moment and check the bill list before trying again.';
+      }
+      return 'Could not reach the server. Check your connection and try again.';
+    }
+    return err.response.data?.message || fallback;
+  };
+
   const CATEGORY_TYPE_MAP = {
     Consultation: 'consultation',
     Pharmacy: 'medicine',
@@ -211,6 +227,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     const [loadingDischargeCharges, setLoadingDischargeCharges] = useState(false);
     const [showPrintPreview, setShowPrintPreview] = useState(null);
     const [showEditBill, setShowEditBill] = useState(false);
+    const [editBillId, setEditBillId] = useState(null);
     const [editItems, setEditItems] = useState([]);
     const [editDiscount, setEditDiscount] = useState(0);
     const [editReason, setEditReason] = useState('');
@@ -371,6 +388,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       }
       const patient = dischargeDetail.patient;
       resetCreateForm();
+      setMainTab('ip');
       selectPatient(patient);
       closeDischargeModals();
       setShowCreate(true);
@@ -446,7 +464,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const createMut = useMutation({
-      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true }),
+      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT }),
       onSuccess: (res) => {
         toast.success(res.data.message || 'Bill created!');
         qc.invalidateQueries(['bills']);
@@ -455,7 +473,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         setShowCreate(false);
         resetCreateForm();
       },
-      onError: (err) => toast.error(err.response?.data?.message || 'Failed to create bill'),
+      onError: (err) => toast.error(billingErrorMessage(err, 'Failed to create bill')),
     });
 
     const paymentMut = useMutation({
@@ -482,18 +500,19 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     });
 
     const updateBillMut = useMutation({
-      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload, { skipErrorToast: true }),
+      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT }),
       onSuccess: (res) => {
         toast.success('Bill updated');
         qc.invalidateQueries(['bills']);
         qc.invalidateQueries(['billStats']);
         qc.invalidateQueries(['bill', res.data.data._id]);
         setShowEditBill(false);
+        setEditBillId(null);
         setEditReason('');
         setMedQuery('');
         setMedResults([]);
       },
-      onError: (err) => toast.error(err.response?.data?.message || 'Bill update failed'),
+      onError: (err) => toast.error(billingErrorMessage(err, 'Bill update failed')),
     });
 
     const { data: detailData, isLoading: detailLoading } = useQuery({
@@ -546,6 +565,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const openEditBill = (bill) => {
+      setEditBillId(bill._id);
       setEditItems((bill.items || []).map((item) => ({ ...item, medicine: item.medicine?._id || item.medicine })));
       setEditDiscount(Number(bill.discount || 0));
       setEditReason('');
@@ -649,8 +669,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         toast.error('Bill must contain at least one item');
         return;
       }
+      const billId = editBillId || detailData?._id;
+      if (!billId) {
+        toast.error('Unable to save — close this window and open Edit bill again');
+        return;
+      }
       updateBillMut.mutate({
-        id: detailData._id,
+        id: billId,
         payload: {
           items: editItems.map((item) => {
             const category = item.category || 'Miscellaneous';
@@ -662,7 +687,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
               type,
               description: item.description || item.name,
               name: item.name || item.description,
-              medicine: isMedicine ? (item.medicine?._id || item.medicine) : undefined,
+              medicine: isMedicine ? asRefId(item.medicine) : undefined,
               quantity: Number(item.quantity || 0),
               unitPrice: Number(item.unitPrice || 0),
               gstPercent: Number(item.gstPercent || 0),
@@ -676,7 +701,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
               mfgDate: isMedicine ? (item.mfgDate || null) : undefined,
               discountPercent: Number(item.discountPercent || 0),
               discountAmount: Number(item.discountAmount || 0),
-              referenceId: item.referenceId,
+              referenceId: asRefId(item.referenceId),
               referenceModel: item.referenceModel,
             };
           }),
@@ -827,25 +852,48 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       }
 
       const allLab = included.every((c) => c.category === 'Laboratory' || c.type === 'lab');
-      const billType = chargeMeta.patientType === 'ip' && mainTab !== 'op' && mainTab !== 'lab'
+      const billType = (mainTab === 'ip' || mainTab === 'discharge')
         ? 'ip'
         : (mainTab === 'lab' || allLab)
           ? 'lab'
           : mainTab === 'op'
             ? 'op'
-            : 'unified';
+            : (chargeMeta.patientType === 'ip' ? 'ip' : 'unified');
+
+      const ipAdmission = asRefId(
+        included.find((c) =>
+          c.referenceModel === 'IPAdmission' && (c.type === 'admission' || c.type === 'room' || c.category === 'Admission' || c.category === 'Room'),
+        )?.referenceId,
+      );
 
       const payload = {
         billType,
         patient: selectedPatient._id,
-        doctor: chargeMeta.doctor?._id,
-        department: chargeMeta.department?._id,
-        items: included.map(({ id, included: _i, amount, meta, ...item }) => ({
-          ...item,
-          quantity: Number(item.quantity) || 0,
-          unitPrice: Number(item.unitPrice) || 0,
-          gstPercent: Number(item.gstPercent) || 0,
-          gstAmount: lineGst(item),
+        doctor: asRefId(chargeMeta.doctor),
+        department: asRefId(chargeMeta.department),
+        ipAdmission,
+        items: included.map((c) => ({
+          category: c.category,
+          type: c.type || CATEGORY_TYPE_MAP[c.category] || 'other',
+          description: c.description || c.name,
+          name: c.name || c.description,
+          quantity: Number(c.quantity) || 0,
+          unitPrice: Number(c.unitPrice) || 0,
+          gstPercent: Number(c.gstPercent) || 0,
+          gstAmount: lineGst(c),
+          medicine: asRefId(c.medicine),
+          batch: c.batch || c.batchNumber,
+          batchNumber: c.batchNumber || c.batch,
+          genericName: c.genericName,
+          mrp: c.mrp,
+          hsnCode: c.hsnCode,
+          unitOfMeasure: c.unitOfMeasure,
+          expiryDate: c.expiryDate || null,
+          mfgDate: c.mfgDate || null,
+          discountPercent: Number(c.discountPercent || 0),
+          discountAmount: Number(c.discountAmount || 0),
+          referenceId: asRefId(c.referenceId),
+          referenceModel: c.referenceModel,
         })),
         subtotal: totals.subtotal,
         totalGST: totals.gst,
@@ -868,6 +916,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         return;
       }
       resetCreateForm();
+      setMainTab('ip');
       selectPatient(row.patient);
       closeDischargeModals();
       setShowCreate(true);
@@ -1924,7 +1973,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                 <button
                   type="button"
                   onClick={handleGenerateBill}
-                  disabled={createMut.isPending || !selectedPatient || totals.itemCount === 0}
+                  disabled={createMut.isPending || loadingCharges || !selectedPatient || totals.itemCount === 0}
                   className="btn-primary w-full justify-center py-3"
                 >
                   <Receipt size={16} />
@@ -2138,7 +2187,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           />
         </Modal>
 
-        <Modal isOpen={showEditBill} onClose={() => setShowEditBill(false)} title="Edit Bill" size="full">
+        <Modal isOpen={showEditBill} onClose={() => { setShowEditBill(false); setEditBillId(null); }} title="Edit Bill" size="full">
           <div className="p-6 space-y-5">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
               <div>

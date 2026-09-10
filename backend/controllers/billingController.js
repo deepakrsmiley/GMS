@@ -1,11 +1,8 @@
-const mongoose = require("mongoose");
 const asyncHandler = require("../utils/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 const Bill = require("../models/Bill");
 const DirectSale = require("../models/DirectSale");
 const OPRegistration = require("../models/OPRegistration");
-const Counter = require("../models/Counter");
-const Medicine = require("../models/Medicine");
 const { allocateBillNumber } = require("../utils/generateId");
 const {
   generateInvoicePDF,
@@ -29,143 +26,13 @@ const {
   isPharmacyScopeBill,
   pharmacistBillScopeError,
 } = require("../utils/billingAccess");
-
-const enrichMedicineItems = async (items = []) => {
-  const enriched = [];
-  for (const item of items) {
-    const next = { ...item };
-    if (next.medicine) {
-      const medicine = await Medicine.findById(next.medicine).select(
-        "name genericName sellingPrice gstPercent currentStock mrp hsnCode unitOfMeasure batches",
-      );
-      if (medicine) {
-        next.type = "medicine";
-        next.name = medicine.name;
-        next.description = next.description || medicine.name;
-        if (!next.unitPrice) next.unitPrice = medicine.sellingPrice;
-        if (next.gstPercent == null) next.gstPercent = medicine.gstPercent;
-        // Auto-fill pharmacy fields from medicine inventory
-        if (!next.genericName) next.genericName = medicine.genericName || "";
-        if (!next.mrp) next.mrp = medicine.mrp || medicine.sellingPrice;
-        if (!next.hsnCode) next.hsnCode = medicine.hsnCode || "";
-        if (!next.unitOfMeasure) next.unitOfMeasure = medicine.unitOfMeasure || "Nos";
-        // Fill batch details if batchNumber or batch is provided
-        const batchKey = next.batchNumber || next.batch;
-        if (batchKey && medicine.batches?.length) {
-          const batchData = medicine.batches.find((b) => b.batchNumber === batchKey);
-          if (batchData) {
-            next.batchNumber = batchData.batchNumber;
-            next.batch = batchData.batchNumber;
-            if (!next.expiryDate) next.expiryDate = batchData.expiryDate;
-            if (!next.mfgDate) next.mfgDate = batchData.receivedDate;
-          }
-        } else if (!batchKey && medicine.batches?.length) {
-          // Auto-pick the first valid non-disposed batch
-          const validBatch = medicine.batches.find((b) => !b.isDisposed && b.quantity > 0);
-          if (validBatch) {
-            next.batchNumber = validBatch.batchNumber;
-            next.batch = validBatch.batchNumber;
-            if (!next.expiryDate) next.expiryDate = validBatch.expiryDate;
-            if (!next.mfgDate) next.mfgDate = validBatch.receivedDate;
-          }
-        }
-      }
-    }
-    enriched.push(next);
-  }
-  return enriched;
-};
-
-const CATEGORY_TYPE_MAP = {
-  Consultation: "consultation",
-  Pharmacy: "medicine",
-  Laboratory: "lab",
-  Admission: "admission",
-  Room: "room",
-  ICU: "room",
-  Procedure: "procedure",
-  Nursing: "nursing",
-  Miscellaneous: "other",
-};
-
-const normalizeBillItem = (item) => {
-  const category = item.category || "Miscellaneous";
-  const type = item.type || CATEGORY_TYPE_MAP[category] || "other";
-  return { ...item, category, type };
-};
-
-const calculateItemAmounts = (items = []) =>
-  items.map((item) => {
-    const normalized = normalizeBillItem(item);
-    const lineTotal =
-      Number(normalized.quantity || 0) * Number(normalized.unitPrice || 0);
-    const gstAmount = lineTotal * ((Number(normalized.gstPercent) || 0) / 100);
-    return { ...normalized, gstAmount, totalAmount: lineTotal + gstAmount };
-  });
-
-const VALID_CATEGORIES = [
-  "Consultation", "Pharmacy", "Laboratory", "Admission", "Room",
-  "ICU", "Procedure", "Nursing", "Miscellaneous",
-];
-const VALID_TYPES = [
-  "consultation", "procedure", "medicine", "lab", "room", "nursing", "admission", "other",
-];
-const VALID_REF_MODELS = [
-  "OPRegistration", "IPAdmission", "LabTest", "Prescription", "Patient", "Medicine",
-];
-
-const asObjectId = (value) => {
-  if (!value) return undefined;
-  const raw = value._id || value;
-  const str = String(raw);
-  if (!mongoose.Types.ObjectId.isValid(str)) return undefined;
-  const id = new mongoose.Types.ObjectId(str);
-  return String(id) === str ? id : undefined;
-};
-
-const asDate = (value) => {
-  if (!value) return undefined;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? undefined : d;
-};
-
-const sanitizeBillItems = (items = []) =>
-  calculateItemAmounts(
-    items.map((raw) => {
-      const category = VALID_CATEGORIES.includes(raw.category)
-        ? raw.category
-        : "Miscellaneous";
-      const type = VALID_TYPES.includes(raw.type)
-        ? raw.type
-        : CATEGORY_TYPE_MAP[category] || "other";
-      const keepId = asObjectId(raw._id);
-      return {
-        ...(keepId ? { _id: keepId } : {}),
-        category,
-        type,
-        description: String(raw.description || raw.name || "Charge").trim() || "Charge",
-        name: raw.name || raw.description,
-        quantity: Number(raw.quantity || 0),
-        unitPrice: Number(raw.unitPrice || 0),
-        gstPercent: Number(raw.gstPercent || 0),
-        medicine: asObjectId(raw.medicine),
-        batch: raw.batch || raw.batchNumber || undefined,
-        batchNumber: raw.batchNumber || raw.batch || undefined,
-        genericName: raw.genericName || undefined,
-        mrp: raw.mrp != null ? Number(raw.mrp) : undefined,
-        hsnCode: raw.hsnCode || undefined,
-        unitOfMeasure: raw.unitOfMeasure || "Nos",
-        expiryDate: asDate(raw.expiryDate),
-        mfgDate: asDate(raw.mfgDate),
-        discountPercent: Number(raw.discountPercent || 0),
-        discountAmount: Number(raw.discountAmount || 0),
-        referenceId: asObjectId(raw.referenceId),
-        referenceModel: VALID_REF_MODELS.includes(raw.referenceModel)
-          ? raw.referenceModel
-          : undefined,
-      };
-    }),
-  );
+const {
+  asObjectId,
+  sanitizeBillItems,
+  enrichMedicineItems,
+  inferBillType,
+  pickIpAdmissionId,
+} = require("../utils/billItems");
 
 const stockFingerprint = (items = []) =>
   stockableMedicineItems(items)
@@ -503,11 +370,23 @@ exports.createBill = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("At least one bill item is required", 400));
   }
 
+  req.body.patient = asObjectId(req.body.patient);
+  if (!req.body.patient) {
+    return next(new ErrorResponse("Patient is required", 400));
+  }
+  req.body.doctor = asObjectId(req.body.doctor);
+  req.body.department = asObjectId(req.body.department);
+  req.body.opRegistration = asObjectId(req.body.opRegistration);
+  req.body.ipAdmission = asObjectId(req.body.ipAdmission);
+
   req.body.billNumber = await allocateBillNumber();
   req.body.createdBy = req.user._id;
-  if (!req.body.billType) req.body.billType = "unified";
 
   req.body.items = sanitizeBillItems(await enrichMedicineItems(req.body.items));
+  req.body.billType = inferBillType(req.body.billType, req.body.items);
+  if (!req.body.ipAdmission) {
+    req.body.ipAdmission = pickIpAdmissionId(req.body.items);
+  }
 
   if (requirePharmacistBillScope(req, req.body, next)) return;
 
@@ -553,7 +432,7 @@ exports.createBill = asyncHandler(async (req, res, next) => {
       remarks: 'Stock restored — bill create failed',
       referenceModel: 'Bill',
     });
-    throw error;
+    return next(toBillError(error));
   }
 
   const populated = await Bill.findById(bill._id)
@@ -584,7 +463,7 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   res.status(201).json({
     success: true,
     data: populated,
-    message: `Unified bill created with ${itemCount} item(s).${alreadyIssuedMeds ? ` ${alreadyIssuedMeds} already-issued medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`,
+    message: `${req.body.billType === "ip" ? "IP" : req.body.billType === "op" ? "OP" : req.body.billType === "lab" ? "Lab" : "Unified"} bill created with ${itemCount} item(s).${alreadyIssuedMeds ? ` ${alreadyIssuedMeds} already-issued medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`,
   });
 });
 
@@ -655,6 +534,11 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
     reason,
   );
   if (!Array.isArray(bill.editHistory)) bill.editHistory = [];
+  bill.editHistory.forEach((entry) => {
+    if (!entry) return;
+    if (!entry.reason) entry.reason = reason;
+    if (!entry.actionType) entry.actionType = "Edited";
+  });
   if (auditEntries.length) bill.editHistory.push(...auditEntries);
 
   try {

@@ -42,11 +42,11 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     userName: String,
     editTime: { type: Date, default: Date.now },
-    actionType: { type: String, required: true },
+    actionType: { type: String, required: true, default: 'Edited' },
     field: String,
     previousValue: mongoose.Schema.Types.Mixed,
     newValue: mongoose.Schema.Types.Mixed,
-    reason: { type: String, required: true },
+    reason: { type: String, required: true, default: 'Updated' },
   }, { _id: true });
 
   const billPrintHistorySchema = new mongoose.Schema({
@@ -92,6 +92,17 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
     printHistory: [billPrintHistorySchema],
     printCount: { type: Number, default: 0 },
   }, { timestamps: true });
+
+  billSchema.pre('validate', function (next) {
+    if (Array.isArray(this.editHistory)) {
+      this.editHistory.forEach((entry) => {
+        if (!entry) return;
+        if (!entry.reason) entry.reason = 'Updated';
+        if (!entry.actionType) entry.actionType = 'Edited';
+      });
+    }
+    next();
+  });
 
   billSchema.pre('save', function (next) {
   this.subtotal = this.items.reduce(
