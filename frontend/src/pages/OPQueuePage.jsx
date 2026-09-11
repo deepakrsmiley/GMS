@@ -9,7 +9,7 @@ import {
   Users, ClipboardList, Calendar, Timer, XCircle,
   Search, UserPlus, Footprints, Flag, Link2, RotateCcw, Send, Info,
   Hourglass, Phone, CreditCard, X, Printer, Settings2, MoreVertical,
-  FileText, Eye,
+  FileText, Eye, ScanLine, History,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useSelector } from 'react-redux';
@@ -21,9 +21,10 @@ import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
 import OPConsultationReceipt from '../components/op/OPConsultationReceipt';
 import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
-import { hasPermission } from '../constants/permissions';
+import { hasPermission, hasAnyPermission } from '../constants/permissions';
 import { SYSTEM_NAME } from '../constants/branding';
 import { istCalendarDate } from '../utils/istDate';
+import ScanPrescriptionModal from '../components/op/ScanPrescriptionModal';
 import '../styles/opQueue.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -176,6 +177,12 @@ export default function OPQueuePage() {
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canLogServices = hasPermission(user, 'CREATE_SERVICE_USAGE');
   const canRegister = hasPermission(user, 'CREATE_OP_QUEUE');
+  const canScanRx = hasAnyPermission(user, [
+    'UPDATE_PATIENT', 'UPDATE_PATIENT_PROFILE', 'CREATE_PATIENT',
+    'VIEW_NURSE_STATION', 'CREATE_CONSULTATION', 'UPDATE_CONSULTATION',
+    'CREATE_PRESCRIPTION', 'UPDATE_OP_QUEUE',
+  ]);
+  const canViewProfile = hasAnyPermission(user, ['VIEW_PATIENT_PROFILE', 'VIEW_PATIENT']);
   const [showAdd, setShowAdd] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
@@ -199,6 +206,7 @@ export default function OPQueuePage() {
   const [billPrint, setBillPrint] = useState(null); // { bill, op }
   const [serviceOp, setServiceOp] = useState(null);
   const [detailsItem, setDetailsItem] = useState(null);
+  const [scanVisit, setScanVisit] = useState(null);
   const qc = useQueryClient();
 
   const { data: queue, isLoading, refetch } = useQuery({
@@ -735,6 +743,20 @@ export default function OPQueuePage() {
                           <button type="button" className="opq-btn-ghost" onClick={() => setDetailsItem(item)}>
                             <Eye size={14} /> Details
                           </button>
+                          {canScanRx && item.patient?._id && (
+                            <button type="button" className="opq-btn-ghost" onClick={() => setScanVisit(item)}>
+                              <ScanLine size={14} /> Scan Prescription
+                            </button>
+                          )}
+                          {canViewProfile && item.patient?._id && (
+                            <button
+                              type="button"
+                              className="opq-btn-ghost"
+                              onClick={() => navigate(`/patients/${item.patient._id}/profile?tab=prescriptions`)}
+                            >
+                              <History size={14} /> History
+                            </button>
+                          )}
                           <button
                             type="button"
                             className={active ? 'opq-btn-primary' : 'opq-btn-ghost'}
@@ -759,6 +781,16 @@ export default function OPQueuePage() {
                                 <button type="button" onClick={() => { setOpenMenuId(null); setDetailsItem(item); }}>
                                   <Eye size={14} /> View full details
                                 </button>
+                                {canScanRx && item.patient?._id && (
+                                  <button type="button" onClick={() => { setOpenMenuId(null); setScanVisit(item); }}>
+                                    <ScanLine size={14} /> Scan Prescription
+                                  </button>
+                                )}
+                                {canViewProfile && item.patient?._id && (
+                                  <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/patients/${item.patient._id}/profile?tab=timeline`); }}>
+                                    <History size={14} /> Patient history
+                                  </button>
+                                )}
                                 {active && (
                                   <button type="button" onClick={() => { setOpenMenuId(null); navigate(`/consultation/${item._id}`); }}>
                                     <Stethoscope size={14} /> Open consultation
@@ -1001,6 +1033,24 @@ export default function OPQueuePage() {
                   <Stethoscope size={15} /> Open consultation
                 </button>
               )}
+              {canScanRx && detailsItem.patient?._id && (
+                <button
+                  type="button"
+                  className="opq-btn-add"
+                  onClick={() => { setDetailsItem(null); setScanVisit(detailsItem); }}
+                >
+                  <ScanLine size={15} /> Scan Prescription
+                </button>
+              )}
+              {canViewProfile && detailsItem.patient?._id && (
+                <button
+                  type="button"
+                  className="opq-btn-export"
+                  onClick={() => navigate(`/patients/${detailsItem.patient._id}/profile?tab=prescriptions`)}
+                >
+                  <History size={15} /> History
+                </button>
+              )}
               <button type="button" className="opq-btn-export" onClick={() => setDetailsItem(null)}>
                 Close
               </button>
@@ -1013,6 +1063,13 @@ export default function OPQueuePage() {
         registration={serviceOp}
         isOpen={!!serviceOp}
         onClose={() => setServiceOp(null)}
+      />
+
+      <ScanPrescriptionModal
+        isOpen={!!scanVisit}
+        visit={scanVisit}
+        onClose={() => setScanVisit(null)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['opQueue'] })}
       />
 
       {/* A4 OP paper portaled to body so print CSS always finds it */}

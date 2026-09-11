@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   UserPlus, Stethoscope, FlaskConical, Pill, BedDouble, ArrowRightLeft,
-  ClipboardList, Scissors, LogOut, CalendarClock, Receipt, Wallet, Circle,
+  ClipboardList, Scissors, LogOut, CalendarClock, Receipt, Wallet, Circle, FileText, Eye,
 } from 'lucide-react';
 import LoadingSpinner from '../common/LoadingSpinner';
 
@@ -37,7 +37,7 @@ const COLORS = {
 
 const FILTERS = ['All', 'OP Visit', 'Admission', 'Lab Test', 'Medicine', 'Operation', 'Bill', 'Payment'];
 
-export default function PatientTimelineView({ events = [], loading }) {
+export default function PatientTimelineView({ events = [], loading, patient, onViewPrescription }) {
   const [filter, setFilter] = useState('All');
 
   if (loading) return <LoadingSpinner />;
@@ -79,7 +79,25 @@ export default function PatientTimelineView({ events = [], loading }) {
                     <span className="text-xs text-gray-400 whitespace-nowrap">{new Date(e.date).toLocaleString('en-IN')}</span>
                   </div>
                   {e.subtitle && <p className="text-xs text-gray-500 mt-0.5">{e.subtitle}</p>}
+                  {e.diagnosis && <p className="text-xs text-gray-500 mt-0.5">Diagnosis: {e.diagnosis}</p>}
                   {e.status && <span className="badge-blue mt-1 inline-block">{e.status}</span>}
+                  {(e.scannedPrescriptions || []).length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-600 inline-flex items-center gap-1">
+                        <FileText size={12} /> Physical Prescription – Scanned
+                      </span>
+                      {(e.scannedPrescriptions || []).map((doc) => (
+                        <button
+                          key={doc._id}
+                          type="button"
+                          className="text-xs font-semibold text-indigo-700 inline-flex items-center gap-1"
+                          onClick={() => onViewPrescription?.(doc)}
+                        >
+                          <Eye size={12} /> View
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );

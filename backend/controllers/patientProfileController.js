@@ -11,9 +11,53 @@ const Prescription = require('../models/Prescription');
 const Operation = require('../models/Operation');
 const Document = require('../models/Document');
 const ActivityLog = require('../models/ActivityLog');
+const { logActivity } = require('../utils/activityLogger');
+const { allocatePrescriptionDocNumber } = require('../utils/generateId');
+const { persistScanFiles, resolveStoragePath } = require('../utils/prescriptionScanStorage');
+const fs = require('fs');
 
 const DOC_POP = { path: 'doctor', select: 'name role' };
 const DEPT_POP = { path: 'department', select: 'name color' };
+
+const SCAN_DOC_POPULATE = [
+  { path: 'uploadedBy', select: 'name role' },
+  { path: 'doctor', select: 'name' },
+  { path: 'department', select: 'name' },
+  { path: 'opRegistration', select: 'tokenNumber tokenDate diagnosis createdAt' },
+  { path: 'replacedBy', select: 'documentNumber createdAt' },
+  { path: 'replaces', select: 'documentNumber createdAt' },
+];
+
+const serializeDocument = (doc) => {
+  const o = doc && typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+  const hasStoredFile = Boolean(o.storageKey) || String(o.fileUrl || '').startsWith('secure:');
+  const patientId = o.patient?._id || o.patient;
+  delete o.storageKey;
+  if (hasStoredFile && patientId && o._id) {
+    o.fileUrl = `/api/patients/${patientId}/profile/documents/${o._id}/file`;
+    o.hasSecureFile = true;
+  } else if (hasStoredFile) {
+    o.hasSecureFile = true;
+  }
+  return o;
+};
+
+const loadActivePrescriptionScans = async (patientId, visitIds) => {
+  const filter = {
+    patient: patientId,
+    category: 'Prescription',
+    isActive: true,
+    status: { $ne: 'deleted' },
+  };
+  if (visitIds) filter.opRegistration = { $in: visitIds };
+  return Document.find(filter)
+    .populate('doctor', 'name')
+    .populate('department', 'name')
+    .populate('uploadedBy', 'name')
+    .populate('opRegistration', 'tokenNumber tokenDate createdAt diagnosis')
+    .sort({ createdAt: -1 })
+    .lean();
+};
 
 const getPatientOr404 = async (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
@@ -82,22 +126,40 @@ exports.getTimeline = asyncHandler(async (req, res, next) => {
   const patient = await getPatientOr404(req.params.id);
   if (!patient) return next(new ErrorResponse('Patient not found', 404));
 
-  const [opVisits, admissions, labTests, prescriptions, operations, bills] = await Promise.all([
+  const [opVisits, admissions, labTests, prescriptions, operations, bills, scanDocs] = await Promise.all([
     OPRegistration.find({ patient: patient._id }).populate(DOC_POP).populate(DEPT_POP).lean(),
     IPAdmission.find({ patient: patient._id }).populate(DOC_POP).lean(),
     LabTest.find({ patient: patient._id }).populate(DOC_POP).lean(),
     Prescription.find({ patient: patient._id }).populate(DOC_POP).lean(),
     Operation.find({ patient: patient._id }).populate('surgeon', 'name').lean(),
     Bill.find({ patient: patient._id }).lean(),
+    loadActivePrescriptionScans(patient._id),
   ]);
+
+  const scansByVisit = {};
+  scanDocs.forEach((d) => {
+    const key = String(d.opRegistration?._id || d.opRegistration || '');
+    if (!key) return;
+    (scansByVisit[key] ||= []).push(serializeDocument(d));
+  });
 
   const events = [];
 
   events.push({ type: 'Registration', date: patient.createdAt, title: 'Patient Registered', refId: patient._id });
 
   opVisits.forEach((v) => events.push({
-    type: 'OP Visit', date: v.createdAt, title: `OP Visit - ${v.department?.name || ''}`.trim(),
-    subtitle: v.doctor?.name ? `Dr. ${v.doctor.name}` : undefined, status: v.status, refId: v._id,
+    type: 'OP Visit',
+    date: v.createdAt,
+    title: `OP Visit - ${v.department?.name || ''}`.trim(),
+    subtitle: v.doctor?.name ? `Dr. ${v.doctor.name}` : undefined,
+    status: v.status,
+    refId: v._id,
+    diagnosis: v.diagnosis || '',
+    tokenNumber: v.tokenNumber,
+    department: v.department?.name,
+    doctorName: v.doctor?.name,
+    scannedPrescriptions: scansByVisit[String(v._id)] || [],
+    patientId: patient._id,
   }));
 
   admissions.forEach((a) => {
@@ -139,7 +201,20 @@ exports.getOPHistory = asyncHandler(async (req, res, next) => {
     .sort({ createdAt: -1 })
     .lean();
 
-  res.status(200).json({ success: true, count: visits.length, data: visits });
+  const scanDocs = await loadActivePrescriptionScans(patient._id, visits.map((v) => v._id));
+  const scansByVisit = {};
+  scanDocs.forEach((d) => {
+    const key = String(d.opRegistration?._id || d.opRegistration || '');
+    if (!key) return;
+    (scansByVisit[key] ||= []).push(serializeDocument(d));
+  });
+
+  const data = visits.map((v) => ({
+    ...v,
+    scannedPrescriptions: scansByVisit[String(v._id)] || [],
+  }));
+
+  res.status(200).json({ success: true, count: data.length, data });
 });
 
 // ---------------------------------------------------------------------------
@@ -459,17 +534,33 @@ exports.getPaymentHistory = asyncHandler(async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// SECTION 16 — Document History
+// SECTION 16 — Document History + physical prescription scans
 // ---------------------------------------------------------------------------
 exports.getDocumentHistory = asyncHandler(async (req, res, next) => {
   const patient = await getPatientOr404(req.params.id);
   if (!patient) return next(new ErrorResponse('Patient not found', 404));
 
-  const filter = { patient: patient._id, isActive: true };
+  const filter = { patient: patient._id, isActive: true, status: { $ne: 'deleted' } };
   if (req.query.category) filter.category = req.query.category;
+  if (req.query.opRegistration && mongoose.Types.ObjectId.isValid(req.query.opRegistration)) {
+    filter.opRegistration = req.query.opRegistration;
+  }
+  if (req.query.includeReplaced === 'true') {
+    delete filter.isActive;
+    delete filter.status;
+  }
 
-  const documents = await Document.find(filter).populate('uploadedBy', 'name').sort({ createdAt: -1 }).lean();
-  res.status(200).json({ success: true, count: documents.length, categories: Document.CATEGORIES, data: documents });
+  const documents = await Document.find(filter)
+    .populate(SCAN_DOC_POPULATE)
+    .sort({ createdAt: -1 })
+    .lean();
+
+  res.status(200).json({
+    success: true,
+    count: documents.length,
+    categories: Document.CATEGORIES,
+    data: documents.map(serializeDocument),
+  });
 });
 
 exports.uploadDocument = asyncHandler(async (req, res, next) => {
@@ -482,19 +573,200 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
   const doc = await Document.create({
     patient: patient._id, category, title, fileUrl, fileType, notes, ipAdmission, opRegistration,
     uploadedBy: req.user._id,
+    scanSource: 'url',
+    status: 'active',
   });
 
-  res.status(201).json({ success: true, data: doc });
+  await logActivity(req, {
+    action: 'Document Upload',
+    module: 'Patients',
+    description: `Added ${category} document "${title}" for patient ${patient.patientId || patient.name}`,
+    relatedId: doc._id,
+    relatedModel: 'Document',
+    metadata: { patientId: String(patient._id), category },
+  });
+
+  res.status(201).json({ success: true, data: serializeDocument(doc) });
+});
+
+const saveScannedPrescription = async (req, res, next, { replaceDoc = null } = {}) => {
+  const patient = await getPatientOr404(req.params.id);
+  if (!patient) return next(new ErrorResponse('Patient not found', 404));
+
+  const files = req.files || [];
+  if (!files.length) return next(new ErrorResponse('Please scan or upload at least one page', 400));
+  if (files.length > 12) return next(new ErrorResponse('A prescription can have at most 12 pages', 400));
+
+  const opRegistrationId = req.body.opRegistration || req.body.opVisitId;
+  if (!opRegistrationId || !mongoose.Types.ObjectId.isValid(opRegistrationId)) {
+    return next(new ErrorResponse('OP visit is required to store a scanned prescription', 400));
+  }
+
+  const visit = await OPRegistration.findOne({ _id: opRegistrationId, patient: patient._id })
+    .populate('doctor', 'name')
+    .populate('department', 'name')
+    .lean();
+  if (!visit) return next(new ErrorResponse('OP visit not found for this patient', 404));
+
+  if (replaceDoc && String(replaceDoc.opRegistration) !== String(visit._id)) {
+    return next(new ErrorResponse('Replacement must belong to the same OP visit', 400));
+  }
+
+  const documentNumber = await allocatePrescriptionDocNumber(req.organizationId);
+  let stored;
+  try {
+    stored = await persistScanFiles({
+      files,
+      organizationId: req.organizationId,
+      patientId: patient._id,
+      documentNumber,
+    });
+  } catch (err) {
+    return next(new ErrorResponse(err.message || 'Could not store the scanned prescription', 400));
+  }
+
+  const token = String(visit.tokenNumber || '').replace(/^T-?/i, '') || '—';
+  const title = req.body.title
+    || `Physical Prescription · OP-${token} · ${new Date(visit.tokenDate || visit.createdAt).toLocaleDateString('en-IN')}`;
+
+  const payload = {
+    patient: patient._id,
+    category: 'Prescription',
+    title,
+    documentNumber,
+    fileUrl: `secure:${documentNumber}`,
+    storageKey: stored.storageKey,
+    fileType: stored.fileType,
+    mimeType: stored.mimeType,
+    fileSizeKB: stored.fileSizeKB,
+    originalFileName: stored.originalFileName || files[0]?.originalname,
+    pageCount: stored.pageCount,
+    scanSource: ['scanner', 'upload', 'camera'].includes(req.body.scanSource) ? req.body.scanSource : 'upload',
+    grayscale: req.body.grayscale === 'true' || req.body.grayscale === true,
+    opRegistration: visit._id,
+    doctor: visit.doctor?._id || visit.doctor,
+    department: visit.department?._id || visit.department,
+    visitDate: visit.tokenDate || visit.createdAt,
+    notes: req.body.notes || '',
+    uploadedBy: req.user._id,
+    status: 'active',
+    isActive: true,
+  };
+
+  if (replaceDoc) {
+    payload.replaces = replaceDoc._id;
+  }
+
+  const doc = await Document.create(payload);
+
+  if (replaceDoc) {
+    await Document.findByIdAndUpdate(replaceDoc._id, {
+      isActive: false,
+      status: 'replaced',
+      replacedBy: doc._id,
+      replacedAt: new Date(),
+      replacedByUser: req.user._id,
+    });
+  }
+
+  await logActivity(req, {
+    action: replaceDoc ? 'Prescription Re-scan' : 'Prescription Scan',
+    module: 'OP',
+    description: replaceDoc
+      ? `Replaced scanned prescription ${replaceDoc.documentNumber || replaceDoc._id} with ${documentNumber} for ${patient.patientId || patient.name} (OP ${token})`
+      : `Stored scanned physical prescription ${documentNumber} for ${patient.patientId || patient.name} (OP ${token})`,
+    relatedId: doc._id,
+    relatedModel: 'Document',
+    metadata: {
+      patientId: String(patient._id),
+      opVisitId: String(visit._id),
+      doctorId: visit.doctor?._id || visit.doctor,
+      documentNumber,
+      originalFileName: stored.originalFileName,
+      fileType: stored.fileType,
+      fileSizeKB: stored.fileSizeKB,
+      pageCount: stored.pageCount,
+      replacedDocumentId: replaceDoc ? String(replaceDoc._id) : undefined,
+    },
+  });
+
+  const populated = await Document.findById(doc._id).populate(SCAN_DOC_POPULATE);
+  res.status(replaceDoc ? 200 : 201).json({ success: true, data: serializeDocument(populated) });
+};
+
+exports.scanPrescription = asyncHandler(async (req, res, next) => {
+  await saveScannedPrescription(req, res, next);
+});
+
+exports.replacePrescriptionScan = asyncHandler(async (req, res, next) => {
+  const existing = await Document.findOne({
+    _id: req.params.docId,
+    patient: req.params.id,
+    category: 'Prescription',
+  });
+  if (!existing || existing.status === 'deleted') {
+    return next(new ErrorResponse('Prescription document not found', 404));
+  }
+  await saveScannedPrescription(req, res, next, { replaceDoc: existing });
+});
+
+exports.streamDocumentFile = asyncHandler(async (req, res, next) => {
+  const patient = await getPatientOr404(req.params.id);
+  if (!patient) return next(new ErrorResponse('Patient not found', 404));
+
+  const doc = await Document.findOne({ _id: req.params.docId, patient: patient._id }).select('+storageKey');
+  if (!doc) return next(new ErrorResponse('Document not found', 404));
+  if (!doc.storageKey) {
+    if (doc.fileUrl && /^https?:\/\//i.test(doc.fileUrl)) {
+      return res.redirect(doc.fileUrl);
+    }
+    return next(new ErrorResponse('No file is stored for this document', 404));
+  }
+
+  let fullPath;
+  try {
+    fullPath = resolveStoragePath(doc.storageKey);
+  } catch (err) {
+    return next(new ErrorResponse('Document file is not available', 404));
+  }
+  if (!fs.existsSync(fullPath)) {
+    return next(new ErrorResponse('Document file is not available', 404));
+  }
+
+  const download = req.query.download === '1' || req.query.download === 'true';
+  const filename = doc.originalFileName || `${doc.documentNumber || 'prescription'}.${doc.fileType || 'pdf'}`;
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Type', doc.mimeType || (doc.fileType === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
+  res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${String(filename).replace(/"/g, '')}"`);
+  fs.createReadStream(fullPath).pipe(res);
 });
 
 exports.deleteDocument = asyncHandler(async (req, res, next) => {
-  const doc = await Document.findOneAndUpdate(
-    { _id: req.params.docId, patient: req.params.id },
-    { isActive: false },
-    { new: true },
-  );
+  const doc = await Document.findOne({ _id: req.params.docId, patient: req.params.id });
   if (!doc) return next(new ErrorResponse('Document not found', 404));
-  res.status(200).json({ success: true, data: doc });
+
+  doc.isActive = false;
+  doc.status = 'deleted';
+  doc.deletedAt = new Date();
+  doc.deletedBy = req.user._id;
+  await doc.save();
+
+  await logActivity(req, {
+    action: 'Document Delete',
+    module: doc.category === 'Prescription' ? 'OP' : 'Patients',
+    description: `Deleted ${doc.category} document "${doc.title}" (${doc.documentNumber || doc._id})`,
+    relatedId: doc._id,
+    relatedModel: 'Document',
+    metadata: {
+      patientId: String(doc.patient),
+      opVisitId: doc.opRegistration ? String(doc.opRegistration) : undefined,
+      documentNumber: doc.documentNumber,
+      originalFileName: doc.originalFileName,
+    },
+  });
+
+  res.status(200).json({ success: true, data: { _id: doc._id, status: doc.status } });
 });
 
 // ---------------------------------------------------------------------------
@@ -529,16 +801,19 @@ exports.getAuditHistory = asyncHandler(async (req, res, next) => {
   const patient = await getPatientOr404(req.params.id);
   if (!patient) return next(new ErrorResponse('Patient not found', 404));
 
-  const [opIds, ipIds, billIds, labIds, presIds, opsIds] = await Promise.all([
+  const [opIds, ipIds, billIds, labIds, presIds, opsIds, docIds] = await Promise.all([
     OPRegistration.find({ patient: patient._id }).distinct('_id'),
     IPAdmission.find({ patient: patient._id }).distinct('_id'),
     Bill.find({ patient: patient._id }).distinct('_id'),
     LabTest.find({ patient: patient._id }).distinct('_id'),
     Prescription.find({ patient: patient._id }).distinct('_id'),
     Operation.find({ patient: patient._id }).distinct('_id'),
+    Document.find({ patient: patient._id }).distinct('_id'),
   ]);
 
-  const relatedIds = [patient._id, ...opIds, ...ipIds, ...billIds, ...labIds, ...presIds, ...opsIds].map(String);
+  const relatedIds = [
+    patient._id, ...opIds, ...ipIds, ...billIds, ...labIds, ...presIds, ...opsIds, ...docIds,
+  ].map(String);
 
   const logs = await ActivityLog.find({ relatedId: { $in: relatedIds } })
     .populate('user', 'name role')

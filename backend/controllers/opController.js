@@ -8,6 +8,7 @@ const LabTest = require('../models/LabTest');
 const Bill = require('../models/Bill');
 const User = require('../models/User');
 const Department = require('../models/Department');
+const Document = require('../models/Document');
 const logger = require('../utils/logger');
 const { allocateDailyOpToken, allocateBillNumber } = require('../utils/generateId');
 const { withOrganization } = require('../middleware/tenant');
@@ -392,35 +393,73 @@ exports.getPatientMedicalHistory = asyncHandler(async (req, res, next) => {
   const patient = await Patient.findById(req.params.patientId);
   if (!patient) return next(new ErrorResponse('Patient not found', 404));
 
-  const [visits, prescriptions, labTests, admissions] = await Promise.all([
+  const [visits, prescriptions, labTests, admissions, scanDocs] = await Promise.all([
     OPRegistration.find({ patient: patient._id })
       .populate('doctor', 'name')
       .populate('department', 'name')
       .sort('-tokenDate')
-      .limit(20),
+      .limit(20)
+      .lean(),
     Prescription.find({ patient: patient._id })
       .populate('doctor', 'name')
       .sort('-createdAt')
-      .limit(20),
+      .limit(20)
+      .lean(),
     LabTest.find({ patient: patient._id })
       .populate('doctor', 'name')
       .sort('-createdAt')
-      .limit(20),
+      .limit(20)
+      .lean(),
     IPAdmission.find({ patient: patient._id })
       .populate('doctor', 'name')
       .populate('department', 'name')
       .sort('-admissionDate')
-      .limit(10),
+      .limit(10)
+      .lean(),
+    Document.find({
+      patient: patient._id,
+      category: 'Prescription',
+      isActive: true,
+      status: { $ne: 'deleted' },
+    })
+      .select('title createdAt opRegistration fileType pageCount documentNumber doctor department visitDate fileUrl originalFileName fileSizeKB uploadedBy')
+      .populate('doctor', 'name')
+      .populate('department', 'name')
+      .populate('opRegistration', 'tokenNumber tokenDate createdAt')
+      .populate('uploadedBy', 'name')
+      .sort('-createdAt')
+      .lean(),
   ]);
+
+  const scansByVisit = {};
+  scanDocs.forEach((d) => {
+    const key = String(d.opRegistration?._id || d.opRegistration || '');
+    if (!key) return;
+    const safe = { ...d };
+    delete safe.storageKey;
+    safe.hasSecureFile = true;
+    (scansByVisit[key] ||= []).push(safe);
+  });
+
+  const previousVisits = visits.map((v) => ({
+    ...v,
+    scannedPrescriptions: scansByVisit[String(v._id)] || [],
+  }));
 
   res.status(200).json({
     success: true,
     data: {
       patient,
-      previousVisits: visits,
+      previousVisits,
       previousPrescriptions: prescriptions,
       previousLabReports: labTests,
       previousAdmissions: admissions,
+      scannedPrescriptions: scanDocs.map((d) => {
+        const safe = { ...d };
+        delete safe.storageKey;
+        safe.hasSecureFile = true;
+        return safe;
+      }),
       allergies: patient.allergies || [],
       chronicDiseases: patient.chronicConditions || [],
     },

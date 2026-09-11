@@ -18,6 +18,9 @@ backend/dist/
 frontend/dist/
 dist/
 
+# Private medical document storage (authenticated download only)
+backend/uploads/
+
 # OS
 .DS_Store
 Thumbs.db

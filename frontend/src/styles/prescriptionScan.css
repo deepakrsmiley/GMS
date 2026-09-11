@@ -1,0 +1,426 @@
+/* Physical prescription scan + medical document viewer — matches HMS indigo */
+.rxscan-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.rxscan-meta {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px 14px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #e0e7ff;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+.rxscan-meta-k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.rxscan-meta-v {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #0f172a;
+}
+.rxscan-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 20px 0;
+}
+.rxscan-tab {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.rxscan-tab.is-on {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+}
+.rxscan-drop {
+  margin: 12px 20px;
+  border: 1.5px dashed #c7d2fe;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 28px 16px;
+  text-align: center;
+  color: #475569;
+  cursor: pointer;
+}
+.rxscan-drop.is-over {
+  border-color: #4338ca;
+  background: #eef2ff;
+}
+.rxscan-drop h4 {
+  margin: 8px 0 4px;
+  font-size: 14px;
+  color: #0f172a;
+}
+.rxscan-drop p {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.rxscan-camera {
+  margin: 12px 20px;
+  background: #0f172a;
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+  min-height: 240px;
+}
+.rxscan-camera video {
+  width: 100%;
+  max-height: 360px;
+  display: block;
+  object-fit: contain;
+  background: #020617;
+}
+.rxscan-camera-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #111827;
+}
+.rxscan-camera-bar select {
+  flex: 1;
+  min-width: 160px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.rxscan-pages {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 20px 8px;
+}
+.rxscan-page {
+  width: 72px;
+  flex: 0 0 auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  cursor: pointer;
+  position: relative;
+}
+.rxscan-page.is-on {
+  border-color: #4338ca;
+  box-shadow: 0 0 0 2px #c7d2fe;
+}
+.rxscan-page img,
+.rxscan-page .rxscan-page-pdf {
+  width: 72px;
+  height: 88px;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+}
+.rxscan-page-n {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 0;
+  color: #475569;
+}
+.rxscan-preview {
+  margin: 0 20px 12px;
+  background: #e2e8f0;
+  border-radius: 14px;
+  min-height: 280px;
+  max-height: 52vh;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.rxscan-stage {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.rxscan-stage img {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 50vh;
+  transform-origin: center center;
+  background: #fff;
+}
+.rxscan-stage iframe {
+  width: min(100%, 720px);
+  height: 50vh;
+  border: 0;
+  background: #fff;
+}
+.rxscan-crop {
+  position: absolute;
+  border: 2px solid #4338ca;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.35);
+  cursor: move;
+}
+.rxscan-crop-h {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 2px solid #4338ca;
+  border-radius: 1px;
+}
+.rxscan-crop-h.br { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.rxscan-crop-h.tr { right: -5px; top: -5px; cursor: nesw-resize; }
+.rxscan-crop-h.bl { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.rxscan-crop-h.tl { left: -5px; top: -5px; cursor: nwse-resize; }
+.rxscan-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 20px 8px;
+}
+.rxscan-tool {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.rxscan-tool:hover { background: #f8fafc; }
+.rxscan-tool:disabled { opacity: 0.45; cursor: not-allowed; }
+.rxscan-capture {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: none;
+  background: #4338ca;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.rxscan-capture:hover { background: #312e81; }
+.rxscan-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid #e0e7ff;
+  background: #fff;
+}
+.rxscan-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #475569;
+  font-weight: 600;
+}
+.rxscan-existing {
+  margin: 12px 20px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  font-size: 12.5px;
+  color: #3730a3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.rxscan-viewer {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 420px;
+}
+.rxscan-viewer-side {
+  padding: 16px 18px;
+  border-right: 1px solid #e0e7ff;
+  background: #f8fafc;
+}
+.rxscan-viewer-side h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #4338ca;
+}
+.rxscan-kv { margin-bottom: 10px; }
+.rxscan-viewer-main {
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  min-height: 420px;
+  padding: 16px;
+}
+.rxscan-viewer-main img {
+  max-width: 100%;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+.rxscan-viewer-main iframe {
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: #fff;
+}
+.rxscan-confirm {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  padding: 16px;
+}
+.rxscan-confirm-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+}
+.rxscan-confirm-card h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: #0f172a;
+}
+.rxscan-confirm-card p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.45;
+}
+.rxscan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rxscan-row {
+  border: 1px solid #e0e7ff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rxscan-row-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.rxscan-row-sub {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+.rxscan-thumb {
+  width: 48px;
+  height: 60px;
+  border-radius: 6px;
+  background: #eef2ff;
+  color: #4338ca;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c7d2fe;
+}
+@media (max-width: 900px) {
+  .rxscan-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rxscan-viewer { grid-template-columns: 1fr; }
+  .rxscan-viewer-side { border-right: 0; border-bottom: 1px solid #e0e7ff; }
+}
+.rxscan-bulk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 20px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4338ca;
+}
+.rxscan-bulk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px 12px;
+  max-height: 36vh;
+  overflow: auto;
+}
+.rxscan-bulk-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.rxscan-bulk-item.is-on {
+  border-color: #4338ca;
+  box-shadow: 0 0 0 2px #c7d2fe;
+}
+.rxscan-bulk-thumb {
+  width: 52px;
+  height: 64px;
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+.rxscan-bulk-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

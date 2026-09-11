@@ -80,6 +80,18 @@ const generateAdmissionNo = (counter) => {
   return `IP${year}${num}`;
 };
 
+const generatePrescriptionDocNo = (counter) => {
+  const year = new Date().getFullYear().toString().slice(-2);
+  const num = String(counter).padStart(6, '0');
+  return `RXS${year}${num}`;
+};
+
+const allocatePrescriptionDocNumber = async (organizationId) => {
+  const Counter = require('../models/Counter');
+  const seq = await Counter.getNextSeq('prescriptionScan', organizationId);
+  return generatePrescriptionDocNo(seq);
+};
+
 module.exports = {
   generatePatientId,
   generateBillNo,
@@ -88,4 +100,6 @@ module.exports = {
   allocateDailyOpToken,
   generateLabNo,
   generateAdmissionNo,
+  generatePrescriptionDocNo,
+  allocatePrescriptionDocNumber,
 };

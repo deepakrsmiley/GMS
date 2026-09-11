@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, LayoutDashboard, History as HistoryIcon, Stethoscope, BedDouble,
   ArrowRightLeft, UserRound, Pill, FlaskConical, Scan, Syringe, HardDrive,
-  Scissors, Receipt, Wallet, FileText, ScrollText, Plus,
+  Scissors, Receipt, Wallet, FileText, ScrollText, Plus, ScanLine, Eye,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSelector } from 'react-redux';
 
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import HistorySectionTable from '../../components/patientProfile/HistorySectionTable';
@@ -15,8 +16,13 @@ import PatientTimelineView from '../../components/patientProfile/PatientTimeline
 import AlertsBar from '../../components/patientProfile/AlertsBar';
 import AdmissionDetailModal from '../../components/patientProfile/AdmissionDetailModal';
 import DocumentVault from '../../components/patientProfile/DocumentVault';
+import ScannedPrescriptionsSection from '../../components/patientProfile/ScannedPrescriptionsSection';
 import OperationFormModal from '../../components/patientProfile/OperationFormModal';
+import ScanPrescriptionModal from '../../components/op/ScanPrescriptionModal';
+import BulkScanPrescriptionModal from '../../components/patientProfile/BulkScanPrescriptionModal';
+import PrescriptionDocumentViewer from '../../components/op/PrescriptionDocumentViewer';
 import patientProfileApi from '../../services/patientProfileApi';
+import { hasAnyPermission } from '../../constants/permissions';
 import '../../styles/patient360.css';
 
 const money = (v) => `₹${(v || 0).toLocaleString('en-IN')}`;
@@ -27,6 +33,7 @@ const NAV = [
   { key: 'summary', label: 'Summary', icon: LayoutDashboard },
   { key: 'timeline', label: 'Timeline', icon: HistoryIcon },
   { key: 'op', label: 'OP History', icon: Stethoscope },
+  { key: 'prescriptions', label: 'Scanned Prescriptions', icon: ScanLine },
   { key: 'ip', label: 'IP Admissions', icon: BedDouble },
   { key: 'rooms', label: 'Room History', icon: ArrowRightLeft },
   { key: 'doctors', label: 'Doctor History', icon: UserRound },
@@ -45,15 +52,42 @@ const NAV = [
 export default function PatientProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('summary');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const qc = useQueryClient();
+  const { user } = useSelector((s) => s.auth);
+  const canManageDocs = hasAnyPermission(user, [
+    'UPDATE_PATIENT', 'UPDATE_PATIENT_PROFILE', 'CREATE_PATIENT',
+    'VIEW_NURSE_STATION', 'CREATE_CONSULTATION', 'UPDATE_CONSULTATION',
+    'CREATE_PRESCRIPTION', 'UPDATE_OP_QUEUE',
+  ]);
+  const tabFromUrl = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(NAV.some((n) => n.key === tabFromUrl) ? tabFromUrl : 'summary');
   const [openAdmission, setOpenAdmission] = useState(null);
   const [showOpForm, setShowOpForm] = useState(false);
+  const [viewDoc, setViewDoc] = useState(null);
+  const [scanVisit, setScanVisit] = useState(null);
+  const [replaceDoc, setReplaceDoc] = useState(null);
+  const [bulkScanOpen, setBulkScanOpen] = useState(false);
+
+  useEffect(() => {
+    if (tabFromUrl && NAV.some((n) => n.key === tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectTab = (key) => {
+    setActiveTab(key);
+    const next = new URLSearchParams(searchParams);
+    if (key === 'summary') next.delete('tab');
+    else next.set('tab', key);
+    setSearchParams(next, { replace: true });
+  };
 
   const summaryQ = useQuery({ queryKey: ['patientProfile', 'summary', id], queryFn: () => patientProfileApi.getSummary(id) });
   const alertsQ = useQuery({ queryKey: ['patientProfile', 'alerts', id], queryFn: () => patientProfileApi.getAlerts(id) });
 
   const timelineQ = useQuery({ queryKey: ['patientProfile', 'timeline', id], queryFn: () => patientProfileApi.getTimeline(id), enabled: activeTab === 'timeline' });
-  const opQ = useQuery({ queryKey: ['patientProfile', 'op', id], queryFn: () => patientProfileApi.getOPHistory(id), enabled: activeTab === 'op' });
+  const opQ = useQuery({ queryKey: ['patientProfile', 'op', id], queryFn: () => patientProfileApi.getOPHistory(id), enabled: activeTab === 'op' || activeTab === 'prescriptions' });
   const ipQ = useQuery({ queryKey: ['patientProfile', 'ip-history', id], queryFn: () => patientProfileApi.getIPHistory(id), enabled: activeTab === 'ip' });
   const roomsQ = useQuery({ queryKey: ['patientProfile', 'rooms', id], queryFn: () => patientProfileApi.getRoomHistory(id), enabled: activeTab === 'rooms' });
   const doctorsQ = useQuery({ queryKey: ['patientProfile', 'doctors', id], queryFn: () => patientProfileApi.getDoctorHistory(id), enabled: activeTab === 'doctors' });
@@ -65,7 +99,7 @@ export default function PatientProfilePage() {
   const opsQ = useQuery({ queryKey: ['patientProfile', 'operation-history', id], queryFn: () => patientProfileApi.getOperationHistory(id), enabled: activeTab === 'operations' });
   const billQ = useQuery({ queryKey: ['patientProfile', 'billing', id], queryFn: () => patientProfileApi.getBillingHistory(id), enabled: activeTab === 'billing' });
   const payQ = useQuery({ queryKey: ['patientProfile', 'payments', id], queryFn: () => patientProfileApi.getPaymentHistory(id), enabled: activeTab === 'payments' });
-  const docsQ = useQuery({ queryKey: ['patientProfile', 'documents', id], queryFn: () => patientProfileApi.getDocuments(id), enabled: activeTab === 'documents' });
+  const docsQ = useQuery({ queryKey: ['patientProfile', 'documents', id], queryFn: () => patientProfileApi.getDocuments(id), enabled: activeTab === 'documents' || activeTab === 'prescriptions' || activeTab === 'timeline' || activeTab === 'op' });
   const auditQ = useQuery({ queryKey: ['patientProfile', 'audit', id], queryFn: () => patientProfileApi.getAuditHistory(id), enabled: activeTab === 'audit', onError: () => toast.error('Not authorized to view audit history') });
 
   if (summaryQ.isLoading) return <LoadingSpinner fullScreen />;
@@ -104,7 +138,7 @@ export default function PatientProfilePage() {
                 <button
                   key={n.key}
                   type="button"
-                  onClick={() => setActiveTab(n.key)}
+                  onClick={() => selectTab(n.key)}
                   className={`p360-nav__btn${activeTab === n.key ? ' is-active' : ''}`}
                 >
                   <Icon size={14} /> {n.label}
@@ -144,7 +178,14 @@ export default function PatientProfilePage() {
             </section>
           )}
 
-          {activeTab === 'timeline' && <PatientTimelineView events={timelineQ.data} loading={timelineQ.isLoading} />}
+          {activeTab === 'timeline' && (
+            <PatientTimelineView
+              events={timelineQ.data}
+              loading={timelineQ.isLoading}
+              patient={summaryQ.data?.patient}
+              onViewPrescription={(doc) => setViewDoc(doc)}
+            />
+          )}
 
           {activeTab === 'op' && (
             <HistorySectionTable
@@ -158,6 +199,21 @@ export default function PatientProfilePage() {
                 { key: 'diagnosis', header: 'Diagnosis' },
                 { key: 'status', header: 'Status', render: (r) => <span className="badge-blue">{r.status}</span> },
                 { key: 'bill', header: 'Bill', render: (r) => r.bill ? `${r.bill.billNumber} (${money(r.bill.totalAmount)})` : '—' },
+                {
+                  key: 'scannedPrescriptions',
+                  header: 'Scanned Rx',
+                  render: (r) => (r.scannedPrescriptions || []).length
+                    ? (
+                      <button
+                        type="button"
+                        className="text-indigo-700 font-semibold text-xs"
+                        onClick={(e) => { e.stopPropagation(); setViewDoc(r.scannedPrescriptions[0]); }}
+                      >
+                        <Eye size={12} className="inline mr-1" /> View
+                      </button>
+                    )
+                    : '—',
+                },
               ]}
             />
           )}
@@ -326,7 +382,39 @@ export default function PatientProfilePage() {
             />
           )}
 
-          {activeTab === 'documents' && <DocumentVault patientId={id} data={docsQ.data} isLoading={docsQ.isLoading} />}
+          {activeTab === 'prescriptions' && (
+            <ScannedPrescriptionsSection
+              patientId={id}
+              patient={summaryQ.data?.patient}
+              documents={docsQ.data?.data || []}
+              isLoading={docsQ.isLoading}
+              canManage={canManageDocs}
+              visits={opQ.data || []}
+              visitsLoading={opQ.isLoading}
+              onRefresh={() => qc.invalidateQueries({ queryKey: ['patientProfile', 'documents', id] })}
+              onScan={() => {
+                const latest = (opQ.data || [])[0];
+                if (!latest) return;
+                setReplaceDoc(null);
+                setScanVisit({ ...latest, patient: summaryQ.data?.patient });
+              }}
+              onBulkScan={() => setBulkScanOpen(true)}
+              onReplace={(doc) => {
+                setReplaceDoc(doc);
+                setScanVisit({
+                  _id: doc.opRegistration?._id || doc.opRegistration,
+                  tokenNumber: doc.opRegistration?.tokenNumber,
+                  tokenDate: doc.visitDate || doc.opRegistration?.tokenDate,
+                  createdAt: doc.opRegistration?.createdAt,
+                  doctor: doc.doctor,
+                  department: doc.department,
+                  patient: summaryQ.data?.patient,
+                });
+              }}
+            />
+          )}
+
+          {activeTab === 'documents' && <DocumentVault patientId={id} data={docsQ.data} isLoading={docsQ.isLoading} onViewDocument={setViewDoc} />}
 
           {activeTab === 'audit' && (
             <HistorySectionTable
@@ -346,6 +434,50 @@ export default function PatientProfilePage() {
 
       <AdmissionDetailModal patientId={id} admissionId={openAdmission} onClose={() => setOpenAdmission(null)} />
       <OperationFormModal patientId={id} isOpen={showOpForm} onClose={() => setShowOpForm(false)} />
+      <PrescriptionDocumentViewer
+        isOpen={!!viewDoc}
+        onClose={() => setViewDoc(null)}
+        patientId={id}
+        patient={summaryQ.data?.patient}
+        document={viewDoc}
+        canManage={canManageDocs}
+        onReplace={(doc) => {
+          setViewDoc(null);
+          setReplaceDoc(doc);
+          setScanVisit({
+            _id: doc.opRegistration?._id || doc.opRegistration,
+            tokenNumber: doc.opRegistration?.tokenNumber,
+            tokenDate: doc.visitDate || doc.opRegistration?.tokenDate,
+            createdAt: doc.opRegistration?.createdAt,
+            doctor: doc.doctor,
+            department: doc.department,
+            patient: summaryQ.data?.patient,
+          });
+        }}
+        onDeleted={() => {
+          qc.invalidateQueries({ queryKey: ['patientProfile'] });
+        }}
+      />
+      <ScanPrescriptionModal
+        isOpen={!!scanVisit}
+        visit={scanVisit}
+        visits={(opQ.data || []).map((v) => ({ ...v, patient: summaryQ.data?.patient }))}
+        patient={summaryQ.data?.patient}
+        replaceDocument={replaceDoc}
+        onClose={() => { setScanVisit(null); setReplaceDoc(null); }}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ['patientProfile'] });
+        }}
+      />
+      <BulkScanPrescriptionModal
+        isOpen={bulkScanOpen}
+        onClose={() => setBulkScanOpen(false)}
+        patient={summaryQ.data?.patient}
+        visits={opQ.data || []}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ['patientProfile'] });
+        }}
+      />
     </div>
   );
 }

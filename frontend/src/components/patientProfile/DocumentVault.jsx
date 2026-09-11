@@ -6,7 +6,7 @@ import Modal from '../common/Modal';
 import LoadingSpinner from '../common/LoadingSpinner';
 import patientProfileApi from '../../services/patientProfileApi';
 
-export default function DocumentVault({ patientId, data, isLoading }) {
+export default function DocumentVault({ patientId, data, isLoading, onViewDocument }) {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ category: '', title: '', fileUrl: '', notes: '' });
   const qc = useQueryClient();
@@ -56,8 +56,17 @@ export default function DocumentVault({ patientId, data, isLoading }) {
               <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{d.title}</p>
               <p className="text-xs text-gray-400">{new Date(d.createdAt).toLocaleDateString('en-IN')} • {d.uploadedBy?.name}</p>
               <div className="flex items-center gap-2 mt-2">
-                <a href={d.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 flex items-center gap-1"><ExternalLink size={11} /> View</a>
-                <button onClick={() => deleteMut.mutate(d._id)} className="text-xs text-red-500 flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                {d.hasSecureFile || d.category === 'Prescription' ? (
+                  <button type="button" onClick={() => onViewDocument?.(d)} className="text-xs text-blue-600 flex items-center gap-1">
+                    <ExternalLink size={11} /> View
+                  </button>
+                ) : (
+                  <a href={d.fileUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 flex items-center gap-1"><ExternalLink size={11} /> View</a>
+                )}
+                <button onClick={() => {
+                  if (!window.confirm('Are you sure you want to remove this document? This is recorded in the audit log.')) return;
+                  deleteMut.mutate(d._id);
+                }} className="text-xs text-red-500 flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
                   <Trash2 size={11} /> Remove
                 </button>
               </div>

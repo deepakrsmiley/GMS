@@ -44,6 +44,11 @@ const errorHandler = (err, req, res, next) => {
     error.statusCode = 400;
   }
 
+  if (err.name === 'MulterError' || err.code === 'LIMIT_FILE_SIZE') {
+    error.message = 'The scanned file is too large. Please use a file under 20 MB.';
+    error.statusCode = 400;
+  }
+
   const status = error.statusCode || 500;
   let message = error.message || 'Something went wrong. Please try again.';
   const technical = /E11000|Cast to ObjectId|userId already exists|MongoServer|TypeError|ValidationError:| at /i.test(message)

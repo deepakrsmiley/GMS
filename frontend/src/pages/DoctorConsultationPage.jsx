@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Bed, CheckCircle2, FlaskConical, Pill, Play, Plus, Save, Settings2, Stethoscope, Trash2, X,
+  ArrowLeft, Bed, CheckCircle2, FlaskConical, Pill, Play, Plus, Save, Settings2, Stethoscope, Trash2, X, ScanLine, Eye,
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
-import { hasPermission } from '../constants/permissions';
+import { hasPermission, hasAnyPermission } from '../constants/permissions';
+import ScanPrescriptionModal from '../components/op/ScanPrescriptionModal';
+import PrescriptionDocumentViewer from '../components/op/PrescriptionDocumentViewer';
 import {
   LAB_TYPES,
   LAB_PROFILES,
@@ -50,6 +52,14 @@ export default function DoctorConsultationPage() {
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canLogServices = hasPermission(user, 'CREATE_SERVICE_USAGE');
   const canPrescribe = hasPermission(user, 'CREATE_PRESCRIPTION');
+  const canScanRx = hasAnyPermission(user, [
+    'UPDATE_PATIENT', 'UPDATE_PATIENT_PROFILE', 'CREATE_PATIENT',
+    'VIEW_NURSE_STATION', 'CREATE_CONSULTATION', 'UPDATE_CONSULTATION',
+    'CREATE_PRESCRIPTION', 'UPDATE_OP_QUEUE',
+  ]);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [replaceDoc, setReplaceDoc] = useState(null);
+  const [viewDoc, setViewDoc] = useState(null);
 
   const [diagnosis, setDiagnosis] = useState('');
   const [notes, setNotes] = useState('');
@@ -419,6 +429,11 @@ export default function DoctorConsultationPage() {
               onClick={() => navigate(`/ip-admissions?patient=${patientId}&op=${opId}`)}
             >
               <Bed size={15} /> Admit IP
+            </button>
+          )}
+          {canScanRx && patientId && (
+            <button type="button" className="dc-btn dc-btn-ghost" onClick={() => setScanOpen(true)}>
+              <ScanLine size={15} /> Scan Prescription
             </button>
           )}
         </div>
@@ -925,6 +940,25 @@ export default function DoctorConsultationPage() {
                   {!pendingProcedures.length && <span className="dc-empty">None</span>}
                 </div>
               </div>
+              <div className="dc-summary-block">
+                <div className="dc-summary-label">Physical prescription</div>
+                {(history?.scannedPrescriptions || [])
+                  .filter((d) => String(d.opRegistration?._id || d.opRegistration) === String(opId))
+                  .map((doc) => (
+                    <button
+                      key={doc._id}
+                      type="button"
+                      className="dc-btn dc-btn-ghost"
+                      style={{ height: 30, fontSize: 12, marginTop: 6 }}
+                      onClick={() => setViewDoc(doc)}
+                    >
+                      <Eye size={12} /> View scanned Rx
+                    </button>
+                  ))}
+                {!(history?.scannedPrescriptions || []).some((d) => String(d.opRegistration?._id || d.opRegistration) === String(opId)) && (
+                  <div className="dc-empty">Not scanned yet</div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -951,6 +985,21 @@ export default function DoctorConsultationPage() {
                   <div key={v._id} className="dc-history-item">
                     {new Date(v.tokenDate).toLocaleDateString('en-GB')} — Dr. {v.doctor?.name || '—'}
                     {v.diagnosis ? ` · ${v.diagnosis}` : ''}
+                    {(v.scannedPrescriptions || []).length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        {(v.scannedPrescriptions || []).map((doc) => (
+                          <button
+                            key={doc._id}
+                            type="button"
+                            className="dc-btn dc-btn-ghost"
+                            style={{ height: 28, fontSize: 11, marginTop: 4 }}
+                            onClick={() => setViewDoc(doc)}
+                          >
+                            <Eye size={12} /> Physical prescription
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {!(history?.previousVisits || []).length && <p className="dc-empty">No prior visits</p>}
@@ -959,6 +1008,30 @@ export default function DoctorConsultationPage() {
           </div>
         </aside>
       </div>
+
+      <ScanPrescriptionModal
+        isOpen={scanOpen}
+        visit={op}
+        replaceDocument={replaceDoc}
+        onClose={() => { setScanOpen(false); setReplaceDoc(null); }}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ['patientHistory', patientId] });
+          qc.invalidateQueries({ queryKey: ['op', opId] });
+        }}
+      />
+      <PrescriptionDocumentViewer
+        isOpen={!!viewDoc}
+        onClose={() => setViewDoc(null)}
+        patientId={patientId}
+        patient={op?.patient}
+        document={viewDoc}
+        canManage={canScanRx}
+        onReplace={(doc) => {
+          setViewDoc(null);
+          setReplaceDoc(doc);
+          setScanOpen(true);
+        }}
+      />
     </div>
   );
 }
