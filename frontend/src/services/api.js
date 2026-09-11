@@ -7,7 +7,6 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true,
-  timeout: 12000,
   maxBodyLength: 25 * 1024 * 1024,
   maxContentLength: 25 * 1024 * 1024,
 });
@@ -27,9 +26,29 @@ api.interceptors.request.use((config) => {
 let lastToastKey = '';
 let lastToastAt = 0;
 
+const isTimeoutError = (error) => {
+  const raw =
+    error.response?.data?.message ||
+    error.message ||
+    '';
+  return (
+    error.code === 'ECONNABORTED' ||
+    error.code === 'ETIMEDOUT' ||
+    /timeout of \d+ms exceeded/i.test(raw)
+  );
+};
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (isTimeoutError(error)) {
+      error.message = 'Could not reach the server. Please try again.';
+      if (error.response?.data && typeof error.response.data === 'object') {
+        error.response.data.message = error.message;
+      }
+      return Promise.reject(error);
+    }
+
     const message =
       error.response?.data?.message ||
       error.message ||

@@ -129,17 +129,21 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
   // ── Mirrors backend CATEGORY_TYPE_MAP so manually-added charges get the
   // correct `type` for stock/audit logic without extra round-trips.
-  const BILLING_SAVE_TIMEOUT = 60000;
   const asRefId = (value) => {
     if (!value) return undefined;
     if (typeof value === 'object') return value._id || undefined;
     return value;
   };
   const billingErrorMessage = (err, fallback) => {
+    const raw = err?.response?.data?.message || err?.message || '';
+    if (
+      err?.code === 'ECONNABORTED' ||
+      err?.code === 'ETIMEDOUT' ||
+      /timeout of \d+ms exceeded/i.test(raw)
+    ) {
+      return 'Could not reach the server. Check your connection and try again.';
+    }
     if (!err?.response) {
-      if (err?.code === 'ECONNABORTED' || /timeout/i.test(err?.message || '')) {
-        return 'Saving the bill timed out. Wait a moment and check the bill list before trying again.';
-      }
       return 'Could not reach the server. Check your connection and try again.';
     }
     return err.response.data?.message || fallback;
@@ -464,7 +468,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const createMut = useMutation({
-      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT }),
+      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true }),
       onSuccess: (res) => {
         toast.success(res.data.message || 'Bill created!');
         qc.invalidateQueries(['bills']);
@@ -500,7 +504,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     });
 
     const updateBillMut = useMutation({
-      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT }),
+      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload, { skipErrorToast: true }),
       onSuccess: (res) => {
         toast.success('Bill updated');
         qc.invalidateQueries(['bills']);

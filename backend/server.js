@@ -63,6 +63,9 @@ const corsOptions = {
 
 const app = express();
 const server = http.createServer(app);
+server.timeout = 0;
+server.headersTimeout = 0;
+server.requestTimeout = 0;
 
 const io = new Server(server, {
   cors: {
