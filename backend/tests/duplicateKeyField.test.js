@@ -25,4 +25,12 @@ describe('duplicateKeyField', () => {
       'email',
     );
   });
+
+  it('maps labNumber from keyValue', () => {
+    assert.equal(duplicateKeyField({ keyValue: { labNumber: 'LAB2600001' } }), 'labNumber');
+  });
+
+  it('maps admissionNumber from keyValue', () => {
+    assert.equal(duplicateKeyField({ keyValue: { admissionNumber: 'IP2600001' } }), 'admissionNumber');
+  });
 });

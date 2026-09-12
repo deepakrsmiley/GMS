@@ -126,6 +126,39 @@ const COLLECTION_PLANS = [
       },
     ],
   },
+  {
+    name: 'servicemasters',
+    // Same name + different price is allowed (e.g. several Nursing Charges rows).
+    drop: (idx) => sameKeys(idx.key, { name: 1 }) || sameKeys(idx.key, { organizationId: 1, name: 1 }),
+    ensure: [],
+  },
+  {
+    name: 'testmasters',
+    drop: (idx) => sameKeys(idx.key, { name: 1 }),
+    ensure: [
+      { spec: { organizationId: 1, name: 1 }, options: { unique: true, name: 'organizationId_1_name_1' } },
+    ],
+  },
+  {
+    name: 'labtests',
+    drop: (idx) => sameKeys(idx.key, { labNumber: 1 }),
+    ensure: [
+      {
+        spec: { organizationId: 1, labNumber: 1 },
+        options: { unique: true, name: 'organizationId_1_labNumber_1' },
+      },
+    ],
+  },
+  {
+    name: 'ipadmissions',
+    drop: (idx) => sameKeys(idx.key, { admissionNumber: 1 }),
+    ensure: [
+      {
+        spec: { organizationId: 1, admissionNumber: 1 },
+        options: { unique: true, name: 'organizationId_1_admissionNumber_1' },
+      },
+    ],
+  },
 ];
 
 const ensureTenantUniqueIndexes = async (mongoose, logger) => {

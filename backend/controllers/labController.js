@@ -2,8 +2,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const LabTest = require('../models/LabTest');
 const Bill = require('../models/Bill');
-const Counter = require('../models/Counter');
-const { generateLabNo, allocateBillNumber } = require('../utils/generateId');
+const { allocateLabNumber, allocateBillNumber } = require('../utils/generateId');
 const { generateLabReportPDF } = require('../utils/pdfGenerator');
 const { LAB_TYPES } = require('../models/LabTest');
 const { analyzeResult } = require('../utils/labResultAnalyzer');
@@ -175,8 +174,7 @@ exports.getLabTest = asyncHandler(async (req, res, next) => {
 
 exports.createLabTest = asyncHandler(async (req, res, next) => {
   const body = { ...req.body };
-  const seq = await Counter.getNextSeq('lab');
-  body.labNumber = generateLabNo(seq);
+  body.labNumber = await allocateLabNumber();
   body.createdBy = req.user._id;
   body.orderSource = resolveOrderSource(body, req.user);
 

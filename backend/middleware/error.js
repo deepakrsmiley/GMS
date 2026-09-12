@@ -18,6 +18,7 @@ const errorHandler = (err, req, res, next) => {
     const field = duplicateKeyField(err);
     const friendly = {
       patientId: 'Patient ID (UHID) already exists — please try registering again',
+      labNumber: 'This lab number already exists. Please try creating the order again.',
       email: 'This email is already used by staff in this hospital. Use a different email.',
       employeeId: 'Employee ID already exists in this hospital',
       name: 'This name is already on the list for this hospital.',

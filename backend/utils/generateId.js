@@ -74,10 +74,66 @@ const generateLabNo = (counter) => {
   return `LAB${year}${num}`;
 };
 
+/** Next lab number unique inside this hospital (labNumber is unique per organization). */
+const allocateLabNumber = async () => {
+  const Counter = require('../models/Counter');
+  const LabTest = require('../models/LabTest');
+  const year = new Date().getFullYear().toString().slice(-2);
+  const latest = await LabTest.findOne({ labNumber: new RegExp(`^LAB${year}`) })
+    .sort({ labNumber: -1 })
+    .select('labNumber')
+    .lean();
+  if (latest?.labNumber) {
+    const maxSeq = parseInt(latest.labNumber.slice(-5), 10);
+    if (Number.isFinite(maxSeq)) {
+      await Counter.findByIdAndUpdate(
+        Counter.keyFor('lab'),
+        { $max: { seq: maxSeq } },
+        { upsert: true },
+      );
+    }
+  }
+  for (let i = 0; i < 8; i += 1) {
+    const seq = await Counter.getNextSeq('lab');
+    const labNumber = generateLabNo(seq);
+    const exists = await LabTest.exists({ labNumber });
+    if (!exists) return labNumber;
+  }
+  return `LAB${year}${Date.now().toString().slice(-5)}`;
+};
+
 const generateAdmissionNo = (counter) => {
   const year = new Date().getFullYear().toString().slice(-2);
   const num = String(counter).padStart(5, '0');
   return `IP${year}${num}`;
+};
+
+/** Next IP number unique inside this hospital (admissionNumber is unique per organization). */
+const allocateAdmissionNumber = async () => {
+  const Counter = require('../models/Counter');
+  const IPAdmission = require('../models/IPAdmission');
+  const year = new Date().getFullYear().toString().slice(-2);
+  const latest = await IPAdmission.findOne({ admissionNumber: new RegExp(`^IP${year}`) })
+    .sort({ admissionNumber: -1 })
+    .select('admissionNumber')
+    .lean();
+  if (latest?.admissionNumber) {
+    const maxSeq = parseInt(latest.admissionNumber.slice(-5), 10);
+    if (Number.isFinite(maxSeq)) {
+      await Counter.findByIdAndUpdate(
+        Counter.keyFor('admission'),
+        { $max: { seq: maxSeq } },
+        { upsert: true },
+      );
+    }
+  }
+  for (let i = 0; i < 8; i += 1) {
+    const seq = await Counter.getNextSeq('admission');
+    const admissionNumber = generateAdmissionNo(seq);
+    const exists = await IPAdmission.exists({ admissionNumber });
+    if (!exists) return admissionNumber;
+  }
+  return `IP${year}${Date.now().toString().slice(-5)}`;
 };
 
 const generatePrescriptionDocNo = (counter) => {
@@ -99,7 +155,9 @@ module.exports = {
   generateTokenNo,
   allocateDailyOpToken,
   generateLabNo,
+  allocateLabNumber,
   generateAdmissionNo,
+  allocateAdmissionNumber,
   generatePrescriptionDocNo,
   allocatePrescriptionDocNumber,
 };

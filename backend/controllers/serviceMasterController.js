@@ -4,37 +4,27 @@ const ServiceMaster = require('../models/ServiceMaster');
 
 exports.getServices = asyncHandler(async (req, res) => {
   const filter = req.query.activeOnly === 'false' ? {} : { isActive: true };
-  const services = await ServiceMaster.find(filter).sort('category name');
+  const services = await ServiceMaster.find(filter).sort({ createdAt: 1, _id: 1 });
   res.status(200).json({ success: true, count: services.length, data: services });
 });
 
 exports.createService = asyncHandler(async (req, res, next) => {
   const name = String(req.body.name || '').trim();
   if (!name) return next(new ErrorResponse('Service name is required', 400));
-  req.body.name = name;
-  req.body.createdBy = req.user._id;
-
-  const existing = await ServiceMaster.findOne({
-    name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
-  });
-  if (existing) {
-    if (!existing.isActive) {
-      existing.isActive = true;
-      if (req.body.defaultPrice != null) existing.defaultPrice = req.body.defaultPrice;
-      if (req.body.category) existing.category = req.body.category;
-      if (req.body.chargeType) existing.chargeType = req.body.chargeType;
-      await existing.save();
-      return res.status(200).json({ success: true, data: existing, message: 'Service reactivated' });
-    }
-    return res.status(200).json({
-      success: true,
-      data: existing,
-      message: 'Service already on the list — using the existing item',
-    });
+  const defaultPrice = Number(req.body.defaultPrice);
+  if (!Number.isFinite(defaultPrice) || defaultPrice < 0) {
+    return next(new ErrorResponse('Price is required', 400));
   }
 
-  const service = await ServiceMaster.create(req.body);
-  res.status(201).json({ success: true, data: service });
+  const service = await ServiceMaster.create({
+    name,
+    category: req.body.category || 'Equipment',
+    chargeType: req.body.chargeType || 'per_use',
+    defaultPrice,
+    gstPercent: Number(req.body.gstPercent) || 0,
+    createdBy: req.user._id,
+  });
+  res.status(201).json({ success: true, data: service, message: 'Service added' });
 });
 
 exports.updateService = asyncHandler(async (req, res, next) => {

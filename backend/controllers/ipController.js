@@ -41,9 +41,8 @@ const Bed = require('../models/Bed');
 const Room = require('../models/Room');
 const Patient = require('../models/Patient');
 const OPRegistration = require('../models/OPRegistration');
-const Counter = require('../models/Counter');
 const Medicine = require('../models/Medicine');
-const { generateAdmissionNo } = require('../utils/generateId');
+const { allocateAdmissionNumber } = require('../utils/generateId');
 const { occupyBedAndRoom, releaseBedAndRoom } = require('../utils/roomBedSync');
 const {
   syncCurrentStock,
@@ -295,8 +294,7 @@ exports.createAdmission = asyncHandler(async (req, res, next) => {
     }
   }
 
-  const seq = await Counter.getNextSeq('admission');
-  req.body.admissionNumber = generateAdmissionNo(seq);
+  req.body.admissionNumber = await allocateAdmissionNumber();
   req.body.admittedBy = req.user._id;
 
   const admission = await IPAdmission.create(req.body);

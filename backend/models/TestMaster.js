@@ -7,7 +7,7 @@ const { LAB_TYPES } = require('./LabTest');
 // name and the price is pulled from here automatically instead of being typed by
 // hand every time. Matches the same pattern as ServiceMaster (IP equipment rates).
 const testMasterSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true, trim: true }, // e.g. "CBC (Complete Blood Count)"
+  name: { type: String, required: true, trim: true }, // e.g. "CBC (Complete Blood Count)"
   category: {
     type: String,
     enum: LAB_TYPES,
@@ -29,5 +29,10 @@ testMasterSchema.index({ category: 1 });
 testMasterSchema.index({ name: 'text' });
 
 applyOrganizationScope(testMasterSchema);
+
+testMasterSchema.index(
+  { organizationId: 1, name: 1 },
+  { unique: true, name: 'organizationId_1_name_1' },
+);
 
 module.exports = mongoose.model('TestMaster', testMasterSchema);

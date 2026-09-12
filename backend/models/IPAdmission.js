@@ -91,7 +91,7 @@ const doctorOrderSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const ipAdmissionSchema = new mongoose.Schema({
-  admissionNumber: { type: String, unique: true },
+  admissionNumber: { type: String, trim: true },
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
   admissionDate: { type: Date, default: Date.now },
   admissionType: { type: String, enum: ['elective', 'emergency', 'transfer'], default: 'elective' },
@@ -237,5 +237,10 @@ ipAdmissionSchema.index({ status: 1 });
 ipAdmissionSchema.index({ admissionDate: -1 });
 
 applyOrganizationScope(ipAdmissionSchema);
+
+ipAdmissionSchema.index(
+  { organizationId: 1, admissionNumber: 1 },
+  { unique: true, name: 'organizationId_1_admissionNumber_1' },
+);
 
 module.exports = mongoose.model('IPAdmission', ipAdmissionSchema);

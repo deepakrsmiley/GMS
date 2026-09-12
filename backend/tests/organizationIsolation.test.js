@@ -265,6 +265,45 @@ describe('per-hospital UHID', () => {
     );
     assert.equal(Counter.keyFor('patient'), 'patient');
   });
+
+  it('service names may repeat in one hospital; lab tests stay unique per hospital', () => {
+    const { COLLECTION_PLANS, sameKeys } = require('../utils/tenantUniqueIndexes');
+    const services = COLLECTION_PLANS.find((p) => p.name === 'servicemasters');
+    assert.ok(services);
+    assert.equal(services.drop({ unique: true, key: { name: 1 } }), true);
+    assert.equal(services.drop({ unique: true, key: { organizationId: 1, name: 1 } }), true);
+    assert.equal(services.ensure.length, 0);
+
+    const tests = COLLECTION_PLANS.find((p) => p.name === 'testmasters');
+    assert.ok(tests);
+    assert.equal(tests.drop({ unique: true, key: { name: 1 } }), true);
+    assert.equal(tests.drop({ unique: true, key: { organizationId: 1, name: 1 } }), false);
+    assert.ok(tests.ensure.some((item) => (
+      item.options.unique && sameKeys(item.spec, { organizationId: 1, name: 1 })
+    )));
+  });
+
+  it('lab numbers are unique per hospital not globally', () => {
+    const { COLLECTION_PLANS, sameKeys } = require('../utils/tenantUniqueIndexes');
+    const plan = COLLECTION_PLANS.find((p) => p.name === 'labtests');
+    assert.ok(plan);
+    assert.equal(plan.drop({ unique: true, key: { labNumber: 1 } }), true);
+    assert.equal(plan.drop({ unique: true, key: { organizationId: 1, labNumber: 1 } }), false);
+    assert.ok(plan.ensure.some((item) => (
+      item.options.unique && sameKeys(item.spec, { organizationId: 1, labNumber: 1 })
+    )));
+  });
+
+  it('IP admission numbers are unique per hospital not globally', () => {
+    const { COLLECTION_PLANS, sameKeys } = require('../utils/tenantUniqueIndexes');
+    const plan = COLLECTION_PLANS.find((p) => p.name === 'ipadmissions');
+    assert.ok(plan);
+    assert.equal(plan.drop({ unique: true, key: { admissionNumber: 1 } }), true);
+    assert.equal(plan.drop({ unique: true, key: { organizationId: 1, admissionNumber: 1 } }), false);
+    assert.ok(plan.ensure.some((item) => (
+      item.options.unique && sameKeys(item.spec, { organizationId: 1, admissionNumber: 1 })
+    )));
+  });
 });
 
 describe('GMS role aliases', () => {

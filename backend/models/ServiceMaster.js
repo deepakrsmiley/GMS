@@ -7,7 +7,7 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
 // so pricing stays consistent instead of being typed in free-hand each time.
 
 const serviceMasterSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true, trim: true }, // e.g. "Nebulization", "Ventilator Support", "Oxygen (O2) Therapy"
+  name: { type: String, required: true, trim: true }, // e.g. "Nebulization", "Nursing Charges"
   category: {
     type: String,
     enum: ['Equipment', 'Procedure', 'Nursing', 'Injection', 'Other'],
@@ -27,5 +27,7 @@ const serviceMasterSchema = new mongoose.Schema({
 serviceMasterSchema.index({ category: 1 });
 
 applyOrganizationScope(serviceMasterSchema);
+
+serviceMasterSchema.index({ organizationId: 1, name: 1 });
 
 module.exports = mongoose.model('ServiceMaster', serviceMasterSchema);

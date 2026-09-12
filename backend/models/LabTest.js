@@ -44,7 +44,7 @@ const LAB_TYPES = [
 ];
 
 const labTestSchema = new mongoose.Schema({
-  labNumber: { type: String, unique: true },
+  labNumber: { type: String, trim: true },
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
   doctor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   opRegistration: { type: mongoose.Schema.Types.ObjectId, ref: 'OPRegistration' },
@@ -132,6 +132,11 @@ labTestSchema.index({ orderSource: 1, status: 1, createdAt: -1 });
 labTestSchema.index({ createdAt: -1 });
 
 applyOrganizationScope(labTestSchema);
+
+labTestSchema.index(
+  { organizationId: 1, labNumber: 1 },
+  { unique: true, name: 'organizationId_1_labNumber_1' },
+);
 
 module.exports = mongoose.model('LabTest', labTestSchema);
 module.exports.LAB_TYPES = LAB_TYPES;

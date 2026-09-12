@@ -19,6 +19,8 @@ const duplicateKeyField = (err) => {
   if (/email/i.test(haystack)) return 'email';
   if (/employeeId/i.test(haystack)) return 'employeeId';
   if (/patientId/i.test(haystack)) return 'patientId';
+  if (/labNumber/i.test(haystack)) return 'labNumber';
+  if (/admissionNumber/i.test(haystack)) return 'admissionNumber';
   if (/barcode/i.test(haystack)) return 'barcode';
   if (/billNumber/i.test(haystack)) return 'billNumber';
   if (/\bname_|\.name\b| name:/i.test(haystack)) return 'name';
