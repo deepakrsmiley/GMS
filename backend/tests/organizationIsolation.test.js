@@ -241,6 +241,32 @@ describe('User JWT payload helper', () => {
   });
 });
 
+describe('per-hospital UHID', () => {
+  it('drops leftover global patientId unique index and unique-scopes UHID per hospital', () => {
+    const { COLLECTION_PLANS, sameKeys } = require('../utils/tenantUniqueIndexes');
+    const plan = COLLECTION_PLANS.find((p) => p.name === 'patients');
+    assert.ok(plan);
+    assert.equal(plan.drop({ unique: true, key: { patientId: 1 } }), true);
+    assert.equal(plan.drop({ unique: true, key: { organizationId: 1, patientId: 1 } }), false);
+    assert.ok(plan.ensure.some((item) => (
+      item.options.unique
+      && sameKeys(item.spec, { organizationId: 1, patientId: 1 })
+    )));
+  });
+
+  it('patient counter key is per organization', () => {
+    const Counter = require('../models/Counter');
+    const { runWithOrganizationContext } = require('../middleware/tenantContext');
+    const orgId = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+    assert.equal(Counter.keyFor('patient', orgId), `patient:${orgId}`);
+    assert.equal(
+      runWithOrganizationContext({ organizationId: orgId }, () => Counter.keyFor('patient')),
+      `patient:${orgId}`,
+    );
+    assert.equal(Counter.keyFor('patient'), 'patient');
+  });
+});
+
 describe('GMS role aliases', () => {
   it('maps GMS_SUPER_ADMIN and HOSPITAL_ADMIN without changing stored role names', () => {
     const { isSuperAdmin, normalizeRole } = require('../utils/roles');

@@ -5,10 +5,14 @@ const counterSchema = new mongoose.Schema({
   seq: { type: Number, default: 0 },
 });
 
-counterSchema.statics.getNextSeq = async function (name, organizationId) {
+counterSchema.statics.keyFor = function (name, organizationId) {
   const { getContextOrganizationId } = require('../middleware/tenantContext');
   const orgId = organizationId || getContextOrganizationId();
-  const key = orgId ? `${name}:${orgId}` : name;
+  return orgId ? `${name}:${orgId}` : name;
+};
+
+counterSchema.statics.getNextSeq = async function (name, organizationId) {
+  const key = this.keyFor(name, organizationId);
   const counter = await this.findByIdAndUpdate(
     key,
     { $inc: { seq: 1 } },

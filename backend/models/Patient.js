@@ -2,7 +2,9 @@ const mongoose = require('mongoose');
 const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const patientSchema = new mongoose.Schema({
-  patientId: { type: String, unique: true },
+  // Unique per hospital — a new hospital must be able to start at PT26000001
+  // even if another hospital already uses that UHID.
+  patientId: { type: String, trim: true },
   name: { type: String, required: true, trim: true },
   age: { type: Number, required: true },
   gender: { type: String, enum: ['Male', 'Female', 'Other'], required: true },
@@ -44,5 +46,10 @@ patientSchema.index({ phone: 1 });
 patientSchema.index({ name: 'text', patientId: 'text', phone: 'text' });
 
 applyOrganizationScope(patientSchema);
+
+patientSchema.index(
+  { organizationId: 1, patientId: 1 },
+  { unique: true, name: 'organizationId_1_patientId_1' },
+);
 
 module.exports = mongoose.model('Patient', patientSchema);

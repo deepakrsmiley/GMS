@@ -1,7 +1,7 @@
 /**
  * Hospital-scoped unique indexes.
- * Old single-field unique indexes (email, department name, …) blocked Hospital B
- * from creating the same staff role / master name that Hospital A already has.
+ * Old single-field unique indexes (email, department name, UHID, …) blocked Hospital B
+ * from creating the same staff role / master name / first UHID that Hospital A already has.
  */
 const sameKeys = (key, expected) => {
   const keys = Object.keys(key || {});
@@ -116,6 +116,16 @@ const COLLECTION_PLANS = [
       },
     ],
   },
+  {
+    name: 'patients',
+    drop: (idx) => sameKeys(idx.key, { patientId: 1 }),
+    ensure: [
+      {
+        spec: { organizationId: 1, patientId: 1 },
+        options: { unique: true, name: 'organizationId_1_patientId_1' },
+      },
+    ],
+  },
 ];
 
 const ensureTenantUniqueIndexes = async (mongoose, logger) => {
@@ -135,4 +145,4 @@ const ensureTenantUniqueIndexes = async (mongoose, logger) => {
   }
 };
 
-module.exports = { ensureTenantUniqueIndexes, sameKeys };
+module.exports = { ensureTenantUniqueIndexes, sameKeys, COLLECTION_PLANS };

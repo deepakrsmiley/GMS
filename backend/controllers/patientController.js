@@ -36,7 +36,7 @@ exports.getPatient = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: patient });
 });
 
-/** Keep patient counter at/above the highest existing UHID for the current year. */
+/** Keep this hospital's patient counter at/above its highest UHID for the current year. */
 const syncPatientCounter = async () => {
   const year = new Date().getFullYear().toString().slice(-2);
   const latest = await Patient.findOne({ patientId: new RegExp(`^PT${year}`) })
@@ -47,13 +47,8 @@ const syncPatientCounter = async () => {
   const maxSeq = parseInt(latest.patientId.slice(-6), 10);
   if (!Number.isFinite(maxSeq)) return;
 
-  const counter = await Counter.findById('patient');
-  if (!counter) {
-    await Counter.create({ _id: 'patient', seq: maxSeq });
-  } else if (counter.seq < maxSeq) {
-    counter.seq = maxSeq;
-    await counter.save();
-  }
+  const key = Counter.keyFor('patient');
+  await Counter.findByIdAndUpdate(key, { $max: { seq: maxSeq } }, { upsert: true });
 };
 
 const allocatePatientId = async () => {
