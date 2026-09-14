@@ -20,7 +20,9 @@ const getMedicineItems = (items = []) =>
   items.filter((item) => item.type === 'medicine' && item.medicine);
 
 const stockableMedicineItems = (items = []) =>
-  getMedicineItems(items).filter((item) => !isStockPreDeducted(item));
+  getMedicineItems(items).filter(
+    (item) => !isStockPreDeducted(item) && Number(item.quantity) > 0,
+  );
 
 const deductFromBatches = (medicine, quantity, preferredBatchNumber = null) =>
   deductFromUsableBatches(medicine, quantity, preferredBatchNumber);

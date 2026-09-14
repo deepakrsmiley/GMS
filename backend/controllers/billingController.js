@@ -1,8 +1,10 @@
 const asyncHandler = require("../utils/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
+const logger = require("../utils/logger");
 const Bill = require("../models/Bill");
 const DirectSale = require("../models/DirectSale");
 const OPRegistration = require("../models/OPRegistration");
+const IPAdmission = require("../models/IPAdmission");
 const { allocateBillNumber } = require("../utils/generateId");
 const {
   generateInvoicePDF,
@@ -28,10 +30,12 @@ const {
 } = require("../utils/billingAccess");
 const {
   asObjectId,
+  asMoney,
   sanitizeBillItems,
   enrichMedicineItems,
   inferBillType,
   pickIpAdmissionId,
+  normalizePaymentMode,
 } = require("../utils/billItems");
 
 const stockFingerprint = (items = []) =>
@@ -67,6 +71,60 @@ const toBillError = (error) => {
     return new ErrorResponse("This bill could not be saved because a value already exists. Please refresh and try again.", 400);
   }
   return new ErrorResponse(error.message || "Could not save bill", error.statusCode || 400);
+};
+
+const DEFAULT_EDIT_REASON = "Bill updated";
+const DEFAULT_CANCEL_REASON = "Cancelled from billing";
+
+const keepExistingItemIds = (bill, items = []) => {
+  const existing = new Set((bill.items || []).map((item) => String(item._id)));
+  return items.map((item) => {
+    if (item._id && !existing.has(String(item._id))) {
+      const next = { ...item };
+      delete next._id;
+      return next;
+    }
+    return item;
+  });
+};
+
+const resolveIpAdmissionId = async (patientId, items, currentId) => {
+  const picked = asObjectId(currentId) || pickIpAdmissionId(items);
+  if (picked) return picked;
+  if (!patientId) return undefined;
+  const latest = await IPAdmission.findOne({ patient: patientId })
+    .sort({ admissionDate: -1 })
+    .select("_id");
+  return latest?._id;
+};
+
+const applyIpAdvance = async (payload) => {
+  if (payload.billType !== "ip" || !payload.ipAdmission) return payload;
+  if (asMoney(payload.advanceAmount) > 0) return payload;
+  const adm = await IPAdmission.findById(payload.ipAdmission).select("advanceAmount");
+  const adv = asMoney(adm?.advanceAmount);
+  if (adv <= 0) return payload;
+  const already = await Bill.exists({
+    ipAdmission: payload.ipAdmission,
+    status: { $nin: ["cancelled", "refunded"] },
+    advanceAmount: { $gt: 0 },
+  });
+  if (!already) payload.advanceAmount = adv;
+  return payload;
+};
+
+const populateSavedBill = async (id) => {
+  try {
+    return await Bill.findById(id)
+      .populate("patient", "patientId name age gender phone")
+      .populate("doctor", "name")
+      .populate("department", "name")
+      .populate("items.medicine", "name currentStock")
+      .populate("editHistory.user", "name role");
+  } catch (error) {
+    logger.warn(`Bill populate failed after save: ${error.message}`);
+    return Bill.findById(id);
+  }
 };
 
 const toPlain = (value) => JSON.parse(JSON.stringify(value || null));
@@ -296,7 +354,13 @@ exports.getBills = asyncHandler(async (req, res) => {
   if (req.query.billType === "op") {
     extra.billType = { $in: ["op", "pharmacy", "lab", "unified"] };
   } else if (req.query.billType === "ip") {
-    extra.billType = "ip";
+    extra.$or = [
+      { billType: "ip" },
+      { ipAdmission: { $exists: true, $ne: null } },
+      { "items.referenceModel": "IPAdmission" },
+      { "items.category": { $in: ["Admission", "Room", "ICU"] } },
+      { "items.type": { $in: ["admission", "room"] } },
+    ];
   } else if (req.query.billType === "lab") {
     extra.billType = { $ne: "ip" };
     extra.$or = [
@@ -374,24 +438,50 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   if (!req.body.patient) {
     return next(new ErrorResponse("Patient is required", 400));
   }
-  req.body.doctor = asObjectId(req.body.doctor);
-  req.body.department = asObjectId(req.body.department);
-  req.body.opRegistration = asObjectId(req.body.opRegistration);
-  req.body.ipAdmission = asObjectId(req.body.ipAdmission);
 
-  req.body.billNumber = await allocateBillNumber();
-  req.body.createdBy = req.user._id;
-
-  req.body.items = sanitizeBillItems(await enrichMedicineItems(req.body.items));
-  req.body.billType = inferBillType(req.body.billType, req.body.items);
-  if (!req.body.ipAdmission) {
-    req.body.ipAdmission = pickIpAdmissionId(req.body.items);
+  let items;
+  try {
+    items = sanitizeBillItems(await enrichMedicineItems(req.body.items));
+  } catch (error) {
+    return next(toBillError(error));
+  }
+  if (!items.length) {
+    return next(new ErrorResponse("At least one bill item is required", 400));
   }
 
-  if (requirePharmacistBillScope(req, req.body, next)) return;
+  const ipAdmissionFromItems = asObjectId(req.body.ipAdmission) || pickIpAdmissionId(items);
+  const billType = inferBillType(req.body.billType, items, ipAdmissionFromItems);
+  const ipAdmission = billType === "ip"
+    ? (ipAdmissionFromItems || await resolveIpAdmissionId(req.body.patient, items, null))
+    : asObjectId(req.body.ipAdmission);
+  const paymentMode = normalizePaymentMode(req.body.paymentMode);
+  const paidNow = asMoney(req.body.paidAmount);
+  const payload = {
+    billNumber: await allocateBillNumber(),
+    createdBy: req.user._id,
+    billType,
+    patient: req.body.patient,
+    doctor: asObjectId(req.body.doctor),
+    department: asObjectId(req.body.department),
+    opRegistration: asObjectId(req.body.opRegistration),
+    ipAdmission,
+    items,
+    discount: asMoney(req.body.discount),
+    paidAmount: paidNow,
+    paymentMode,
+    notes: req.body.notes,
+    advanceAmount: asMoney(req.body.advanceAmount),
+  };
+  try {
+    await applyIpAdvance(payload);
+  } catch (error) {
+    logger.warn(`applyIpAdvance skipped: ${error.message}`);
+  }
 
-  const medicineItems = getMedicineItems(req.body.items);
-  const newMeds = stockableMedicineItems(req.body.items);
+  if (requirePharmacistBillScope(req, payload, next)) return;
+
+  const medicineItems = getMedicineItems(payload.items);
+  const newMeds = stockableMedicineItems(payload.items);
   const alreadyIssuedMeds = medicineItems.length - newMeds.length;
 
   let deductedStock = [];
@@ -402,30 +492,29 @@ exports.createBill = asyncHandler(async (req, res, next) => {
 
   let bill;
   try {
-    req.body.originalData = toPlain({
-      billType: req.body.billType,
-      patient: req.body.patient,
-      doctor: req.body.doctor,
-      department: req.body.department,
-      opRegistration: req.body.opRegistration,
-      ipAdmission: req.body.ipAdmission,
-      items: req.body.items,
-      discount: req.body.discount,
-      paidAmount: req.body.paidAmount,
-      paymentMode: req.body.paymentMode,
-      notes: req.body.notes,
+    payload.originalData = toPlain({
+      billType: payload.billType,
+      patient: payload.patient,
+      doctor: payload.doctor,
+      department: payload.department,
+      opRegistration: payload.opRegistration,
+      ipAdmission: payload.ipAdmission,
+      items: payload.items,
+      discount: payload.discount,
+      paidAmount: payload.paidAmount,
+      paymentMode: payload.paymentMode,
+      notes: payload.notes,
+      advanceAmount: payload.advanceAmount,
     });
-    const paidNow = Number(req.body.paidAmount) || 0;
     if (paidNow > 0 && !(Array.isArray(req.body.payments) && req.body.payments.length)) {
-      req.body.payments = [{
+      payload.payments = [{
         amount: paidNow,
-        mode: req.body.paymentMode || "cash",
+        mode: paymentMode,
         receivedBy: req.user._id,
         paidAt: new Date(),
       }];
     }
-    bill = await Bill.create(req.body);
-    await markSourcesAsBilled(req.body.items, bill._id);
+    bill = await Bill.create(payload);
   } catch (error) {
     await restoreMedicineStock(deductedStock, {
       userId: req.user._id,
@@ -435,13 +524,14 @@ exports.createBill = asyncHandler(async (req, res, next) => {
     return next(toBillError(error));
   }
 
-  const populated = await Bill.findById(bill._id)
-    .populate("patient", "patientId name age gender phone")
-    .populate("doctor", "name")
-    .populate("department", "name")
-    .populate("items.medicine", "name currentStock");
+  try {
+    await markSourcesAsBilled(payload.items, bill._id);
+  } catch (error) {
+    logger.warn(`markSourcesAsBilled failed for ${bill.billNumber}: ${error.message}`);
+  }
 
-  const itemCount = req.body.items.length;
+  const populated = (await populateSavedBill(bill._id)) || bill;
+  const itemCount = payload.items.length;
 
   try {
     const { notifyRoles } = require('../utils/notify');
@@ -463,25 +553,21 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   res.status(201).json({
     success: true,
     data: populated,
-    message: `${req.body.billType === "ip" ? "IP" : req.body.billType === "op" ? "OP" : req.body.billType === "lab" ? "Lab" : "Unified"} bill created with ${itemCount} item(s).${alreadyIssuedMeds ? ` ${alreadyIssuedMeds} already-issued medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`,
+    message: `${payload.billType === "ip" ? "IP" : payload.billType === "op" ? "OP" : payload.billType === "lab" ? "Lab" : "Unified"} bill created with ${itemCount} item(s).${alreadyIssuedMeds ? ` ${alreadyIssuedMeds} already-issued medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`,
   });
 });
 
 exports.updateBill = asyncHandler(async (req, res, next) => {
-  let bill = await Bill.findById(req.params.id);
+  const billId = asObjectId(req.params.id);
+  if (!billId) return next(new ErrorResponse("Bill not found", 404));
+
+  let bill = await Bill.findById(billId);
   if (!bill) return next(new ErrorResponse("Bill not found", 404));
   if (bill.status === "cancelled")
     return next(new ErrorResponse("Cannot update a cancelled bill", 400));
   if (requirePharmacistBillScope(req, bill, next)) return;
 
-  // Reason is now mandatory for ANY bill edit (IP, OP, pharmacy, unified) —
-  // not just pharmacy-scoped bills — so every edit gets an audit trail.
-  const reason = (req.body.reason || req.body.auditReason || "").trim();
-  if (!reason) {
-    return next(
-      new ErrorResponse("Reason is required when editing a bill", 400),
-    );
-  }
+  const reason = (req.body.reason || req.body.auditReason || "").trim() || DEFAULT_EDIT_REASON;
 
   const oldBill = toPlain(bill.toObject());
   const update = { ...req.body };
@@ -492,7 +578,17 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
   let sanitizedItems = null;
 
   if (update.items) {
-    sanitizedItems = sanitizeBillItems(await enrichMedicineItems(update.items));
+    try {
+      sanitizedItems = keepExistingItemIds(
+        bill,
+        sanitizeBillItems(await enrichMedicineItems(update.items)),
+      );
+    } catch (error) {
+      return next(toBillError(error));
+    }
+    if (!sanitizedItems.length) {
+      return next(new ErrorResponse("Bill must contain at least one item", 400));
+    }
     const oldStockable = stockableMedicineItems(oldBill.items || []);
     const newStockable = stockableMedicineItems(sanitizedItems);
     const stockChanged = stockFingerprint(oldBill.items) !== stockFingerprint(sanitizedItems);
@@ -516,10 +612,14 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
 
     bill.items = sanitizedItems;
     bill.markModified("items");
+    bill.billType = inferBillType(update.billType || bill.billType, sanitizedItems, bill.ipAdmission);
+    if (!bill.ipAdmission && bill.billType === "ip") {
+      bill.ipAdmission = await resolveIpAdmissionId(bill.patient, sanitizedItems, update.ipAdmission);
+    }
   }
 
-  if (update.discount != null) {
-    bill.discount = Number(update.discount) || 0;
+  if (update.discount != null && update.discount !== "") {
+    bill.discount = asMoney(update.discount);
   }
 
   const auditEntries = buildBillEditEntries(
@@ -535,11 +635,21 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
   );
   if (!Array.isArray(bill.editHistory)) bill.editHistory = [];
   bill.editHistory.forEach((entry) => {
-    if (!entry) return;
+    if (!entry || typeof entry !== "object") return;
     if (!entry.reason) entry.reason = reason;
     if (!entry.actionType) entry.actionType = "Edited";
   });
   if (auditEntries.length) bill.editHistory.push(...auditEntries);
+  else {
+    bill.editHistory.push({
+      billNumber: bill.billNumber,
+      user: req.user._id,
+      userName: req.user.name,
+      actionType: "Edited",
+      field: "items",
+      reason,
+    });
+  }
 
   try {
     await bill.save();
@@ -558,25 +668,21 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
     return next(toBillError(error));
   }
 
-  bill = await Bill.findById(req.params.id)
-    .populate("patient", "patientId name age gender phone")
-    .populate("doctor", "name")
-    .populate("items.medicine", "name")
-    .populate("editHistory.user", "name role");
+  bill = (await populateSavedBill(billId)) || bill;
 
-  res.status(200).json({ success: true, data: bill });
+  res.status(200).json({ success: true, data: bill, message: "Bill updated" });
 });
 
 exports.cancelBill = asyncHandler(async (req, res, next) => {
-  const bill = await Bill.findById(req.params.id);
+  const billId = asObjectId(req.params.id);
+  if (!billId) return next(new ErrorResponse("Bill not found", 404));
+  const bill = await Bill.findById(billId);
   if (!bill) return next(new ErrorResponse("Bill not found", 404));
   if (bill.status === "cancelled")
     return next(new ErrorResponse("Bill is already cancelled", 400));
 
-  const reason = (req.body.reason || req.body.auditReason || "").trim();
-  if (!reason) {
-    return next(new ErrorResponse("Please enter a reason to cancel this bill", 400));
-  }
+  const reason = (req.body.reason || req.body.auditReason || "").trim() || DEFAULT_CANCEL_REASON;
+  const previousStatus = bill.status;
 
   const medicineItems = stockableMedicineItems(bill.items);
   if (medicineItems.length > 0) {
@@ -588,7 +694,11 @@ exports.cancelBill = asyncHandler(async (req, res, next) => {
     });
   }
 
-  await unmarkSourcesAsBilled(bill.items, bill._id);
+  try {
+    await unmarkSourcesAsBilled(bill.items, bill._id);
+  } catch (error) {
+    logger.warn(`unmarkSourcesAsBilled failed for ${bill.billNumber}: ${error.message}`);
+  }
 
   bill.status = "cancelled";
   bill.notes = `${bill.notes ? `${bill.notes} | ` : ""}Cancelled: ${reason}`;
@@ -599,7 +709,7 @@ exports.cancelBill = asyncHandler(async (req, res, next) => {
     userName: req.user.name,
     actionType: "cancel",
     field: "status",
-    previousValue: bill.status,
+    previousValue: previousStatus,
     newValue: "cancelled",
     reason,
   });

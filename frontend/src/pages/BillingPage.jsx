@@ -129,9 +129,15 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
   // ── Mirrors backend CATEGORY_TYPE_MAP so manually-added charges get the
   // correct `type` for stock/audit logic without extra round-trips.
+  const BILLING_SAVE_TIMEOUT = 60000;
   const asRefId = (value) => {
     if (!value) return undefined;
-    if (typeof value === 'object') return value._id || undefined;
+    if (typeof value === 'object') {
+      if (value._id) return asRefId(value._id);
+      if (value.$oid) return value.$oid;
+      const str = String(value);
+      return /^[a-fA-F0-9]{24}$/.test(str) ? str : undefined;
+    }
     return value;
   };
   const billingErrorMessage = (err, fallback) => {
@@ -342,7 +348,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       return () => document.removeEventListener('click', close);
     }, []);
 
-    const selectPatient = (p) => {
+    const selectPatient = (p, chargeType) => {
       if (!p?._id) {
         toast.error('Patient record is missing — cannot open bill');
         return;
@@ -350,7 +356,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setSelectedPatient(p);
       setPatientSearch(`${p.name} (${p.patientId})`);
       setPatients([]);
-      const chargeBillType = mainTab === 'lab' ? 'lab' : mainTab === 'op' ? 'op' : 'ip';
+      const chargeBillType = chargeType
+        || (mainTab === 'lab' ? 'lab' : mainTab === 'op' ? 'op' : 'ip');
       loadPatientCharges(p._id, chargeBillType);
     };
 
@@ -393,7 +400,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       const patient = dischargeDetail.patient;
       resetCreateForm();
       setMainTab('ip');
-      selectPatient(patient);
+      selectPatient(patient, 'ip');
       closeDischargeModals();
       setShowCreate(true);
     };
@@ -468,12 +475,18 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const createMut = useMutation({
-      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true }),
+      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT }),
       onSuccess: (res) => {
-        toast.success(res.data.message || 'Bill created!');
-        qc.invalidateQueries(['bills']);
-        qc.invalidateQueries(['billStats']);
-        qc.invalidateQueries(['pendingDischarge']);
+        const created = res.data?.data;
+        toast.success(res.data?.message || 'Bill created!');
+        if (created?.billType === 'ip') {
+          setMainTab('ip');
+          setTableTab('today');
+          setDatePreset('today');
+        }
+        qc.invalidateQueries({ queryKey: ['bills'] });
+        qc.invalidateQueries({ queryKey: ['billStats'] });
+        qc.invalidateQueries({ queryKey: ['pendingDischarge'] });
         setShowCreate(false);
         resetCreateForm();
       },
@@ -484,8 +497,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       mutationFn: ({ id, amount, mode }) => api.post(`/billing/${id}/payment`, { amount, mode }),
       onSuccess: () => {
         toast.success('Payment recorded');
-        qc.invalidateQueries(['bills']);
-        qc.invalidateQueries(['billStats']);
+        qc.invalidateQueries({ queryKey: ['bills'] });
+        qc.invalidateQueries({ queryKey: ['billStats'] });
         setShowPayment(null);
         setShowDetail(null);
       },
@@ -493,26 +506,27 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     });
 
     const cancelMut = useMutation({
-      mutationFn: (id) => api.post(`/billing/${id}/cancel`),
+      mutationFn: (id) => api.post(`/billing/${id}/cancel`, { reason: 'Cancelled from billing' }),
       onSuccess: (res) => {
         toast.success(res.data.message || 'Bill cancelled');
-        qc.invalidateQueries(['bills']);
-        qc.invalidateQueries(['billStats']);
+        qc.invalidateQueries({ queryKey: ['bills'] });
+        qc.invalidateQueries({ queryKey: ['billStats'] });
         setShowDetail(null);
       },
       onError: (err) => toast.error(err.response?.data?.message || 'Cancel failed'),
     });
 
     const updateBillMut = useMutation({
-      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload, { skipErrorToast: true }),
+      mutationFn: ({ id, payload }) => api.put(`/billing/${id}`, payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT }),
       onSuccess: (res) => {
-        toast.success('Bill updated');
-        qc.invalidateQueries(['bills']);
-        qc.invalidateQueries(['billStats']);
-        qc.invalidateQueries(['bill', res.data.data._id]);
+        toast.success(res.data?.message || 'Bill updated');
+        const savedId = res.data?.data?._id;
+        qc.invalidateQueries({ queryKey: ['bills'] });
+        qc.invalidateQueries({ queryKey: ['billStats'] });
+        if (savedId) qc.invalidateQueries({ queryKey: ['bill', savedId] });
         setShowEditBill(false);
         setEditBillId(null);
-        setEditReason('');
+        setEditReason('Bill updated');
         setMedQuery('');
         setMedResults([]);
       },
@@ -569,10 +583,15 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const openEditBill = (bill) => {
+      setShowDetail(null);
       setEditBillId(bill._id);
-      setEditItems((bill.items || []).map((item) => ({ ...item, medicine: item.medicine?._id || item.medicine })));
+      setEditItems((bill.items || []).map((item) => ({
+        ...item,
+        medicine: item.medicine?._id || item.medicine,
+        type: item.type || CATEGORY_TYPE_MAP[item.category] || 'other',
+      })));
       setEditDiscount(Number(bill.discount || 0));
-      setEditReason('');
+      setEditReason('Bill updated');
       setMedQuery('');
       setMedResults([]);
       setNewCharge({ category: 'Miscellaneous', description: '', quantity: 1, unitPrice: '', gstPercent: 0 });
@@ -602,7 +621,14 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     }, [showEditBill, medQuery]);
 
     const updateEditItem = (idx, field, value) => {
-      setEditItems((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
+      setEditItems((prev) => prev.map((item, i) => {
+        if (i !== idx) return item;
+        const next = { ...item, [field]: value };
+        if (field === 'category') {
+          next.type = CATEGORY_TYPE_MAP[value] || next.type || 'other';
+        }
+        return next;
+      }));
     };
 
     const addEditMedicine = (opt) => {
@@ -664,12 +690,42 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setNewCharge({ category: 'Miscellaneous', description: '', quantity: 1, unitPrice: '', gstPercent: 0 });
     };
 
+    const toBillItemPayload = (item) => {
+      const category = item.category || 'Miscellaneous';
+      const type = item.type || CATEGORY_TYPE_MAP[category] || 'other';
+      const isMedicine = type === 'medicine';
+      return {
+        _id: item._id,
+        category,
+        type,
+        description: item.description || item.name,
+        name: item.name || item.description,
+        medicine: isMedicine ? asRefId(item.medicine) : undefined,
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        gstPercent: Number(item.gstPercent) || 0,
+        gstAmount: item.gstAmount,
+        batch: isMedicine ? (item.batch || item.batchNumber) : undefined,
+        batchNumber: isMedicine ? (item.batchNumber || item.batch) : undefined,
+        genericName: isMedicine ? (item.genericName || '') : undefined,
+        mrp: isMedicine ? Number(item.mrp || item.unitPrice || 0) : undefined,
+        hsnCode: isMedicine ? (item.hsnCode || '') : undefined,
+        unitOfMeasure: isMedicine ? (item.unitOfMeasure || 'Nos') : undefined,
+        expiryDate: isMedicine ? (item.expiryDate || null) : undefined,
+        mfgDate: isMedicine ? (item.mfgDate || null) : undefined,
+        discountPercent: Number(item.discountPercent || 0),
+        discountAmount: Number(item.discountAmount || 0),
+        referenceId: asRefId(item.referenceId),
+        referenceModel: item.referenceModel,
+      };
+    };
+
     const saveEditedBill = () => {
-      if (!editReason.trim()) {
-        toast.error('Reason is required for bill edits');
-        return;
-      }
-      if (!editItems.length) {
+      const reason = editReason.trim() || 'Bill updated';
+      const items = editItems
+        .map(toBillItemPayload)
+        .filter((item) => Number(item.quantity) > 0);
+      if (!items.length) {
         toast.error('Bill must contain at least one item');
         return;
       }
@@ -681,36 +737,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       updateBillMut.mutate({
         id: billId,
         payload: {
-          items: editItems.map((item) => {
-            const category = item.category || 'Miscellaneous';
-            const type = item.type || CATEGORY_TYPE_MAP[category] || 'other';
-            const isMedicine = type === 'medicine';
-            return {
-              _id: item._id,
-              category,
-              type,
-              description: item.description || item.name,
-              name: item.name || item.description,
-              medicine: isMedicine ? asRefId(item.medicine) : undefined,
-              quantity: Number(item.quantity || 0),
-              unitPrice: Number(item.unitPrice || 0),
-              gstPercent: Number(item.gstPercent || 0),
-              batch: isMedicine ? (item.batch || item.batchNumber) : undefined,
-              batchNumber: isMedicine ? (item.batchNumber || item.batch) : undefined,
-              genericName: isMedicine ? (item.genericName || '') : undefined,
-              mrp: isMedicine ? Number(item.mrp || item.unitPrice || 0) : undefined,
-              hsnCode: isMedicine ? (item.hsnCode || '') : undefined,
-              unitOfMeasure: isMedicine ? (item.unitOfMeasure || 'Nos') : undefined,
-              expiryDate: isMedicine ? (item.expiryDate || null) : undefined,
-              mfgDate: isMedicine ? (item.mfgDate || null) : undefined,
-              discountPercent: Number(item.discountPercent || 0),
-              discountAmount: Number(item.discountAmount || 0),
-              referenceId: asRefId(item.referenceId),
-              referenceModel: item.referenceModel,
-            };
-          }),
+          items,
           discount: Number(editDiscount || 0),
-          reason: editReason.trim(),
+          reason,
         },
       });
     };
@@ -866,7 +895,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
       const ipAdmission = asRefId(
         included.find((c) =>
-          c.referenceModel === 'IPAdmission' && (c.type === 'admission' || c.type === 'room' || c.category === 'Admission' || c.category === 'Room'),
+          c.referenceModel === 'IPAdmission' && (
+            c.type === 'admission'
+            || c.type === 'room'
+            || c.category === 'Admission'
+            || c.category === 'Room'
+            || c.category === 'ICU'
+          ),
         )?.referenceId,
       );
 
@@ -876,29 +911,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         doctor: asRefId(chargeMeta.doctor),
         department: asRefId(chargeMeta.department),
         ipAdmission,
-        items: included.map((c) => ({
-          category: c.category,
-          type: c.type || CATEGORY_TYPE_MAP[c.category] || 'other',
-          description: c.description || c.name,
-          name: c.name || c.description,
-          quantity: Number(c.quantity) || 0,
-          unitPrice: Number(c.unitPrice) || 0,
-          gstPercent: Number(c.gstPercent) || 0,
-          gstAmount: lineGst(c),
-          medicine: asRefId(c.medicine),
-          batch: c.batch || c.batchNumber,
-          batchNumber: c.batchNumber || c.batch,
-          genericName: c.genericName,
-          mrp: c.mrp,
-          hsnCode: c.hsnCode,
-          unitOfMeasure: c.unitOfMeasure,
-          expiryDate: c.expiryDate || null,
-          mfgDate: c.mfgDate || null,
-          discountPercent: Number(c.discountPercent || 0),
-          discountAmount: Number(c.discountAmount || 0),
-          referenceId: asRefId(c.referenceId),
-          referenceModel: c.referenceModel,
-        })),
+        items: included
+          .filter((c) => (Number(c.quantity) || 0) > 0)
+          .map((c) => toBillItemPayload({
+            ...c,
+            gstAmount: lineGst(c),
+          })),
         subtotal: totals.subtotal,
         totalGST: totals.gst,
         discount,
@@ -907,6 +925,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         paidAmount: Number(paidAmount) || 0,
         paymentMode,
       };
+      if (!payload.items.length) {
+        toast.error('Select at least one charge with a quantity greater than zero');
+        return;
+      }
       createMut.mutate(payload);
     };
 
@@ -921,7 +943,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       }
       resetCreateForm();
       setMainTab('ip');
-      selectPatient(row.patient);
+      selectPatient(row.patient, 'ip');
       closeDischargeModals();
       setShowCreate(true);
     };
@@ -2343,12 +2365,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Reason <span className="text-red-500">*</span></label>
-              <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} className="input-field min-h-[90px]" placeholder="Enter the reason for this edit" />
+              <label className="block text-sm font-medium mb-1">Reason</label>
+              <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} className="input-field min-h-[90px]" placeholder="Reason for this edit (saved as Bill updated if left as-is)" />
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-              <button type="button" onClick={() => setShowEditBill(false)} className="btn-secondary">Cancel</button>
+              <button type="button" onClick={() => { setShowEditBill(false); setEditBillId(null); }} className="btn-secondary">Cancel</button>
               <button type="button" onClick={saveEditedBill} disabled={updateBillMut.isPending} className="btn-primary">
                 {updateBillMut.isPending ? 'Saving...' : 'Save Changes'}
               </button>

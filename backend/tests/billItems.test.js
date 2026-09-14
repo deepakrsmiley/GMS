@@ -48,6 +48,17 @@ describe('sanitizeBillItems', () => {
     assert.equal(String(line.medicine), String(medId));
     assert.equal(line.availableStock, undefined);
   });
+
+  it('coerces invalid numbers and drops zero-quantity lines', () => {
+    const items = sanitizeBillItems([
+      { category: 'Room', type: 'room', description: 'Ward', quantity: 0, unitPrice: 500 },
+      { category: 'Admission', type: 'admission', description: 'Admit', unitPrice: 'not-a-number' },
+    ]);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].description, 'Admit');
+    assert.equal(items[0].quantity, 1);
+    assert.equal(items[0].unitPrice, 0);
+  });
 });
 
 describe('inferBillType', () => {
@@ -60,6 +71,10 @@ describe('inferBillType', () => {
     assert.equal(inferBillType('unified', items), 'ip');
     assert.equal(inferBillType(undefined, items), 'ip');
     assert.equal(inferBillType('ip', items), 'ip');
+  });
+
+  it('stores bills with an IP admission as ip', () => {
+    assert.equal(inferBillType('unified', [{ type: 'medicine' }], oid()), 'ip');
   });
 
   it('leaves OP bills unchanged', () => {
