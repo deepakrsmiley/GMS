@@ -14,3 +14,14 @@ export const isSriSanjeeviHospital = (org) => {
   return String(org.code || '').toUpperCase() === HOSPITAL_A_CODE
     || /sanjeevi/i.test(String(org.name || ''));
 };
+
+const THANGAM_NAME_RX = /thangam/i;
+
+/** Thangam prints OP pads onto pre-printed letterhead paper. */
+export const isThangamHospital = (org, branding) => {
+  if (org && !isPlatformOrg(org)) {
+    if (THANGAM_NAME_RX.test(String(org.name || ''))) return true;
+    if (THANGAM_NAME_RX.test(String(org.code || ''))) return true;
+  }
+  return THANGAM_NAME_RX.test(String(branding?.hospitalName || ''));
+};

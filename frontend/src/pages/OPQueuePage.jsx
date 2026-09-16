@@ -24,6 +24,7 @@ import OPServiceUsageModal from '../components/op/OPServiceUsageModal';
 import { hasPermission, hasAnyPermission } from '../constants/permissions';
 import { SYSTEM_NAME } from '../constants/branding';
 import { istCalendarDate } from '../utils/istDate';
+import { isThangamHospital } from '../utils/hospitalA';
 import ScanPrescriptionModal from '../components/op/ScanPrescriptionModal';
 import '../styles/opQueue.css';
 
@@ -412,7 +413,10 @@ export default function OPQueuePage() {
           bill = op?.bill;
         } catch (_) { /* print can still be retried from the queue */ }
       }
-      if (bill && typeof bill === 'object' && (bill.items || bill.billNumber)) {
+      if (isThangamHospital(user?.organization, branding) && op) {
+        toast.success('Patient added to doctor queue — printing OP paper');
+        setPrintData({ branding, op });
+      } else if (bill && typeof bill === 'object' && (bill.items || bill.billNumber)) {
         toast.success('Patient added to doctor queue — print A5 consultation receipt');
         setBillPrint({ bill, op });
       } else {

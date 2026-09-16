@@ -1,11 +1,14 @@
 import React, { useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
+import { isThangamHospital } from '../../utils/hospitalA';
 import '../../styles/opPaperPrint.css';
 
 /**
  * OPPaperTemplate — A4 OP consultation pad.
  * Header + patient + vitals only. The lower area stays blank for handwritten notes.
  * Consultation fees print on the reception receipt, not on this pad.
+ * Thangam uses pre-printed letterhead: HMS header is omitted and that space is left blank.
  */
 
 function fmtDateTime(value) {
@@ -58,6 +61,8 @@ function Vital({ label, value, unit }) {
 }
 
 export default function OPPaperTemplate({ branding, op }) {
+  const organization = useSelector((s) => s.auth?.user?.organization);
+  const letterhead = isThangamHospital(organization, branding);
   const patient = op?.patient || {};
   const doctor = op?.doctor || {};
   const vitals = op?.vitals || {};
@@ -113,9 +118,12 @@ export default function OPPaperTemplate({ branding, op }) {
       : '';
 
   return (
-    <div id="op-paper-print-root" className="op-paper-root">
+    <div
+      id="op-paper-print-root"
+      className={`op-paper-root${letterhead ? ' op-paper-root--letterhead' : ''}`}
+    >
       <style>{`
-        @page { size: A4 portrait; margin: 8mm 10mm; }
+        @page { size: A4 portrait; margin: ${letterhead ? '5mm 10mm 18mm 10mm' : '8mm 10mm'}; }
         @media print {
           html, body {
             margin: 0 !important;
@@ -139,7 +147,7 @@ export default function OPPaperTemplate({ branding, op }) {
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
-            padding: 6mm 8mm !important;
+            padding: ${letterhead ? '0 8mm 4mm' : '6mm 8mm'} !important;
             background: #fff !important;
             box-shadow: none !important;
             display: block !important;
@@ -148,32 +156,37 @@ export default function OPPaperTemplate({ branding, op }) {
         }
       `}</style>
 
-      <header className="op-header">
-        <div className="op-header-top">
-          {logo ? (
-            <img src={logo} alt="" className="op-logo" />
-          ) : (
-            <div className="op-logo-fallback" aria-hidden>H</div>
-          )}
-          <div className="op-header-titles">
-            <div className="op-hospital-name">{hospitalName}</div>
-            {taglineLines.length > 0 && (
-              <div className="op-taglines">
-                {taglineLines.map((line) => (
-                  <div key={line}>{line}</div>
-                ))}
+      {letterhead ? (
+        <div className="op-letterhead-spacer" aria-hidden />
+      ) : (
+        <>
+          <header className="op-header">
+            <div className="op-header-top">
+              {logo ? (
+                <img src={logo} alt="" className="op-logo" />
+              ) : (
+                <div className="op-logo-fallback" aria-hidden>H</div>
+              )}
+              <div className="op-header-titles">
+                <div className="op-hospital-name">{hospitalName}</div>
+                {taglineLines.length > 0 && (
+                  <div className="op-taglines">
+                    {taglineLines.map((line) => (
+                      <div key={line}>{line}</div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-        <div className="op-header-rule" />
-        <div className="op-header-contact">
-          <span className="op-header-address">{hospitalAddress}</span>
-          {hospitalPhone && <span className="op-header-phone">Ph : {hospitalPhone}</span>}
-        </div>
-      </header>
-
-      <div className="op-rule" />
+            </div>
+            <div className="op-header-rule" />
+            <div className="op-header-contact">
+              <span className="op-header-address">{hospitalAddress}</span>
+              {hospitalPhone && <span className="op-header-phone">Ph : {hospitalPhone}</span>}
+            </div>
+          </header>
+          <div className="op-rule" />
+        </>
+      )}
 
       <section className="op-patient">
         <div className="op-patient-grid">
@@ -210,6 +223,7 @@ export default function OPPaperTemplate({ branding, op }) {
       <section className="op-clinical">
         <div className="op-clinical-blank" />
       </section>
+      {letterhead && <div className="op-letterhead-footer-spacer" aria-hidden />}
     </div>
   );
 }

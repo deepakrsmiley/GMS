@@ -8,6 +8,7 @@ import {
   Hourglass, Info, Link2, Pencil, Phone, RotateCcw, Search, Send, Stethoscope,
   User, UserPlus, Users,
 } from 'lucide-react';
+import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import Modal from '../components/common/Modal';
@@ -15,6 +16,7 @@ import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
 import OPConsultationReceipt from '../components/op/OPConsultationReceipt';
 import { istCalendarDate } from '../utils/istDate';
+import { isThangamHospital } from '../utils/hospitalA';
 import '../styles/opRegistration.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -65,6 +67,7 @@ const fmtTime = (d) => (d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-d
 export default function OPRegistrationPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const organization = useSelector((s) => s.auth?.user?.organization);
   const { branding } = useBranding();
   const patientSearchTimer = useRef(null);
 
@@ -258,7 +261,10 @@ export default function OPRegistrationPage() {
           bill = op?.bill;
         } catch (_) { /* ignore */ }
       }
-      if (bill && typeof bill === 'object' && (bill.items || bill.billNumber)) {
+      if (isThangamHospital(organization, branding) && op) {
+        toast.success('Registered — printing OP paper');
+        setPrintData({ branding, op });
+      } else if (bill && typeof bill === 'object' && (bill.items || bill.billNumber)) {
         toast.success('Registered — printing A5 consultation receipt');
         setBillPrint({ bill, op });
       } else {
