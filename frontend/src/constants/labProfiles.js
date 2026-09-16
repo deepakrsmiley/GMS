@@ -399,10 +399,13 @@ export const profilesForTypeWithOther = (labType) => {
   ];
 };
 
-export const findMatchingProfile = (query) => {
+export const catalogNames = (catalog = LAB_PROFILES) =>
+  Object.keys(catalog).filter((n) => n !== OTHER_PROFILE && n !== 'Custom / Manual');
+
+export const findMatchingProfile = (query, catalog = LAB_PROFILES) => {
   const q = String(query || '').trim().toLowerCase();
   if (q.length < 2) return null;
-  const names = LAB_PROFILE_OPTIONS.filter((n) => n !== OTHER_PROFILE);
+  const names = catalogNames(catalog);
   return names.find((n) => n.toLowerCase() === q)
     || names.find((n) => n.toLowerCase().startsWith(q))
     || names.find((n) => n.toLowerCase().includes(q))
@@ -414,11 +417,12 @@ export const buildOtherLabTests = (name, price = 0, extras = {}) => {
   const trimmed = String(name || '').trim();
   const amount = Number(price) || 0;
   if (!trimmed) return { profileName: '', matched: false, tests: [], totalAmount: 0 };
+  const catalog = extras.catalog || LAB_PROFILES;
 
-  const matchedProfile = findMatchingProfile(trimmed);
+  const matchedProfile = findMatchingProfile(trimmed, catalog);
   if (matchedProfile) {
     const p = amount || Number(extras.priceMap?.[matchedProfile]) || 0;
-    const expanded = expandProfilesToTests([matchedProfile], { [matchedProfile]: p });
+    const expanded = expandProfilesToTests([matchedProfile], { [matchedProfile]: p }, catalog);
     return {
       profileName: matchedProfile,
       matched: true,
@@ -443,17 +447,17 @@ export const buildOtherLabTests = (name, price = 0, extras = {}) => {
   };
 };
 
-export const getProfileTests = (profileName) => {
-  const p = LAB_PROFILES[profileName];
+export const getProfileTests = (profileName, catalog = LAB_PROFILES) => {
+  const p = catalog[profileName];
   if (!p) return [];
   return Array.isArray(p) ? p : (p.tests || []);
 };
 
-export const getProfileMeta = (profileName) => {
-  const p = LAB_PROFILES[profileName];
-  if (!p) return { labType: 'Other', sampleType: 'blood', tests: [] };
-  if (Array.isArray(p)) return { labType: 'Other', sampleType: 'blood', tests: p };
-  return p;
+export const getProfileMeta = (profileName, catalog = LAB_PROFILES) => {
+  const p = catalog[profileName];
+  if (!p) return { labType: 'Other', sampleType: 'blood', tests: [], kind: 'single' };
+  if (Array.isArray(p)) return { labType: 'Other', sampleType: 'blood', tests: p, kind: 'single' };
+  return { kind: p.kind || (p.tests?.length > 1 ? 'group' : 'single'), ...p };
 };
 
 export const TEST_META_LOOKUP = Object.values(LAB_PROFILES)
@@ -472,24 +476,28 @@ export const getTestMeta = (testName, profileFields = []) => {
 };
 
 /** Expand selected package names into billable/result test rows */
-export const expandProfilesToTests = (profileNames, priceByProfile = {}) => {
+export const expandProfilesToTests = (profileNames, priceByProfile = {}, catalog = LAB_PROFILES) => {
   const tests = [];
   let totalAmount = 0;
   (profileNames || []).forEach((name) => {
-    if (name === 'Custom / Manual') return;
+    if (name === 'Custom / Manual' || name === OTHER_PROFILE) return;
     const price = Number(priceByProfile[name]) || 0;
     totalAmount += price;
-    const rows = getProfileTests(name);
+    const rows = getProfileTests(name, catalog);
     if (!rows.length) {
       tests.push({ testName: name, price, profileName: name });
     } else {
+      const pricedIndex = rows.findIndex((row) => !row.isSection);
+      const billIndex = pricedIndex < 0 ? 0 : pricedIndex;
       rows.forEach((row, idx) => {
         tests.push({
           testName: row.testName,
-          price: idx === 0 ? price : 0,
+          price: idx === billIndex ? price : 0,
           profileName: name,
           unit: row.unit || '',
           normalRange: row.normalRange || '',
+          method: row.method || '',
+          isSection: !!row.isSection,
         });
       });
     }

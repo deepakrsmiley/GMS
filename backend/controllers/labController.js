@@ -7,6 +7,7 @@ const { generateLabReportPDF } = require('../utils/pdfGenerator');
 const { LAB_TYPES } = require('../models/LabTest');
 const { analyzeResult } = require('../utils/labResultAnalyzer');
 const TestMaster = require('../models/TestMaster');
+const { expandLabOrderTests, collectProfilePrices } = require('../utils/labCatalog');
 const { normalizeRole } = require('../utils/roles');
 const { withOrganization } = require('../middleware/tenant');
 const { markSourcesAsBilled } = require('../services/billingService');
@@ -14,6 +15,20 @@ const { labBillableTestLines } = require('../utils/billingChargeRules');
 const { pharmacistBillScopeError } = require('../utils/billingAccess');
 
 const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
+
+const expandCatalogTests = async (profiles, clientTests) => {
+  const names = (profiles || []).filter(Boolean);
+  if (!names.length) return { tests: clientTests || [], totalAmount: 0, masters: [] };
+  const masters = await TestMaster.find({
+    isActive: true,
+    $or: names.map((name) => ({
+      name: new RegExp(`^${String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    })),
+  });
+  if (!masters.length) return { tests: clientTests || [], totalAmount: 0, masters };
+  const prices = collectProfilePrices(names, masters, clientTests);
+  return { ...expandLabOrderTests(names, masters, prices, clientTests), masters };
+};
 
 const asObjectId = (value) => {
   if (!value) return undefined;
@@ -187,8 +202,11 @@ exports.createLabTest = asyncHandler(async (req, res, next) => {
     body.testProfile = body.profiles.join(' + ');
   }
 
+  const expanded = await expandCatalogTests(body.profiles, body.tests);
+  if (expanded.tests?.length) body.tests = expanded.tests;
+
   const testsTotal = (body.tests || []).reduce((sum, t) => sum + (t.price || 0), 0);
-  body.totalAmount = body.totalAmount || testsTotal;
+  body.totalAmount = body.totalAmount || testsTotal || expanded.totalAmount;
 
   if (!body.totalAmount || body.totalAmount <= 0) {
     let sum = 0;
@@ -205,6 +223,9 @@ exports.createLabTest = asyncHandler(async (req, res, next) => {
   if (!body.labType && body.profiles?.[0]) {
     const master = await TestMaster.findOne({ name: body.profiles[0], isActive: true });
     if (master?.category) body.labType = master.category;
+  }
+  if (!body.sampleType && expanded.masters?.[0]?.sampleType) {
+    body.sampleType = expanded.masters[0].sampleType;
   }
 
   if (!(body.tests || []).length) {
@@ -287,7 +308,14 @@ exports.addTestsToLabOrder = asyncHandler(async (req, res, next) => {
   }
 
   const newProfiles = Array.isArray(req.body.profiles) ? req.body.profiles.filter(Boolean) : [];
-  const newTests = Array.isArray(req.body.tests) ? req.body.tests : [];
+  let newTests = Array.isArray(req.body.tests) ? req.body.tests : [];
+  if (newProfiles.length) {
+    const expanded = await expandCatalogTests(newProfiles, newTests);
+    if (expanded.tests?.length) {
+      newTests = expanded.tests;
+      if (!req.body.totalAmount) req.body.totalAmount = expanded.totalAmount;
+    }
+  }
   if (!newTests.length && !newProfiles.length) {
     return next(new ErrorResponse('No tests to add', 400));
   }

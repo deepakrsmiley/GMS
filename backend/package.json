@@ -4,11 +4,12 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "test": "node --test tests/permissions.test.js tests/organizationIsolation.test.js tests/opConsultationFee.test.js tests/istDay.test.js tests/duplicateKeyField.test.js tests/billingAccess.test.js tests/billingChargeRules.test.js tests/dischargeSettlement.test.js tests/pharmacyStockBilling.test.js tests/billItems.test.js tests/prescriptionScanStorage.test.js",
+    "test": "node --test tests/permissions.test.js tests/organizationIsolation.test.js tests/opConsultationFee.test.js tests/istDay.test.js tests/duplicateKeyField.test.js tests/billingAccess.test.js tests/billingChargeRules.test.js tests/dischargeSettlement.test.js tests/pharmacyStockBilling.test.js tests/billItems.test.js tests/prescriptionScanStorage.test.js tests/labCatalog.test.js",
     "migrate:organization": "node scripts/migrateOrganization.js",
     "seed:gms-admin": "node scripts/seedGmsSuperAdmin.js",
     "verify:hospital-counts": "node scripts/verifyHospitalCounts.js",
     "import:srinivasa-stock": "node scripts/importSrinivasaStock.js",
+    "import:thangam-lab": "node scripts/importThangamLabCatalog.js",
     "apply:soft-indigo": "node scripts/applySoftIndigoBranding.js",
     "fix:tenant-indexes": "node scripts/fixTenantUniqueIndexes.js"
   },

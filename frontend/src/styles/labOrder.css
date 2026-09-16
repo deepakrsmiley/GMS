@@ -170,7 +170,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.4rem;
-  max-height: 14rem;
+  max-height: 22rem;
   overflow-y: auto;
 }
 
@@ -221,6 +221,25 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
+}
+
+.lo-kind {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+}
+
+.lo-kind--group {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.lo-kind--single {
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .lo-price {
@@ -640,4 +659,240 @@
   display: flex;
   gap: 0.4rem;
 }
+
+/* MASSoft-style Single / Group test picker */
+.ltp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.ltp-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+.ltp-tab {
+  border: 1px solid var(--lo-line, #e0e7ff);
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+.ltp-tab.is-on {
+  background: #4338ca;
+  border-color: #4338ca;
+  color: #fff;
+}
+.ltp-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--lo-line, #e0e7ff);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: #fff;
+  color: #64748b;
+}
+.ltp-search input {
+  border: 0;
+  outline: none;
+  width: 100%;
+  font-size: 13px;
+  background: transparent;
+  color: #0f172a;
+}
+.ltp-table-wrap {
+  max-height: 18rem;
+  overflow: auto;
+  border: 1px solid var(--lo-line, #e0e7ff);
+  border-radius: 0.5rem;
+}
+.ltp--compact .ltp-table-wrap {
+  max-height: 11rem;
+}
+.ltp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ltp-table th {
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+  background: #eef2ff;
+  padding: 0.4rem 0.55rem;
+  position: sticky;
+  top: 0;
+}
+.ltp-table td {
+  padding: 0.4rem 0.55rem;
+  border-top: 1px solid #eef2ff;
+  vertical-align: middle;
+}
+.ltp-table tbody tr {
+  cursor: pointer;
+}
+.ltp-table tbody tr:hover {
+  background: #f8fafc;
+}
+.ltp-table tbody tr.is-on {
+  background: #eef2ff;
+}
+.ltp-code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: #4338ca;
+  white-space: nowrap;
+  width: 6.5rem;
+}
+.ltp-name {
+  font-weight: 650;
+  color: #0f172a;
+}
+.ltp-meta {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 0.1rem;
+}
+.ltp-rate {
+  font-weight: 700;
+  white-space: nowrap;
+  text-align: right;
+}
+.ltp-add {
+  display: inline-flex;
+  width: 1.4rem;
+  height: 1.4rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.ltp-add.is-on {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.ltp-empty {
+  text-align: center;
+  color: #64748b;
+  font-size: 12px;
+  padding: 0.7rem;
+}
+.ltp-selected {
+  border: 1px solid var(--lo-line, #e0e7ff);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #fff;
+}
+.ltp-selected__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.45rem 0.65rem;
+  background: #eef2ff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #3730a3;
+}
+.ltp-picked {
+  padding: 0.5rem 0.65rem;
+  border-top: 1px solid #eef2ff;
+}
+.ltp-picked__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ltp-picked__row > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.ltp-price {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ltp-price input {
+  width: 4.5rem;
+  border: 1px solid #e0e7ff;
+  border-radius: 0.35rem;
+  padding: 0.2rem 0.35rem;
+  text-align: right;
+}
+.ltp-remove {
+  border: 0;
+  background: none;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.ltp-remove:hover { color: #b91c1c; }
+.ltp-children-toggle {
+  margin-top: 0.3rem;
+  border: 0;
+  background: none;
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 0;
+}
+.ltp-children {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.ltp-children li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 12px;
+}
+.ltp-children li.is-section strong {
+  color: #4338ca;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ltp-children span { color: #64748b; font-size: 11px; }
+
+/* Keep picker usable inside Nurse Station form styles */
+.ns-form .ltp label {
+  display: flex;
+  text-transform: none;
+  margin-bottom: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  letter-spacing: normal;
+}
+.ns-form .ltp input {
+  width: auto;
+}
+.ns-form .ltp-search {
+  width: 100%;
+}
+.ns-form .ltp-search input {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.ns-form .ltp-price input {
+  width: 4.5rem;
+}
+
 

@@ -63,6 +63,8 @@ const labTestSchema = new mongoose.Schema({
     price: Number,
     unit: String,
     normalRange: String,
+    method: String,
+    isSection: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ['pending', 'collected', 'processing', 'completed', 'cancelled'],

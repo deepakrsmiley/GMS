@@ -6,8 +6,25 @@ const { LAB_TYPES } = require('./LabTest');
 // Lab technicians (and everyone else who creates a lab order) pick a test/profile
 // name and the price is pulled from here automatically instead of being typed by
 // hand every time. Matches the same pattern as ServiceMaster (IP equipment rates).
+const testItemSchema = new mongoose.Schema({
+  testCode: { type: String, trim: true },
+  testName: { type: String, required: true, trim: true },
+  unit: { type: String, trim: true, default: '' },
+  normalRange: { type: String, trim: true, default: '' },
+  method: { type: String, trim: true, default: '' },
+  sample: { type: String, trim: true, default: '' },
+  sortOrder: { type: Number, default: 0 },
+  isSection: { type: Boolean, default: false },
+}, { _id: false });
+
 const testMasterSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true }, // e.g. "CBC (Complete Blood Count)"
+  name: { type: String, required: true, trim: true }, // e.g. "Complete Blood Count"
+  testCode: { type: String, trim: true }, // MASSoft TestCode / GroupCode
+  kind: {
+    type: String,
+    enum: ['single', 'group'],
+    default: 'single',
+  },
   category: {
     type: String,
     enum: LAB_TYPES,
@@ -19,6 +36,11 @@ const testMasterSchema = new mongoose.Schema({
     default: 'blood',
   },
   price: { type: Number, required: true, min: 0 }, // e.g. CBC = 500
+  doctorPrice: { type: Number, default: 0, min: 0 },
+  unit: { type: String, trim: true, default: '' },
+  normalRange: { type: String, trim: true, default: '' },
+  method: { type: String, trim: true, default: '' },
+  items: { type: [testItemSchema], default: [] },
   gstPercent: { type: Number, default: 0 },
   description: String,
   isActive: { type: Boolean, default: true },

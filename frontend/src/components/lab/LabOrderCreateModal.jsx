@@ -1,20 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { FlaskConical, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import api from '../../services/api';
 import Modal from '../common/Modal';
+import LabTestPicker from './LabTestPicker';
 import {
-  LAB_TYPES,
-  LAB_PROFILE_OPTIONS,
-  LAB_PROFILES,
   OTHER_PROFILE,
-  expandProfilesToTests,
-  getProfileMeta,
-  profilesForTypeWithOther,
-  findMatchingProfile,
-  buildOtherLabTests,
 } from '../../constants/labProfiles';
+import { labCatalogFromMaster } from '../../utils/labCatalog';
 import '../../styles/labOrder.css';
 
 const emptyCustom = () => [{ testName: '', price: '' }];
@@ -34,9 +28,7 @@ const formatDoctorOption = (d) => {
 
 /**
  * Corporate lab create / append modal.
- * - requestMode (Reception/Nurse/Doctor): pick lab type → packages
- * - fullMode (Lab Tech): full desk form
- * - appendTo: existing order → PUT add-tests (same Lab No.)
+ * Same as lab software: Single Test / Group Test click-add, mix on one Lab No.
  */
 export default function LabOrderCreateModal({
   isOpen,
@@ -80,11 +72,8 @@ export default function LabOrderCreateModal({
     enabled: isOpen,
   });
 
-  const priceMap = useMemo(() => {
-    const m = {};
-    priceList.forEach((t) => { m[t.name] = t.price; });
-    return m;
-  }, [priceList]);
+  const catalog = useMemo(() => labCatalogFromMaster(priceList), [priceList]);
+  const priceMap = catalog.priceMap;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -139,12 +128,6 @@ export default function LabOrderCreateModal({
     return () => clearTimeout(t);
   }, [patientSearch, isAppend]);
 
-  const availableProfiles = useMemo(() => {
-    if (labType === 'Other') return [OTHER_PROFILE];
-    if (mode === 'request' && labType) return profilesForTypeWithOther(labType);
-    return LAB_PROFILE_OPTIONS;
-  }, [mode, labType]);
-
   const toggleProfile = (name) => {
     setSelectedProfiles((prev) => {
       const next = prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name];
@@ -153,7 +136,7 @@ export default function LabOrderCreateModal({
           ...prices,
           [name]: prices[name] ?? priceMap[name] ?? '',
         }));
-        const meta = getProfileMeta(name);
+        const meta = catalog.getMeta(name);
         if (meta.sampleType) setSampleType(meta.sampleType);
         if (!labType && meta.labType) setLabType(meta.labType);
       }
@@ -161,13 +144,13 @@ export default function LabOrderCreateModal({
     });
   };
 
-  const otherEnabled = selectedProfiles.includes(OTHER_PROFILE) || labType === 'Other';
+  const otherEnabled = selectedProfiles.includes(OTHER_PROFILE);
 
   const otherBuilt = useMemo(
     () => customRows
       .filter((r) => r.testName.trim())
-      .map((r) => buildOtherLabTests(r.testName, r.price, { priceMap, testMaster: priceList })),
-    [customRows, priceMap, priceList],
+      .map((r) => catalog.buildOther(r.testName, r.price)),
+    [customRows, catalog],
   );
 
   const { tests, totalAmount } = useMemo(() => {
@@ -178,13 +161,13 @@ export default function LabOrderCreateModal({
     const prices = { ...profilePrices };
     if (otherEnabled) {
       customRows.forEach((row) => {
-        const built = buildOtherLabTests(row.testName, row.price, { priceMap, testMaster: priceList });
+        const built = catalog.buildOther(row.testName, row.price);
         if (built.matched) {
           prices[built.profileName] = Number(row.price) || prices[built.profileName] || built.totalAmount;
         }
       });
     }
-    const expanded = expandProfilesToTests(
+    const expanded = catalog.expand(
       [...new Set([...catalogProfiles, ...matchedFromOther])],
       prices,
     );
@@ -197,7 +180,7 @@ export default function LabOrderCreateModal({
       });
     }
     return { tests: testsOut, totalAmount: total };
-  }, [selectedProfiles, profilePrices, customRows, otherEnabled, otherBuilt, priceMap, priceList]);
+  }, [selectedProfiles, profilePrices, customRows, otherEnabled, otherBuilt, catalog]);
 
   const saveMut = useMutation({
     mutationFn: async () => {
@@ -223,7 +206,7 @@ export default function LabOrderCreateModal({
         sampleType,
         priority,
         notes: notes || undefined,
-        labType: labType || getProfileMeta(profiles[0] || '')?.labType || 'Other',
+        labType: labType || catalog.getMeta(profiles[0] || '')?.labType || 'Other',
         opRegistration: opRegistration || undefined,
         ipAdmission: ipAdmission || undefined,
         orderSource: orderSource || undefined,
@@ -266,9 +249,9 @@ export default function LabOrderCreateModal({
       subtitle={isAppend
         ? 'Adds to the same Lab No. — does not create a new order'
         : mode === 'request'
-          ? 'Pick lab type, then packages — one Lab No. for this request'
-          : 'Full lab desk format — multiple packages stay on one Lab No.'}
-      size="lg"
+          ? 'Add single tests and group tests — one Lab No. for this request'
+          : 'Same as lab software: Single Test or Group Test. Group click loads every child test.'}
+      size="xl"
     >
       <div className="lo-form">
         <div className="lo-body">
@@ -314,120 +297,25 @@ export default function LabOrderCreateModal({
             </div>
           )}
 
-          {/* Type step for request mode */}
-          {mode === 'request' && !isAppend && (
-            <div className="lo-section">
+          <div className="lo-section">
               <div className="lo-section__head">
-                <span className="lo-section__title">1 · Lab type</span>
-                <span className="lo-section__meta">What kind of lab?</span>
+                <span className="lo-section__title">Add lab tests</span>
+                <span className="lo-section__meta">Single Test or Group Test — same as lab software</span>
               </div>
               <div className="lo-section__body">
-                <div className="lo-type-grid">
-                  {LAB_TYPES.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      className={`lo-type-chip ${labType === t ? 'is-active' : ''}`}
-                      onClick={() => {
-                        setLabType(t);
-                        setSelectedProfiles(t === 'Other' ? [OTHER_PROFILE] : []);
-                        if (t === 'Other') setCustomRows(emptyCustom());
-                      }}
-                    >
-                      <FlaskConical size={14} />
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Packages */}
-          {(mode === 'full' || labType || isAppend) && (
-            <div className="lo-section">
-              <div className="lo-section__head">
-                <span className="lo-section__title">
-                  {labType === 'Other' ? '2 · Other lab' : mode === 'request' ? '2 · Packages' : 'Lab packages'}
-                </span>
-                <span className="lo-section__meta">{selectedProfiles.length} selected</span>
-              </div>
-              <div className="lo-section__body">
-                {mode === 'full' && (
-                  <div className="lo-type-row">
-                    <button
-                      type="button"
-                      className={`lo-type-chip sm ${!labType ? 'is-active' : ''}`}
-                      onClick={() => setLabType('')}
-                    >
-                      All
-                    </button>
-                    {LAB_TYPES.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        className={`lo-type-chip sm ${labType === t ? 'is-active' : ''}`}
-                        onClick={() => {
-                          const next = labType === t ? '' : t;
-                          setLabType(next);
-                          if (next === 'Other') setSelectedProfiles((prev) => (
-                            prev.includes(OTHER_PROFILE) ? prev : [...prev, OTHER_PROFILE]
-                          ));
-                        }}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {labType !== 'Other' && (
-                <div className="lo-profiles">
-                  {(labType ? availableProfiles : LAB_PROFILE_OPTIONS)
-                    .filter((name) => name !== OTHER_PROFILE)
-                    .map((name) => {
-                    const checked = selectedProfiles.includes(name);
-                    const meta = LAB_PROFILES[name];
-                    const count = meta?.tests?.length || 0;
-                    return (
-                      <label key={name} className={`lo-profile ${checked ? 'is-on' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleProfile(name)}
-                        />
-                        <span className="lo-profile__body">
-                          <span className="lo-profile__name">{name}</span>
-                          <span className="lo-profile__meta">
-                            {meta?.labType || '—'}
-                            {count ? ` · ${count} params` : ''}
-                          </span>
-                        </span>
-                        {checked && (
-                          <span className="lo-profile__price">
-                            ₹
-                            <input
-                              type="number"
-                              min="0"
-                              value={profilePrices[name] ?? ''}
-                              onChange={(e) => setProfilePrices({ ...profilePrices, [name]: e.target.value })}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </span>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-                )}
+                <LabTestPicker
+                  catalog={catalog}
+                  selectedNames={selectedProfiles.filter((n) => n !== OTHER_PROFILE)}
+                  prices={profilePrices}
+                  onToggle={toggleProfile}
+                  onPriceChange={(name, value) => setProfilePrices((prev) => ({ ...prev, [name]: value }))}
+                />
 
                 <label className={`lo-profile lo-other-toggle ${otherEnabled ? 'is-on' : ''}`}>
                   <input
                     type="checkbox"
                     checked={otherEnabled}
-                    onChange={() => {
-                      if (labType === 'Other') return;
-                      toggleProfile(OTHER_PROFILE);
-                    }}
+                    onChange={() => toggleProfile(OTHER_PROFILE)}
                   />
                   <span className="lo-profile__body">
                     <span className="lo-profile__name">Other</span>
@@ -439,7 +327,7 @@ export default function LabOrderCreateModal({
                   <div className="lo-custom">
                     {customRows.map((row, i) => {
                       const built = row.testName.trim()
-                        ? buildOtherLabTests(row.testName, row.price, { priceMap, testMaster: priceList })
+                        ? catalog.buildOther(row.testName, row.price)
                         : null;
                       return (
                         <div key={i} className="lo-other-card">
@@ -451,7 +339,7 @@ export default function LabOrderCreateModal({
                               onChange={(e) => {
                                 const value = e.target.value;
                                 const next = [...customRows];
-                                const match = findMatchingProfile(value);
+                                const match = catalog.findMatch(value);
                                 const master = priceList.find((t) => String(t.name).toLowerCase() === value.trim().toLowerCase());
                                 const autoPrice = match ? priceMap[match] : master?.price;
                                 const priceEmpty = next[i].price === '' || next[i].price == null;
@@ -510,7 +398,6 @@ export default function LabOrderCreateModal({
                 )}
               </div>
             </div>
-          )}
 
           {/* Details */}
           <div className="lo-section">

@@ -15,13 +15,10 @@ import ServiceUsageModal from '../components/ip/ServiceUsageModal';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import {
-  LAB_TYPES,
-  profilesForType,
-  expandProfilesToTests,
-  getProfileMeta,
   STATUS_LABELS,
-  buildOtherLabTests,
 } from '../constants/labProfiles';
+import { labCatalogFromMaster } from '../utils/labCatalog';
+import LabTestPicker from '../components/lab/LabTestPicker';
 import '../styles/assetMaster.css';
 import '../styles/nurseStation.css';
 
@@ -78,7 +75,8 @@ export default function NurseStationPage() {
   const [orderText, setOrderText] = useState('');
   const [orderPriority, setOrderPriority] = useState('routine');
   const [labType, setLabType] = useState('');
-  const [labProfile, setLabProfile] = useState('');
+  const [selectedProfiles, setSelectedProfiles] = useState([]);
+  const [profilePrices, setProfilePrices] = useState({});
   const [labNotes, setLabNotes] = useState('');
   const [otherLabName, setOtherLabName] = useState('');
   const [otherLabPrice, setOtherLabPrice] = useState('');
@@ -115,6 +113,23 @@ export default function NurseStationPage() {
     queryFn: async () => (await api.get('/test-master')).data.data || [],
     staleTime: 5 * 60 * 1000,
   });
+  const catalog = useMemo(() => labCatalogFromMaster(testMasterQ.data || []), [testMasterQ.data]);
+  const priceMap = catalog.priceMap;
+
+  const toggleLabProfile = (name) => {
+    setSelectedProfiles((prev) => {
+      const next = prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name];
+      if (!prev.includes(name)) {
+        setProfilePrices((prices) => ({
+          ...prices,
+          [name]: prices[name] ?? priceMap[name] ?? '',
+        }));
+        const meta = catalog.getMeta(name);
+        if (!labType && meta.labType) setLabType(meta.labType);
+      }
+      return next;
+    });
+  };
 
   const board = boardQ.data || [];
   const admission = admissionQ.data;
@@ -206,55 +221,59 @@ export default function NurseStationPage() {
 
   const labMut = useMutation({
     mutationFn: async () => {
-      const isOther = labType === 'Other' || labProfile === '__other__';
-      if (isOther) {
-        if (!otherLabName.trim()) throw new Error('Enter the lab / test name');
-        const built = buildOtherLabTests(otherLabName, otherLabPrice, {
-          testMaster: testMasterQ.data || [],
-        });
-        return api.post('/lab', {
-          patient: admission.patient._id || admission.patient,
-          doctor: admission.doctor?._id || admission.doctor,
-          ipAdmission: admission._id,
-          profiles: [built.profileName],
-          testProfile: built.profileName,
-          labType: 'Other',
-          sampleType: 'other',
-          priority: 'routine',
-          notes: labNotes || undefined,
-          tests: built.tests,
-          totalAmount: built.totalAmount,
-          orderSource: 'nurse_ip',
-        });
+      const names = selectedProfiles.filter(Boolean);
+      const hasOther = !!otherLabName.trim();
+      if (!names.length && !hasOther) throw new Error('Add a Single Test or Group Test');
+
+      const prices = { ...profilePrices };
+      names.forEach((name) => {
+        const master = (testMasterQ.data || []).find((t) => t.name === name);
+        if (prices[name] == null || prices[name] === '') prices[name] = Number(master?.price) || 0;
+      });
+
+      let profiles = [...names];
+      let tests = [];
+      let totalAmount = 0;
+      if (names.length) {
+        const expanded = catalog.expand(names, prices);
+        tests = expanded.tests;
+        totalAmount = expanded.totalAmount;
       }
-      const master = (testMasterQ.data || []).find((t) => t.name === labProfile);
-      const price = Number(master?.price) || 0;
-      const meta = getProfileMeta(labProfile);
-      const { tests, totalAmount } = expandProfilesToTests([labProfile], { [labProfile]: price });
+
+      if (hasOther) {
+        const built = catalog.buildOther(otherLabName, otherLabPrice);
+        if (!profiles.includes(built.profileName)) profiles.push(built.profileName);
+        tests = [...tests, ...built.tests];
+        totalAmount += built.totalAmount;
+      }
+
+      const firstMeta = catalog.getMeta(profiles[0] || '');
       return api.post('/lab', {
         patient: admission.patient._id || admission.patient,
         doctor: admission.doctor?._id || admission.doctor,
         ipAdmission: admission._id,
-        profiles: [labProfile],
-        testProfile: labProfile,
-        labType: master?.category || meta.labType || labType || 'Other',
-        sampleType: meta.sampleType || 'blood',
+        profiles,
+        testProfile: profiles.join(' + '),
+        labType: firstMeta.labType || labType || 'Other',
+        sampleType: firstMeta.sampleType || 'blood',
         priority: 'routine',
         notes: labNotes || undefined,
-        tests: tests.length ? tests : [{ testName: labProfile, price }],
-        totalAmount: totalAmount || price,
+        tests: tests.length ? tests : [{ testName: profiles[0], price: totalAmount }],
+        totalAmount,
         orderSource: 'nurse_ip',
       });
     },
     onSuccess: () => {
       toast.success('Lab order sent to Lab desk (Nurse / IP queue)');
-      setLabProfile('');
+      setSelectedProfiles([]);
+      setProfilePrices({});
+      setLabType('');
       setLabNotes('');
       setOtherLabName('');
       setOtherLabPrice('');
       invalidatePatient();
     },
-    onError: (e) => toast.error(e?.response?.data?.message || 'Failed to create lab order'),
+    onError: (e) => toast.error(e?.response?.data?.message || e.message || 'Failed to create lab order'),
   });
 
   const allergies = admission?.knownAllergies
@@ -774,83 +793,48 @@ export default function NurseStationPage() {
                         className="ns-form"
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (!labType) return toast.error('Select lab type first');
-                          const isOther = labType === 'Other' || labProfile === '__other__';
-                          if (isOther) {
-                            if (!otherLabName.trim()) return toast.error('Enter the lab / test name');
-                            if (otherLabPrice === '' || Number(otherLabPrice) < 0) return toast.error('Enter the lab price');
-                          } else if (!labProfile) {
-                            return toast.error('Select a lab package');
+                          if (!selectedProfiles.length && !otherLabName.trim()) {
+                            return toast.error('Add a Single Test or Group Test');
+                          }
+                          if (otherLabName.trim() && (otherLabPrice === '' || Number(otherLabPrice) < 0)) {
+                            return toast.error('Enter the lab price');
                           }
                           labMut.mutate();
                         }}
                       >
                         <div className="full">
-                          <label>1 · Lab type *</label>
-                          <select
-                            value={labType}
-                            onChange={(e) => {
-                              setLabType(e.target.value);
-                              setLabProfile(e.target.value === 'Other' ? '__other__' : '');
-                            }}
-                            required
-                          >
-                            <option value="">What type of lab?</option>
-                            {LAB_TYPES.map((t) => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </select>
+                          <label>Add lab tests</label>
+                          <p className="ns-hint" style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px' }}>
+                            Single Test or Group Test — click to add. Mix both on one order. A group loads every child test.
+                          </p>
+                          <LabTestPicker
+                            catalog={catalog}
+                            selectedNames={selectedProfiles}
+                            prices={profilePrices}
+                            onToggle={toggleLabProfile}
+                            onPriceChange={(name, value) => setProfilePrices((prev) => ({ ...prev, [name]: value }))}
+                            compact
+                          />
                         </div>
-                        {labType !== 'Other' && (
                         <div className="full">
-                          <label>2 · Package *</label>
-                          <select
-                            value={labProfile}
-                            onChange={(e) => setLabProfile(e.target.value)}
-                            required={labType !== 'Other'}
-                            disabled={!labType}
-                          >
-                            <option value="">{labType ? 'Select package…' : 'Pick type first'}</option>
-                            {profilesForType(labType).filter((n) => n !== 'Custom / Manual').map((name) => {
-                              const master = (testMasterQ.data || []).find((t) => t.name === name);
-                              return (
-                                <option key={name} value={name}>
-                                  {name}{master?.price != null ? ` · ₹${master.price}` : ''}
-                                </option>
-                              );
-                            })}
-                            <option value="__other__">Other — not in this list</option>
-                          </select>
+                          <label>Other lab (not in the list)</label>
+                          <input
+                            value={otherLabName}
+                            onChange={(e) => setOtherLabName(e.target.value)}
+                            placeholder="Enter lab name"
+                          />
                         </div>
-                        )}
-                        {(labType === 'Other' || labProfile === '__other__') && (
-                          <>
-                            <div className="full">
-                              <label>Lab / test name *</label>
-                              <input
-                                value={otherLabName}
-                                onChange={(e) => setOtherLabName(e.target.value)}
-                                placeholder="Enter lab name"
-                                required
-                              />
-                            </div>
-                            <div className="full">
-                              <label>Price ₹ *</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={otherLabPrice}
-                                onChange={(e) => setOtherLabPrice(e.target.value)}
-                                placeholder="0"
-                                required
-                              />
-                            </div>
-                            {otherLabName.trim() && (
-                              <p className="ns-hint" style={{ fontSize: 12, color: '#64748b' }}>
-                                Report format will include {otherLabName.trim()}, Findings and Impression automatically.
-                              </p>
-                            )}
-                          </>
+                        {!!otherLabName.trim() && (
+                          <div className="full">
+                            <label>Other lab price ₹ *</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={otherLabPrice}
+                              onChange={(e) => setOtherLabPrice(e.target.value)}
+                              placeholder="0"
+                            />
+                          </div>
                         )}
                         <div className="full">
                           <label>Notes</label>

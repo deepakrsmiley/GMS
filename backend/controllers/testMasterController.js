@@ -6,7 +6,7 @@ const TestMaster = require('../models/TestMaster');
 // ?activeOnly=false to include deactivated entries (used by the manage screen)
 exports.getTests = asyncHandler(async (req, res) => {
   const filter = req.query.activeOnly === 'false' ? {} : { isActive: true };
-  const tests = await TestMaster.find(filter).sort('category name');
+  const tests = await TestMaster.find(filter).sort({ kind: 1, category: 1, name: 1 });
   res.status(200).json({ success: true, count: tests.length, data: tests });
 });
 
@@ -22,14 +22,50 @@ exports.lookupTest = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: test });
 });
 
-exports.createTest = asyncHandler(async (req, res) => {
-  req.body.createdBy = req.user._id;
-  const test = await TestMaster.create(req.body);
+const normalizeItems = (items = []) => (
+  (Array.isArray(items) ? items : [])
+    .filter((i) => i && String(i.testName || '').trim())
+    .map((item, idx) => ({
+      testCode: item.testCode || '',
+      testName: String(item.testName).trim(),
+      unit: item.unit || '',
+      normalRange: item.normalRange || '',
+      method: item.method || '',
+      sample: item.sample || '',
+      sortOrder: item.sortOrder != null ? Number(item.sortOrder) : idx + 1,
+      isSection: !!item.isSection,
+    }))
+);
+
+exports.createTest = asyncHandler(async (req, res, next) => {
+  const kind = req.body.kind === 'group' ? 'group' : 'single';
+  const items = kind === 'group' ? normalizeItems(req.body.items) : [];
+  if (kind === 'group' && !items.length) {
+    return next(new ErrorResponse('Group test needs at least one child test', 400));
+  }
+  const test = await TestMaster.create({
+    ...req.body,
+    kind,
+    items,
+    createdBy: req.user._id,
+  });
   res.status(201).json({ success: true, data: test });
 });
 
 exports.updateTest = asyncHandler(async (req, res, next) => {
-  const test = await TestMaster.findByIdAndUpdate(req.params.id, req.body, {
+  const body = { ...req.body };
+  if (body.kind === 'group' || Array.isArray(body.items)) {
+    body.kind = body.kind === 'single' ? 'single' : (body.kind || 'group');
+    if (body.kind === 'group') {
+      body.items = normalizeItems(body.items);
+      if (!body.items.length) {
+        return next(new ErrorResponse('Group test needs at least one child test', 400));
+      }
+    } else {
+      body.items = [];
+    }
+  }
+  const test = await TestMaster.findByIdAndUpdate(req.params.id, body, {
     new: true,
     runValidators: true,
   });

@@ -10,14 +10,8 @@ import api from '../services/api';
 import { hasPermission, hasAnyPermission } from '../constants/permissions';
 import ScanPrescriptionModal from '../components/op/ScanPrescriptionModal';
 import PrescriptionDocumentViewer from '../components/op/PrescriptionDocumentViewer';
-import {
-  LAB_TYPES,
-  LAB_PROFILES,
-  OTHER_PROFILE,
-  expandProfilesToTests,
-  getProfileMeta,
-  profilesForTypeWithOther,
-} from '../constants/labProfiles';
+import { labCatalogFromMaster } from '../utils/labCatalog';
+import LabTestPicker from '../components/lab/LabTestPicker';
 import '../styles/doctorConsult.css';
 
 const FREQ_OPTIONS = ['OD', 'BD', 'TD', 'QD', 'SOS', 'HS', 'AC', 'PC', 'STAT'];
@@ -79,6 +73,7 @@ export default function DoctorConsultationPage() {
   const [sendToPharmacy, setSendToPharmacy] = useState(false);
   const [labType, setLabType] = useState('');
   const [selectedProfiles, setSelectedProfiles] = useState([]);
+  const [profilePrices, setProfilePrices] = useState({});
   const [customLabName, setCustomLabName] = useState('');
   const [pendingProcedures, setPendingProcedures] = useState([]);
   const [procPick, setProcPick] = useState('');
@@ -115,11 +110,8 @@ export default function DoctorConsultationPage() {
     enabled: canLogServices,
   });
 
-  const priceMap = useMemo(() => {
-    const m = {};
-    priceList.forEach((t) => { m[t.name] = t.price; });
-    return m;
-  }, [priceList]);
+  const catalog = useMemo(() => labCatalogFromMaster(priceList), [priceList]);
+  const priceMap = catalog.priceMap;
 
   useEffect(() => {
     if (!op) return;
@@ -143,16 +135,22 @@ export default function DoctorConsultationPage() {
     return () => clearTimeout(t);
   }, [medQuery, canPrescribe]);
 
-  const availableProfiles = useMemo(() => {
-    if (!labType) return [];
-    if (labType === 'Other') return [OTHER_PROFILE];
-    return profilesForTypeWithOther(labType).filter((n) => n !== OTHER_PROFILE);
-  }, [labType]);
-
   const toggleProfile = (name) => {
-    setSelectedProfiles((prev) => (
-      prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]
-    ));
+    setSelectedProfiles((prev) => {
+      const next = prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name];
+      if (!prev.includes(name)) {
+        setProfilePrices((prices) => ({
+          ...prices,
+          [name]: prices[name] ?? priceMap[name] ?? '',
+        }));
+        const meta = catalog.getMeta(name);
+        if (!labType && meta.labType) setLabType(meta.labType);
+      } else if (labType && catalog.getMeta(name)?.labType === labType) {
+        const remaining = next[0];
+        setLabType(remaining ? (catalog.getMeta(remaining)?.labType || '') : '');
+      }
+      return next;
+    });
   };
 
   const existingLabNames = useMemo(() => {
@@ -251,28 +249,30 @@ export default function DoctorConsultationPage() {
         }),
       );
 
-      const profilePrices = {};
+      const prices = { ...profilePrices };
       selectedProfiles.forEach((name) => {
-        profilePrices[name] = priceMap[name] ?? 0;
+        if (prices[name] == null || prices[name] === '') prices[name] = priceMap[name] ?? 0;
       });
 
       let labPayload = null;
-      if (canOrderLab && (selectedProfiles.length || (labType === 'Other' && customLabName.trim()))) {
+      if (canOrderLab && (selectedProfiles.length || customLabName.trim())) {
         let profiles = [...selectedProfiles];
-        let tests;
-        let totalAmount;
-        let labTypeOut = labType || getProfileMeta(profiles[0] || '')?.labType || 'Other';
+        let tests = [];
+        let totalAmount = 0;
+        let labTypeOut = labType || catalog.getMeta(profiles[0] || '')?.labType || 'Other';
 
-        if (labType === 'Other' && customLabName.trim()) {
-          const name = customLabName.trim();
-          profiles = [name];
-          tests = [{ testName: name, price: Number(priceMap[name]) || 0, profileName: name }];
-          totalAmount = Number(priceMap[name]) || 0;
-          labTypeOut = 'Other';
-        } else {
-          const expanded = expandProfilesToTests(profiles, profilePrices);
+        if (profiles.length) {
+          const expanded = catalog.expand(profiles, prices);
           tests = expanded.tests;
           totalAmount = expanded.totalAmount;
+        }
+
+        if (customLabName.trim()) {
+          const built = catalog.buildOther(customLabName, priceMap[customLabName.trim()] ?? 0);
+          if (!profiles.includes(built.profileName)) profiles.push(built.profileName);
+          tests = [...tests, ...built.tests];
+          totalAmount += built.totalAmount;
+          if (!selectedProfiles.length) labTypeOut = 'Other';
         }
 
         if (tests?.length) {
@@ -282,7 +282,7 @@ export default function DoctorConsultationPage() {
             testProfile: profiles.join(' + '),
             tests,
             totalAmount,
-            sampleType: getProfileMeta(profiles[0] || '')?.sampleType || 'blood',
+            sampleType: catalog.getMeta(profiles[0] || '')?.sampleType || 'blood',
             priority: 'routine',
             labType: labTypeOut,
             opRegistration: opId,
@@ -310,7 +310,7 @@ export default function DoctorConsultationPage() {
         examinationFindings,
         investigationsAdvised: [
           ...(selectedProfiles.length ? selectedProfiles : []),
-          ...(labType === 'Other' && customLabName.trim() ? [customLabName.trim()] : []),
+          ...(customLabName.trim() ? [customLabName.trim()] : []),
         ].join(', ') || undefined,
         status: nextStatus,
       });
@@ -693,102 +693,27 @@ export default function DoctorConsultationPage() {
 
               {showLab && canOrderLab && (
                 <div>
-                  <label className="dc-label">1 · Lab type</label>
-                  <div className="dc-type-grid">
-                    {LAB_TYPES.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        className={`dc-chip ${labType === t ? 'is-on' : ''}`}
-                        onClick={() => {
-                          setLabType(t);
-                          setSelectedProfiles([]);
-                          setCustomLabName('');
-                        }}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                  <label className="dc-label">Add lab tests</label>
+                  <p className="dc-empty" style={{ marginBottom: 8 }}>
+                    Single Test or Group Test — click to add. A group loads every child test.
+                  </p>
+                  <LabTestPicker
+                    catalog={catalog}
+                    selectedNames={selectedProfiles}
+                    prices={profilePrices}
+                    onToggle={toggleProfile}
+                    onPriceChange={(name, value) => setProfilePrices((prev) => ({ ...prev, [name]: value }))}
+                    compact
+                  />
+                  <div className="dc-field" style={{ marginTop: 10 }}>
+                    <label className="dc-label">Other lab (not in the list)</label>
+                    <input
+                      className="dc-input"
+                      value={customLabName}
+                      onChange={(e) => setCustomLabName(e.target.value)}
+                      placeholder="Type lab / test name"
+                    />
                   </div>
-
-                  {labType && labType !== 'Other' && (
-                    <>
-                      <label className="dc-label">2 · Packages &amp; parameters</label>
-                      <div className="dc-profiles">
-                        {availableProfiles.map((name) => {
-                          const checked = selectedProfiles.includes(name);
-                          const meta = LAB_PROFILES[name];
-                          const params = meta?.tests || [];
-                          return (
-                            <label key={name} className={`dc-profile ${checked ? 'is-on' : ''}`}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleProfile(name)}
-                              />
-                              <span className="dc-profile-body">
-                                <span className="dc-profile-name">{name}</span>
-                                <span className="dc-profile-meta">
-                                  {meta?.labType || labType}
-                                  {params.length ? ` · ${params.length} parameters` : ''}
-                                  {priceMap[name] != null ? ` · ₹${priceMap[name]}` : ''}
-                                </span>
-                                {checked && params.length > 0 && (
-                                  <span className="dc-params">
-                                    {params.slice(0, 12).map((p) => (
-                                      <span key={p.testName} className="dc-param">{p.testName}</span>
-                                    ))}
-                                    {params.length > 12 && (
-                                      <span className="dc-param">+{params.length - 12} more</span>
-                                    )}
-                                  </span>
-                                )}
-                              </span>
-                            </label>
-                          );
-                        })}
-                        {!availableProfiles.length && (
-                          <p className="dc-empty">No packages for this lab type.</p>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  {labType === 'Other' && (
-                    <div className="dc-field">
-                      <label className="dc-label">2 · Other lab name</label>
-                      <input
-                        className="dc-input"
-                        value={customLabName}
-                        onChange={(e) => setCustomLabName(e.target.value)}
-                        placeholder="Type lab / test name"
-                      />
-                    </div>
-                  )}
-
-                  {(selectedProfiles.length > 0 || customLabName.trim()) && (
-                    <div className="dc-staged">
-                      <div className="dc-staged-title">Selected labs</div>
-                      <div className="dc-tags">
-                        {selectedProfiles.map((name) => (
-                          <span key={name} className="dc-tag">
-                            {name}
-                            <button type="button" aria-label={`Remove ${name}`} onClick={() => toggleProfile(name)}>
-                              <X size={12} />
-                            </button>
-                          </span>
-                        ))}
-                        {customLabName.trim() && (
-                          <span className="dc-tag">
-                            {customLabName.trim()}
-                            <button type="button" aria-label="Clear" onClick={() => setCustomLabName('')}>
-                              <X size={12} />
-                            </button>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
