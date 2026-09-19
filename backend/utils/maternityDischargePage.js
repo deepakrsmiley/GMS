@@ -4,6 +4,9 @@
  * danger symptoms, discharge drugs, referral block.
  */
 
+const { formatIstDate } = require('./istDay');
+const { dsText } = require('./dischargePrint');
+
 const MOTHER_CONDITIONS = ['Live and Healthy', 'Maternal Death', 'Referral'];
 const BABY_CONDITIONS = ['Live and Healthy', 'Still Birth', 'Newborn Death', 'Referral'];
 
@@ -67,15 +70,7 @@ const markCondition = (selected, options) =>
 
 const fmtReviewDate = (v) => {
   if (!v) return '_______________';
-  const s = String(v);
-  // yyyy-mm-dd from <input type="date">
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return s;
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}`;
+  return formatIstDate(v) || String(v);
 };
 
 /**
@@ -211,7 +206,8 @@ function drawMaternityDischargeAdvicePage(doc, page, margin, maternityAdvice = {
   doc.font('Helvetica-Bold').fontSize(8)
     .text('Condition at Referral  Consciousness / Temperature / Pulse / RR / BP / Others', boxX + 4, y + 4, { width: width - 8 });
   if (m.referralVitals) {
-    doc.font('Helvetica').fontSize(8).text(String(m.referralVitals), boxX + 6, y + 18, { width: width - 12 });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, String(m.referralVitals), boxX + 6, y + 18, { width: width - 12 });
   }
   y += vitH;
 
@@ -219,8 +215,8 @@ function drawMaternityDischargeAdvicePage(doc, page, margin, maternityAdvice = {
   doc.font('Helvetica-Bold').fontSize(8)
     .text('Treatment given with time:', boxX + 4, y + 4);
   if (m.treatmentGivenAtReferral) {
-    doc.font('Helvetica').fontSize(8)
-      .text(String(m.treatmentGivenAtReferral), boxX + 6, y + 18, { width: width - 12 });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, String(m.treatmentGivenAtReferral), boxX + 6, y + 18, { width: width - 12 });
   }
 }
 

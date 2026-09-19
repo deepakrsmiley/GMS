@@ -2,6 +2,8 @@ const PDFDocument = require('pdfkit');
 const { renderBrandingHeader, fetchImageBuffer } = require('./pdfBranding');
 const brandingService = require('../services/brandingService');
 const { generatePremiumInvoicePDF, generatePremiumThermalPrint } = require('./invoicePdfGenerator');
+const { formatIstDate, formatIstDateTime } = require('./istDay');
+const { attachDischargeFonts, pdfSafe, setDsFont, dsText, fitPdfText } = require('./dischargePrint');
 
 const PAGE = { width: 595.28, height: 841.89 };
 const MARGIN = 45;
@@ -408,57 +410,16 @@ const generateAppointmentSlipPDF = async (appointment, res, branding) => {
   doc.end();
 };
 
-/** Date like paper: 08/07/2026 AT 12:00PM (date/month/year) */
-const fmtDischargeDT = (value) => {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  const timePretty = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase().replace(/\s/g, '');
-  return `${dd}/${mm}/${yyyy} AT ${timePretty}`;
-};
-
-const fmtDischargeDate = (value) => {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-};
-
-const fmtDotDate = (value) => {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-};
-
-/** Strip chars PDFKit Times (WinAnsi) can't encode cleanly */
-const pdfSafe = (value) => String(value == null ? '' : value)
-  .replace(/[\u2010-\u2015\u2212]/g, '-')
-  .replace(/[\u2018\u2019]/g, "'")
-  .replace(/[\u201C\u201D]/g, '"')
-  .replace(/\u2026/g, '...')
-  .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
+/** Date like paper: 08/07/2026 AT 12:00PM — always India time so print matches what was entered */
+const fmtDischargeDT = (value) => formatIstDateTime(value);
+const fmtDischargeDate = (value) => formatIstDate(value);
+const fmtDotDate = (value) => formatIstDate(value);
 
 const DS_MARGIN = 32;
 const DS_INNER = 8;
 const DS_FOOTER_H = 14;
 const DS_CONTENT_TOP = DS_MARGIN + DS_INNER + 4;
 const DS_CONTENT_BOTTOM = PAGE.height - DS_MARGIN - DS_INNER - DS_FOOTER_H;
-
-const fitPdfText = (doc, s, maxW) => {
-  let t = pdfSafe(s || '');
-  while (t.length > 1 && doc.widthOfString(t) > maxW) t = t.slice(0, -1);
-  return t;
-};
 
 const drawDischargePageFrame = (doc) => {
   const x = DS_MARGIN;
@@ -502,7 +463,7 @@ const ensureDischargeSpace = (doc, need, state) => {
  * Pack tightly: fill remaining page, then continue from top of next page.
  */
 const drawDischargeSection = (doc, title, content, state) => {
-  const text = pdfSafe(content).trim();
+  const text = setDsFont(doc, { text: content }).trim();
   if (!text || text === '-') return;
   const left = DS_MARGIN + DS_INNER;
   const width = PAGE.width - (DS_MARGIN + DS_INNER) * 2;
@@ -510,14 +471,15 @@ const drawDischargeSection = (doc, title, content, state) => {
 
   ensureDischargeSpace(doc, 26, state);
   const headerY = doc.y;
-  doc.font('Times-Bold').fontSize(9).fillColor('#111').text(label, left, headerY, { width, lineBreak: false });
-  const underlineW = Math.min(doc.widthOfString(label), width);
+  doc.fontSize(9).fillColor('#111');
+  dsText(doc, label, left, headerY, { bold: true, width, lineBreak: false });
+  const underlineW = Math.min(doc.widthOfString(setDsFont(doc, { bold: true, text: label })), width);
   doc.moveTo(left, headerY + 10).lineTo(left + underlineW, headerY + 10)
     .lineWidth(0.65).strokeColor('#111').stroke();
   doc.y = headerY + 12;
 
-  let remaining = text;
-  doc.font('Times-Roman').fontSize(8.5).fillColor('#111');
+  let remaining = setDsFont(doc, { text });
+  doc.fontSize(8.5).fillColor('#111');
   while (remaining) {
     let avail = DS_CONTENT_BOTTOM - doc.y;
     if (avail < 12) {
@@ -525,6 +487,7 @@ const drawDischargeSection = (doc, title, content, state) => {
       avail = DS_CONTENT_BOTTOM - doc.y;
     }
 
+    setDsFont(doc, { text: remaining });
     let lo = 0;
     let hi = remaining.length;
     while (lo < hi) {
@@ -547,7 +510,7 @@ const drawDischargeSection = (doc, title, content, state) => {
     const chunk = remaining.slice(0, fitLen).replace(/\s+$/, '');
     remaining = remaining.slice(fitLen).replace(/^\s+/, '');
     if (chunk) {
-      doc.text(chunk, left, doc.y, { width, align: 'left', lineGap: 1.1 });
+      dsText(doc, chunk, left, doc.y, { width, align: 'left', lineGap: 1.1 });
     }
   }
   doc.moveDown(0.22);
@@ -574,15 +537,12 @@ const drawDischargeInfoGrid = (doc, rows, state) => {
     const y = top + i * rowH + 4;
     const half = width / 2 - 10;
     const valW = half - labelW;
-    doc.font('Times-Bold').fontSize(7.5).fillColor('#111')
-      .text(pdfSafe(`${row[0]}:`), left + 4, y, { width: labelW, lineBreak: false });
-    doc.font('Times-Roman').fontSize(7.5).fillColor('#111')
-      .text(fitPdfText(doc, row[1], valW), left + 4 + labelW, y, { width: valW, lineBreak: false });
+    doc.fontSize(7.5).fillColor('#111');
+    dsText(doc, `${row[0]}:`, left + 4, y, { bold: true, width: labelW, lineBreak: false });
+    dsText(doc, fitPdfText(doc, row[1], valW), left + 4 + labelW, y, { width: valW, lineBreak: false });
     if (row[2]) {
-      doc.font('Times-Bold').fontSize(7.5).fillColor('#111')
-        .text(pdfSafe(`${row[2]}:`), col2X + 4, y, { width: labelW, lineBreak: false });
-      doc.font('Times-Roman').fontSize(7.5).fillColor('#111')
-        .text(fitPdfText(doc, row[3], valW), col2X + 4 + labelW, y, { width: valW, lineBreak: false });
+      dsText(doc, `${row[2]}:`, col2X + 4, y, { bold: true, width: labelW, lineBreak: false });
+      dsText(doc, fitPdfText(doc, row[3], valW), col2X + 4 + labelW, y, { width: valW, lineBreak: false });
     }
   });
 
@@ -611,6 +571,7 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=discharge-${admission.admissionNumber || admission._id}.pdf`);
   doc.pipe(res);
+  attachDischargeFonts(doc);
 
   drawDischargePageFrame(doc);
   const width = PAGE.width - (DS_MARGIN + DS_INNER) * 2;
@@ -620,21 +581,23 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
     ? pdfSafe(d.allergyAlert || (patient.allergies || []).filter(Boolean).join(', ')).toUpperCase()
     : '';
   if (allergyText) {
-    doc.font('Times-Bold').fontSize(8.5).fillColor('#b91c1c')
-      .text(allergyText.includes('ALLERGY') ? allergyText : `${allergyText} ALLERGY`, left, doc.y, { width, align: 'center' });
+    doc.fontSize(8.5).fillColor('#b91c1c');
+    dsText(doc, allergyText.includes('ALLERGY') ? allergyText : `${allergyText} ALLERGY`, left, doc.y, {
+      bold: true, width, align: 'center',
+    });
     doc.moveDown(0.12);
   }
 
-  doc.font('Times-Bold').fontSize(14).fillColor('#111')
-    .text(pdfSafe((b.hospitalName || 'Hospital').toUpperCase()), left, doc.y, { width, align: 'center' });
+  doc.fontSize(14).fillColor('#111');
+  dsText(doc, (b.hospitalName || 'Hospital').toUpperCase(), left, doc.y, { bold: true, width, align: 'center' });
   if (b.address) {
     doc.moveDown(0.05);
-    doc.font('Times-Roman').fontSize(8).fillColor('#333')
-      .text(pdfSafe(b.address), left, doc.y, { width, align: 'center' });
+    doc.fontSize(8).fillColor('#333');
+    dsText(doc, b.address, left, doc.y, { width, align: 'center' });
   }
   doc.moveDown(0.18);
-  doc.font('Times-Bold').fontSize(10.5).fillColor('#111')
-    .text('DISCHARGE SUMMARY', left, doc.y, { width, align: 'center' });
+  doc.fontSize(10.5).fillColor('#111');
+  dsText(doc, 'DISCHARGE SUMMARY', left, doc.y, { bold: true, width, align: 'center' });
   const titleY = doc.y;
   const titleW = doc.widthOfString('DISCHARGE SUMMARY');
   doc.moveTo((PAGE.width - titleW) / 2, titleY + 1).lineTo((PAGE.width + titleW) / 2, titleY + 1)
@@ -652,7 +615,7 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   drawDischargeInfoGrid(doc, [
     ['PATIENT NAME', pdfSafe(patient.name || '').toUpperCase(), 'D.O.A', fmtDischargeDT(admission.admissionDate)],
     ['AGE/SEX', ageSex, 'D.O.DELIVERY', sectionOn('deliveryDate') ? fmtDischargeDT(d.deliveryDate) : ''],
-    ['IP.NO', admission.admissionNumber || '', 'D.O.D', fmtDischargeDate(admission.dischargeDate)],
+    ['IP.NO', admission.admissionNumber || '', 'D.O.D', admission.dischargeDate ? fmtDischargeDT(admission.dischargeDate) : ''],
     ['CONSULTANT', consultant, 'DEPARTMENT', pdfSafe(admission.department?.name || '').toUpperCase()],
   ], state);
 
@@ -661,31 +624,33 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   const cityLine = d.addressNote ? '' : [addr.city, addr.state, addr.pincode].filter(Boolean).join(', ');
   ensureDischargeSpace(doc, 40, state);
   const addrTop = doc.y;
-  doc.font('Times-Bold').fontSize(8).fillColor('#111').text('ADDRESS:', left, addrTop, { lineBreak: false });
-  doc.font('Times-Roman').fontSize(8).fillColor('#111');
+  doc.fontSize(8).fillColor('#111');
+  dsText(doc, 'ADDRESS:', left, addrTop, { bold: true, lineBreak: false });
   let ay = addrTop + 10;
   if (street) {
-    doc.text(pdfSafe(street).toUpperCase(), left, ay, { width: width * 0.62 });
+    dsText(doc, street.toUpperCase(), left, ay, { width: width * 0.62 });
     ay = doc.y + 1;
   }
   if (cityLine) {
-    doc.text(pdfSafe(cityLine).toUpperCase(), left, ay, { width: width * 0.62 });
+    dsText(doc, cityLine.toUpperCase(), left, ay, { width: width * 0.62 });
     ay = doc.y + 1;
   }
   if (!d.addressNote && patient.phone) {
-    doc.text(`PH: ${pdfSafe(patient.phone)}`, left, ay, { width: width * 0.62 });
+    dsText(doc, `PH: ${patient.phone}`, left, ay, { width: width * 0.62 });
     ay = doc.y + 1;
   }
   let rightY = addrTop;
   if (patient.patientId) {
-    doc.font('Times-Bold').fontSize(8)
-      .text(`UHID - ${pdfSafe(patient.patientId)}`, left + width * 0.62, rightY, { width: width * 0.38, align: 'right', lineBreak: false });
+    dsText(doc, `UHID - ${patient.patientId}`, left + width * 0.62, rightY, {
+      bold: true, width: width * 0.38, align: 'right', lineBreak: false,
+    });
     rightY += 11;
   }
   const rchId = sectionOn('rchId') ? (d.rchId || patient.rchId) : '';
   if (rchId) {
-    doc.font('Times-Bold').fontSize(8)
-      .text(`RCH ID - ${pdfSafe(rchId)}`, left + width * 0.62, rightY, { width: width * 0.38, align: 'right', lineBreak: false });
+    dsText(doc, `RCH ID - ${rchId}`, left + width * 0.62, rightY, {
+      bold: true, width: width * 0.38, align: 'right', lineBreak: false,
+    });
     rightY += 11;
   }
   doc.y = Math.max(ay, rightY) + 4;
@@ -715,8 +680,9 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
     ensureDischargeSpace(doc, 24, state);
     const labLabel = 'LABORATORY INVESTIGATION REPORTS:';
     const ly = doc.y;
-    doc.font('Times-Bold').fontSize(9).fillColor('#111').text(labLabel, left, ly, { lineBreak: false });
-    doc.moveTo(left, ly + 10).lineTo(left + doc.widthOfString(labLabel), ly + 10).lineWidth(0.65).strokeColor('#111').stroke();
+    doc.fontSize(9).fillColor('#111');
+    dsText(doc, labLabel, left, ly, { bold: true, lineBreak: false });
+    doc.moveTo(left, ly + 10).lineTo(left + doc.widthOfString(setDsFont(doc, { bold: true, text: labLabel })), ly + 10).lineWidth(0.65).strokeColor('#111').stroke();
     doc.y = ly + 12;
     const half = width / 2 - 4;
     for (let i = 0; i < labs.length; i += 2) {
@@ -724,10 +690,10 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
       const a = labs[i];
       const bRow = labs[i + 1];
       const y = doc.y;
-      doc.font('Times-Roman').fontSize(7.5).fillColor('#111');
-      doc.text(fitPdfText(doc, `NAME: ${pdfSafe(a.name || '')}   REPORT: ${pdfSafe(a.report || '')}`, half), left, y, { width: half, lineBreak: false });
+      doc.fontSize(7.5).fillColor('#111');
+      dsText(doc, fitPdfText(doc, `NAME: ${a.name || ''}   REPORT: ${a.report || ''}`, half), left, y, { width: half, lineBreak: false });
       if (bRow) {
-        doc.text(fitPdfText(doc, `NAME: ${pdfSafe(bRow.name || '')}   REPORT: ${pdfSafe(bRow.report || '')}`, half), left + half + 8, y, { width: half, lineBreak: false });
+        dsText(doc, fitPdfText(doc, `NAME: ${bRow.name || ''}   REPORT: ${bRow.report || ''}`, half), left + half + 8, y, { width: half, lineBreak: false });
       }
       doc.y = y + 11;
     }
@@ -737,8 +703,8 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   if (sectionOn('echoReport')) drawDischargeSection(doc, 'Echo / Imaging', d.echoReport, state);
   if (sectionOn('investigationsNote') && d.investigationsNote) {
     ensureDischargeSpace(doc, 16, state);
-    doc.font('Times-Italic').fontSize(8).fillColor('#333')
-      .text(pdfSafe(d.investigationsNote), left, doc.y, { width });
+    doc.fontSize(8).fillColor('#333');
+    dsText(doc, d.investigationsNote, left, doc.y, { italic: true, width });
     doc.moveDown(0.18);
   }
   if (sectionOn('hospitalCourse')) drawDischargeSection(doc, 'Course of Treatment in Hospital', d.hospitalCourse, state);
@@ -754,39 +720,46 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
 
   if (sectionOn('pvStatus') && d.pvStatus) {
     ensureDischargeSpace(doc, 14, state);
-    doc.font('Times-Roman').fontSize(8.5).fillColor('#111').text(pdfSafe(d.pvStatus), left, doc.y, { width });
+    doc.fontSize(8.5).fillColor('#111');
+    dsText(doc, d.pvStatus, left, doc.y, { width });
     doc.moveDown(0.18);
   }
   if (sectionOn('medicationsOnDischarge')) drawDischargeSection(doc, 'Further Advice on Discharge', d.medicationsOnDischarge, state);
   [sectionOn('motherWarnings') && d.motherWarnings, sectionOn('dietaryAdvice') && d.dietaryAdvice, sectionOn('babyWarnings') && d.babyWarnings].filter(Boolean).forEach((txt) => {
     ensureDischargeSpace(doc, 14, state);
-    doc.font('Times-Roman').fontSize(8).fillColor('#111').text(pdfSafe(txt), left, doc.y, { width });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, txt, left, doc.y, { width });
     doc.moveDown(0.15);
   });
   if (sectionOn('immunizationNote') && d.immunizationNote) {
     ensureDischargeSpace(doc, 12, state);
-    doc.font('Times-Bold').fontSize(8).text(pdfSafe(d.immunizationNote), left, doc.y, { width });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, d.immunizationNote, left, doc.y, { bold: true, width });
     doc.moveDown(0.12);
   }
   if (sectionOn('supplementsAdvice') && d.supplementsAdvice) {
     ensureDischargeSpace(doc, 12, state);
-    doc.font('Times-Bold').fontSize(8).text(pdfSafe(String(d.supplementsAdvice).toUpperCase()), left, doc.y, { width });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, String(d.supplementsAdvice).toUpperCase(), left, doc.y, { bold: true, width });
     doc.moveDown(0.12);
   }
   if (sectionOn('babyLabAdvice') && d.babyLabAdvice) {
     ensureDischargeSpace(doc, 14, state);
-    doc.font('Times-Roman').fontSize(8).text(pdfSafe(d.babyLabAdvice), left, doc.y, { width });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, d.babyLabAdvice, left, doc.y, { width });
     doc.moveDown(0.15);
   }
   if (sectionOn('customInstructions')) drawDischargeSection(doc, 'Additional Instructions', d.customInstructions, state);
   if (sectionOn('reviewAppointment') && d.reviewAppointment) {
     ensureDischargeSpace(doc, 12, state);
-    doc.font('Times-Roman').fontSize(8).text(`• ${pdfSafe(d.reviewAppointment)}`, left, doc.y, { width });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, `• ${d.reviewAppointment}`, left, doc.y, { width });
     doc.moveDown(0.12);
   }
   if (sectionOn('emergencyContact') && d.emergencyContact) {
     ensureDischargeSpace(doc, 12, state);
-    doc.font('Times-Roman').fontSize(8).text(`• ${pdfSafe(d.emergencyContact)}`, left, doc.y, { width });
+    doc.fontSize(8).fillColor('#111');
+    dsText(doc, `• ${d.emergencyContact}`, left, doc.y, { width });
     doc.moveDown(0.18);
   }
 
@@ -813,19 +786,25 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
 
   ensureDischargeSpace(doc, 58, state);
   const sigY = doc.y + 10;
-  doc.font('Times-Roman').fontSize(8).fillColor('#111')
-    .text(`Date: ${fmtDischargeDate(admission.dischargeDate || new Date())}`, left, sigY, { lineBreak: false });
+  const printedDate = fmtDischargeDate(admission.dischargeDate);
+  doc.fontSize(8).fillColor('#111');
+  dsText(doc, printedDate ? `Date: ${printedDate}` : 'Date:', left, sigY, { lineBreak: false });
   doc.moveTo(PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 20)
     .lineTo(PAGE.width - DS_MARGIN - DS_INNER, sigY + 20)
     .strokeColor('#333').lineWidth(0.65).stroke();
-  doc.font('Times-Bold').fontSize(7.5)
-    .text('Consultant Signature', PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 24, { width: 140, align: 'center', lineBreak: false });
+  dsText(doc, 'Consultant Signature', PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 24, {
+    bold: true, width: 140, align: 'center', lineBreak: false,
+  });
   if (admission.doctor?.name) {
-    doc.font('Times-Roman').fontSize(7.5)
-      .text(`Dr. ${pdfSafe(admission.doctor.name)}`, PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 35, { width: 140, align: 'center', lineBreak: false });
+    doc.fontSize(7.5);
+    dsText(doc, `Dr. ${admission.doctor.name}`, PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 35, {
+      width: 140, align: 'center', lineBreak: false,
+    });
     if (admission.doctor.specialization) {
-      doc.font('Times-Roman').fontSize(7)
-        .text(pdfSafe(admission.doctor.specialization), PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 45, { width: 140, align: 'center', lineBreak: false });
+      doc.fontSize(7);
+      dsText(doc, admission.doctor.specialization, PAGE.width - DS_MARGIN - DS_INNER - 140, sigY + 45, {
+        width: 140, align: 'center', lineBreak: false,
+      });
     }
   }
 

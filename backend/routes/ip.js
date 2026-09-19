@@ -63,6 +63,7 @@ router.route('/').get(
 router.get('/nurse-station', NURSE_STATION, getNurseStationBoard);
 
 router.get('/:id/discharge-print', VIEW_IP, printDischargeSummary);
+router.post('/:id/discharge-print', VIEW_IP, printDischargeSummary);
 router.route('/:id').get(VIEW_IP, getAdmission);
 router.post('/:id/nursing-note', NURSING_NOTE, addNursingNote);
 router.post('/:id/vitals', VITALS, addVitalRecord);

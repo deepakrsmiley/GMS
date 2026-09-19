@@ -13,6 +13,7 @@ import DataTable from '../components/common/DataTable';
 import LabReportTemplate from '../components/lab/LabReportTemplate';
 import LabOrderCreateModal from '../components/lab/LabOrderCreateModal';
 import LabCollectPaymentModal from '../components/lab/LabCollectPaymentModal';
+import LabDayReport, { LabDateRangeBar, labRangeFromPreset } from '../components/lab/LabDayReport';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import {
   getProfileTests,
@@ -21,6 +22,7 @@ import {
   ORDER_SOURCE_LABELS,
 } from '../constants/labProfiles';
 import { analyzeResult, FLAG_STYLES } from '../utils/labResultAnalyzer';
+import { istCalendarDate } from '../utils/istDate';
 import '../styles/labOrder.css';
 
 const shortProfileName = (name = '') => {
@@ -223,12 +225,24 @@ export default function LabPage() {
   const [collectLab, setCollectLab] = useState(null);
   const [printData, setPrintData] = useState(null);
   const [tab, setTab] = useState(
-    searchParams.get('tab') === 'reports' ? 'reports' : searchParams.get('tab') === 'bills' ? 'bills' : 'orders',
+    searchParams.get('tab') === 'reports'
+      ? 'reports'
+      : searchParams.get('tab') === 'bills'
+        ? 'bills'
+        : searchParams.get('tab') === 'daily'
+          ? 'daily'
+          : 'orders',
   );
   const [desk, setDesk] = useState(
     searchParams.get('desk')
     || (hasPermission(user, 'CREATE_LAB_ORDER') && !isLabTech ? 'reception' : 'lab_desk'),
   );
+  const todayIso = istCalendarDate();
+  const [reportPreset, setReportPreset] = useState('today');
+  const [reportFrom, setReportFrom] = useState(todayIso);
+  const [reportTo, setReportTo] = useState(todayIso);
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportQ, setReportQ] = useState('');
   const qc = useQueryClient();
 
   const { register: resReg, handleSubmit: resSubmit, reset: resReset, getValues: getResValues } = useForm();
@@ -241,6 +255,7 @@ export default function LabPage() {
     const urlTab = searchParams.get('tab');
     if (urlTab === 'reports') setTab('reports');
     else if (urlTab === 'bills') setTab('bills');
+    else if (urlTab === 'daily') setTab('daily');
     else if (urlTab === 'orders') setTab('orders');
     const urlDesk = searchParams.get('desk');
     if (urlDesk && ['reception', 'lab_desk', 'nurse_ip'].includes(urlDesk)) setDesk(urlDesk);
@@ -265,17 +280,23 @@ export default function LabPage() {
     return () => { cancelled = true; };
   }, [searchParams, canCreateOrders]);
 
+  const reportRange = labRangeFromPreset(reportPreset, reportFrom, reportTo);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['labTests', page, tab, desk],
-    enabled: tab !== 'bills',
+    queryKey: ['labTests', page, tab, desk, reportRange.from, reportRange.to, reportQ],
+    enabled: tab !== 'bills' && tab !== 'daily',
     queryFn: () => {
       const params = new URLSearchParams({
         page: String(page),
-        limit: '20',
+        limit: tab === 'reports' ? '50' : '20',
         sort: '-createdAt',
       });
-      if (tab === 'reports') params.set('status', 'completed');
-      else if (desk) params.set('orderSource', desk);
+      if (tab === 'reports') {
+        params.set('status', 'completed');
+        params.set('from', reportRange.from);
+        params.set('to', reportRange.to);
+        if (reportQ) params.set('q', reportQ);
+      } else if (desk) params.set('orderSource', desk);
       return api.get(`/lab?${params}`).then((r) => r.data);
     },
   });
@@ -450,6 +471,7 @@ export default function LabPage() {
         <div>
           <p className="font-medium text-gray-900 dark:text-white">{r.patient?.name}</p>
           <p className="text-xs text-gray-400">{r.patient?.age}yr · {r.patient?.gender}</p>
+          {r.patient?.phone && <p className="text-xs text-slate-500">{r.patient.phone}</p>}
         </div>
       ),
     },
@@ -689,7 +711,7 @@ export default function LabPage() {
 
   return (
     <div className="space-y-6">
-      <WorkflowStrip flow="lab" current={tab === 'reports' ? 'result' : 'order'} />
+      <WorkflowStrip flow="lab" current={tab === 'reports' || tab === 'daily' ? 'result' : 'order'} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Laboratory</h1>
@@ -710,6 +732,7 @@ export default function LabPage() {
           { id: 'orders', label: 'Lab Orders' },
           { id: 'bills', label: 'Lab Bills' },
           { id: 'reports', label: 'Lab Reports' },
+          { id: 'daily', label: 'Day Report' },
         ].map(({ id, label }) => (
           <button
             key={id}
@@ -731,6 +754,42 @@ export default function LabPage() {
           </button>
         ))}
       </div>
+
+      {tab === 'reports' && (
+        <div className="space-y-2">
+          <LabDateRangeBar
+            preset={reportPreset}
+            onPreset={(id) => { setReportPreset(id); setPage(1); }}
+            customFrom={reportFrom}
+            customTo={reportTo}
+            onCustom={(from, to) => {
+              setReportFrom(from);
+              setReportTo(to || from);
+              setPage(1);
+            }}
+            search={reportSearch}
+            onSearchChange={setReportSearch}
+            onSearchSubmit={() => { setReportQ(reportSearch.trim()); setPage(1); }}
+          />
+          <p className="text-xs text-slate-500">
+            Result reports stored day-wise by the day the patient came. Open Yesterday to print that day’s reports.
+          </p>
+        </div>
+      )}
+
+      {tab === 'daily' && (
+        <LabDayReport
+          branding={brandingData}
+          onOpenReport={async (row) => {
+            try {
+              const full = await api.get(`/lab/${row._id}`).then((res) => res.data.data);
+              setShowViewResult({ branding: brandingData, labTest: full });
+            } catch {
+              toast.error('Could not load report');
+            }
+          }}
+        />
+      )}
 
       {tab === 'bills' && (
         <p className="text-xs text-slate-500">
@@ -779,13 +838,13 @@ export default function LabPage() {
         </>
       )}
 
-      {dashData && isLabTech && (
+      {dashData && isLabTech && tab !== 'daily' && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: "Today's Tests", value: dashData.todayTests, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: "Today's Amount", value: `₹${Number(dashData.todayAmount || 0).toLocaleString('en-IN')}`, color: 'text-emerald-600', bg: 'bg-emerald-50' },
             { label: 'Pending / Requested', value: dashData.pending, color: 'text-yellow-600', bg: 'bg-yellow-50' },
             { label: 'Completed Today', value: dashData.completed, color: 'text-green-600', bg: 'bg-green-50' },
-            { label: 'Urgent', value: dashData.urgent, color: 'text-red-600', bg: 'bg-red-50' },
           ].map((s) => (
             <div key={s.label} className={`kpi-card text-center ${s.bg} rounded-2xl p-4`}>
               <p className={`text-3xl font-bold ${s.color}`}>{s.value ?? '–'}</p>
@@ -795,6 +854,7 @@ export default function LabPage() {
         </div>
       )}
 
+      {tab !== 'daily' && (
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
         {tab === 'bills' && !labBillsLoading && !(labBillsData?.data || []).length ? (
           <p className="p-8 text-sm text-slate-500 text-center">
@@ -821,6 +881,7 @@ export default function LabPage() {
           />
         )}
       </div>
+      )}
 
       <LabOrderCreateModal
         isOpen={showCreate}

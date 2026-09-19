@@ -17,52 +17,26 @@ import { hasPermission } from '../constants/permissions';
 import { isSuperAdmin, normalizeRole } from '../utils/roles';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
+import {
+  formatIstDate,
+  formatIstDateTime,
+  istDateTimeToIso,
+  toIstDateInput,
+  toIstDateTimeLocal,
+} from '../utils/istDate';
 import '../styles/dischargeSummary.css';
 
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-IN') : '—');
 const fmtDateTime = (v) => (v ? new Date(v).toLocaleString('en-IN') : '—');
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
 
-/** Paper-style: 08/07/2026 AT 12:00PM (date/month/year) */
-const fmtPaperDT = (v) => {
-  if (!v) return '—';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '—';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase().replace(/\s/g, '');
-  return `${dd}/${mm}/${yyyy} AT ${time}`;
-};
-const fmtPaperDate = (v) => {
-  if (!v) return '—';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '—';
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-};
-const fmtDotDate = (v) => {
-  if (!v) return '';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-};
+/** Paper-style: 08/07/2026 AT 12:00PM — India time, never the server clock */
+const fmtPaperDT = (v) => (v ? formatIstDateTime(v) || '—' : '—');
+const fmtPaperDate = (v) => (v ? formatIstDate(v) || '—' : '—');
+const fmtDotDate = (v) => (v ? formatIstDate(v) : '');
 
-// Converts a Date/ISO-string coming back from the API into the yyyy-MM-dd /
-// yyyy-MM-ddTHH:mm shape that <input type="date"> / <input type="datetime-local">
-// controlled inputs require. Returns '' for empty/invalid values.
-const toDateInputValue = (v) => {
-  if (!v) return '';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-};
-const toDateTimeInputValue = (v) => {
-  if (!v) return '';
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+const toDateInputValue = (v) => toIstDateInput(v);
+const toDateTimeInputValue = (v) => toIstDateTimeLocal(v);
 
 const SECTIONS = [
   { key: 'admission', label: 'Admission Info', tabLabel: 'Admission Details', icon: ClipboardList },
@@ -500,12 +474,21 @@ export default function IPAdmissionDetailPage() {
   };
 
   const handleReset = () => setForm(buildFormFromAdmission(admission));
+  const dischargeFormPayload = () => ({
+    ...form,
+    deliveryDate: form.deliveryDate ? istDateTimeToIso(form.deliveryDate) : null,
+    obstetricHistory: {
+      ...(form.obstetricHistory || {}),
+      lmp: form.obstetricHistory?.lmp || null,
+      edd: form.obstetricHistory?.edd || null,
+    },
+  });
   const handleSaveDraft = () => {
     if (admission?.status === 'discharged' && !editReason.trim()) {
       toast.error('Please enter a reason for changing the discharge summary');
       return;
     }
-    saveDraftMut.mutate({ ...form, reason: editReason.trim() || 'Draft save' });
+    saveDraftMut.mutate({ ...dischargeFormPayload(), reason: editReason.trim() || 'Draft save' });
   };
   const handleSaveAndPreview = () => handleSaveDraft();
 
@@ -519,14 +502,14 @@ export default function IPAdmissionDetailPage() {
       return;
     }
     dischargeMut.mutate({
-      dischargeDetails: form,
+      dischargeDetails: dischargeFormPayload(),
       dischargeType: type,
       forceDischarge: Boolean(blocked && forceDischarge && canForceDischarge),
     });
   };
 
   const fetchPdfBlobUrl = async () => {
-    const res = await api.get(`/ip/${id}/discharge-print`, { responseType: 'blob' });
+    const res = await api.post(`/ip/${id}/discharge-print`, dischargeFormPayload(), { responseType: 'blob' });
     return window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
   };
 
@@ -1116,7 +1099,7 @@ export default function IPAdmissionDetailPage() {
                         {[
                           ['PATIENT NAME', (patient.name || '').toUpperCase(), 'D.O.A', fmtPaperDT(admission.admissionDate)],
                           ['AGE/SEX', `${patient.age != null ? `${patient.age} YRS` : ''} / ${(patient.gender || '').toUpperCase()}`, 'D.O.DELIVERY', shown('deliveryDate') && form.deliveryDate ? fmtPaperDT(form.deliveryDate) : '—'],
-                          ['IP.NO', admission.admissionNumber || '—', 'D.O.D', admission.dischargeDate ? fmtPaperDate(admission.dischargeDate) : '—'],
+                          ['IP.NO', admission.admissionNumber || '—', 'D.O.D', admission.dischargeDate ? fmtPaperDT(admission.dischargeDate) : '—'],
                           ['CONSULTANT', admission.doctor?.name ? `DR.${admission.doctor.name.replace(/^dr\.?\s*/i, '').toUpperCase()}` : '—', 'DEPARTMENT', (admission.department?.name || '').toUpperCase()],
                         ].map(([l1, v1, l2, v2]) => (
                           <tr key={l1}>
@@ -1255,7 +1238,7 @@ export default function IPAdmissionDetailPage() {
                     {shown('emergencyContact') && form.emergencyContact && <p className="ds-block">• {form.emergencyContact}</p>}
 
                     <div className="ds-preview-sheet__footer">
-                      <p>Date: {fmtPaperDate(admission.dischargeDate || new Date())}</p>
+                      <p>Date: {admission.dischargeDate ? fmtPaperDate(admission.dischargeDate) : ''}</p>
                       <div className="ds-preview-sheet__sig">
                         Consultant Signature
                         <p className="font-normal mt-0.5">Dr. {admission.doctor?.name || '—'}</p>

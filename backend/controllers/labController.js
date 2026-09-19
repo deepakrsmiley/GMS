@@ -13,6 +13,8 @@ const { withOrganization } = require('../middleware/tenant');
 const { markSourcesAsBilled } = require('../services/billingService');
 const { labBillableTestLines } = require('../utils/billingChargeRules');
 const { pharmacistBillScopeError } = require('../utils/billingAccess');
+const { inclusiveIstRange, istDayBounds, kolkataToday } = require('../utils/istDay');
+const Patient = require('../models/Patient');
 
 const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
 
@@ -86,6 +88,44 @@ const buildSourceFilter = (orderSource) => {
   return { orderSource };
 };
 
+const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const lineAmount = (lab) => {
+  const fromLines = (lab.tests || [])
+    .filter((t) => t && t.status !== 'cancelled')
+    .reduce((sum, t) => sum + (Number(t.price) || 0), 0);
+  return fromLines || Number(lab.totalAmount) || 0;
+};
+
+const buildLabDateFilter = (query) => {
+  if (!query.from && !query.to) return null;
+  const { from, to } = inclusiveIstRange(query.from, query.to);
+  const field = query.dateField === 'reportGeneratedAt' ? 'reportGeneratedAt' : 'createdAt';
+  return { [field]: { $gte: from, $lt: to } };
+};
+
+const buildLabSearchFilter = async (q) => {
+  const term = String(q || '').trim();
+  if (!term) return null;
+  const rx = new RegExp(escapeRegex(term), 'i');
+  const patients = await Patient.find({
+    $or: [{ name: rx }, { phone: rx }, { patientId: rx }],
+  }).select('_id').limit(80);
+  return {
+    $or: [
+      { labNumber: rx },
+      { patient: { $in: patients.map((p) => p._id) } },
+    ],
+  };
+};
+
+const mergeLabFilters = (...parts) => {
+  const used = parts.filter((p) => p && typeof p === 'object' && Object.keys(p).length);
+  if (!used.length) return {};
+  if (used.length === 1) return used[0];
+  return { $and: used };
+};
+
 exports.getLabTests = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
@@ -96,10 +136,12 @@ exports.getLabTests = asyncHandler(async (req, res) => {
   if (req.query.labType) filter.labType = req.query.labType;
   if (req.query.patient) filter.patient = req.query.patient;
 
-  const sourcePart = buildSourceFilter(req.query.orderSource);
-  const findFilter = Object.keys(sourcePart).length
-    ? (Object.keys(filter).length ? { $and: [filter, sourcePart] } : sourcePart)
-    : filter;
+  const findFilter = mergeLabFilters(
+    filter,
+    buildSourceFilter(req.query.orderSource),
+    buildLabDateFilter(req.query),
+    await buildLabSearchFilter(req.query.q),
+  );
 
   const sort = req.query.sort
     ? req.query.sort.split(',').join(' ')
@@ -107,7 +149,7 @@ exports.getLabTests = asyncHandler(async (req, res) => {
 
   const [data, total] = await Promise.all([
     LabTest.find(findFilter)
-      .populate('patient', 'patientId name age gender')
+      .populate('patient', 'patientId name age gender phone')
       .populate('doctor', 'name')
       .populate('createdBy', 'name role')
       .populate({
@@ -127,6 +169,74 @@ exports.getLabTests = asyncHandler(async (req, res) => {
     total,
     page,
     pages: Math.ceil(total / limit) || 1,
+    data,
+  });
+});
+
+exports.getLabCollectionReport = asyncHandler(async (req, res) => {
+  const { isoFrom, isoTo, from, to } = inclusiveIstRange(req.query.from, req.query.to);
+  const match = mergeLabFilters(
+    {
+      createdAt: { $gte: from, $lt: to },
+      status: req.query.status && req.query.status !== 'all'
+        ? req.query.status
+        : { $ne: 'cancelled' },
+    },
+    await buildLabSearchFilter(req.query.q),
+  );
+
+  const rows = await LabTest.find(match)
+    .populate('patient', 'patientId name age gender phone')
+    .populate('doctor', 'name')
+    .populate({
+      path: 'bill',
+      select: 'billNumber status paidAmount totalAmount dueAmount',
+      options: { skipOrganizationFilter: true },
+    })
+    .sort({ createdAt: 1 })
+    .limit(2000)
+    .lean();
+
+  const summary = {
+    count: 0,
+    completed: 0,
+    pending: 0,
+    amount: 0,
+    paid: 0,
+  };
+  const data = rows.map((lab) => {
+    const amount = lineAmount(lab);
+    const bill = lab.bill && typeof lab.bill === 'object' ? lab.bill : null;
+    const billed = bill && !['cancelled', 'refunded'].includes(bill.status);
+    const paid = billed ? Number(bill.paidAmount || 0) : 0;
+    summary.count += 1;
+    summary.amount += amount;
+    summary.paid += paid;
+    if (lab.status === 'completed') summary.completed += 1;
+    else summary.pending += 1;
+    return {
+      _id: lab._id,
+      labNumber: lab.labNumber,
+      createdAt: lab.createdAt,
+      reportGeneratedAt: lab.reportGeneratedAt,
+      status: lab.status,
+      labType: lab.labType,
+      testProfile: lab.profiles?.length ? lab.profiles.join(' + ') : (lab.testProfile || ''),
+      testsCount: (lab.tests || []).filter((t) => t.status !== 'cancelled').length,
+      amount,
+      paid,
+      billed,
+      billNumber: billed ? bill.billNumber : '',
+      patient: lab.patient || {},
+      doctor: lab.doctor || null,
+    };
+  });
+
+  res.status(200).json({
+    success: true,
+    range: { from: isoFrom, to: isoTo },
+    summary,
+    count: data.length,
     data,
   });
 });
@@ -545,24 +655,36 @@ exports.printLabReport = asyncHandler(async (req, res, next) => {
 });
 
 exports.getLabDashboard = asyncHandler(async (req, res) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const { from, to } = istDayBounds(kolkataToday());
+  const todayMatch = { createdAt: { $gte: from, $lt: to } };
 
-  const [todayTests, pending, completed, urgent, byLabType] = await Promise.all([
-    LabTest.countDocuments({ createdAt: { $gte: today } }),
+  const [todayTests, pending, completed, urgent, byLabType, todayAmount] = await Promise.all([
+    LabTest.countDocuments(todayMatch),
     LabTest.countDocuments({ status: { $in: ['pending', 'sample_collected', 'processing'] } }),
-    LabTest.countDocuments({ status: 'completed', createdAt: { $gte: today } }),
+    LabTest.countDocuments({ status: 'completed', ...todayMatch }),
     LabTest.countDocuments({ priority: 'urgent', status: { $ne: 'completed' } }),
     LabTest.aggregate([
-      { $match: { createdAt: { $gte: today } } },
+      { $match: todayMatch },
       { $group: { _id: '$labType', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
+    ]),
+    LabTest.aggregate([
+      { $match: { ...todayMatch, status: { $ne: 'cancelled' } } },
+      { $group: { _id: null, amount: { $sum: { $ifNull: ['$totalAmount', 0] } } } },
     ]),
   ]);
 
   res.status(200).json({
     success: true,
-    data: { todayTests, pending, completed, urgent, byLabType, labTypes: LAB_TYPES },
+    data: {
+      todayTests,
+      pending,
+      completed,
+      urgent,
+      todayAmount: todayAmount[0]?.amount || 0,
+      byLabType,
+      labTypes: LAB_TYPES,
+    },
   });
 });
 

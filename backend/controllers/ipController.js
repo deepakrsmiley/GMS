@@ -5,6 +5,7 @@ const { canEditDischargeAfterDischarge } = require('../utils/clinicalAccess');
 const { generateDischargeSummaryPDF } = require('../utils/pdfGenerator');
 const { evaluateDischargeSettlement, loadAdmissionBillState } = require('../utils/dischargeSettlement');
 const { isSuperAdmin, normalizeRole } = require('../utils/roles');
+const { normalizeDischargeDates } = require('../utils/istDay');
 const DISCHARGE_REQUIRED_FIELDS = [
   'diagnosis',
   'chiefComplaints',
@@ -579,7 +580,7 @@ exports.saveDischargeSummary = asyncHandler(async (req, res, next) => {
 
   // Authorization is handled by the CREATE_DISCHARGE_SUMMARY permission on the
   // route — Super Admin controls who can do this via Users & Access checkboxes.
-  const details = { ...req.body, completedAt: new Date(), completedBy: req.user._id };
+  const details = normalizeDischargeDates({ ...req.body, completedAt: new Date(), completedBy: req.user._id });
   delete details.reason;
   delete details.auditReason;
   admission.dischargeDetails = { ...admission.dischargeDetails?.toObject?.() || admission.dischargeDetails || {}, ...details };
@@ -623,7 +624,10 @@ exports.dischargePatient = asyncHandler(async (req, res, next) => {
   }
 
   if (req.body.dischargeDetails) {
-    admission.dischargeDetails = { ...admission.dischargeDetails?.toObject?.() || {}, ...req.body.dischargeDetails };
+    admission.dischargeDetails = {
+      ...admission.dischargeDetails?.toObject?.() || {},
+      ...normalizeDischargeDates(req.body.dischargeDetails),
+    };
     admission.dischargeSummary = buildDischargeSummaryText(admission.dischargeDetails);
     admission.finalDiagnosis = req.body.dischargeDetails.diagnosis || admission.finalDiagnosis;
   }
@@ -669,6 +673,15 @@ exports.printDischargeSummary = asyncHandler(async (req, res, next) => {
     .populate('doctor', 'name specialization')
     .populate('department', 'name');
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
+  if (req.method === 'POST' && req.body && typeof req.body === 'object') {
+    const overlay = { ...req.body };
+    delete overlay.reason;
+    delete overlay.auditReason;
+    delete overlay.completedAt;
+    delete overlay.completedBy;
+    const current = admission.dischargeDetails?.toObject?.() || admission.dischargeDetails || {};
+    admission.dischargeDetails = normalizeDischargeDates({ ...current, ...overlay });
+  }
   await generateDischargeSummaryPDF(admission, res);
 });
 

@@ -156,7 +156,7 @@
   background: #fff;
   color: #111;
   padding: 1.35rem 1.25rem 1.2rem;
-  font-family: 'Times New Roman', Times, serif;
+  font-family: 'Nirmala UI', 'Noto Sans Tamil', Latha, 'Times New Roman', Times, serif;
   font-size: 12px;
   line-height: 1.4;
   box-shadow:
@@ -260,6 +260,11 @@
   line-height: 1.4;
 }
 
+.ds-paper textarea.input-field,
+.ds-paper input.input-field {
+  font-family: 'Nirmala UI', 'Noto Sans Tamil', Latha, inherit;
+}
+
 .ds-preview-addr {
   display: flex;
   justify-content: space-between;
@@ -274,7 +279,7 @@
   background: #fff;
   color: #111;
   padding: 1.1rem 1.25rem;
-  font-family: 'Times New Roman', Times, serif;
+  font-family: 'Nirmala UI', 'Noto Sans Tamil', Latha, 'Times New Roman', Times, serif;
   font-size: 12px;
   line-height: 1.4;
 }

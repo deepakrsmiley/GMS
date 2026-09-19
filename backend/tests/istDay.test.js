@@ -42,3 +42,45 @@ describe('today revenue window', () => {
     assert.equal(afterMidnight >= from && afterMidnight < to, true);
   });
 });
+
+describe('discharge datetime IST lock', () => {
+  const {
+    parseIstDateTime,
+    formatIstDateTime,
+    formatIstDate,
+    toIstDateTimeLocal,
+    normalizeDischargeDates,
+  } = require('../utils/istDay');
+
+  it('treats datetime-local strings as India time, not the server timezone', () => {
+    const parsed = parseIstDateTime('2026-09-19T12:00');
+    assert.equal(parsed.toISOString(), '2026-09-19T06:30:00.000Z');
+    assert.equal(formatIstDateTime('2026-09-19T12:00'), '19/09/2026 AT 12:00PM');
+    assert.equal(toIstDateTimeLocal(parsed), '2026-09-19T12:00');
+  });
+
+  it('builds an inclusive India-day range for custom lab reports', () => {
+    const { inclusiveIstRange } = require('../utils/istDay');
+    const one = inclusiveIstRange('2026-09-19', '2026-09-19');
+    assert.equal(one.isoFrom, '2026-09-19');
+    assert.equal(one.isoTo, '2026-09-19');
+    assert.equal(one.from.toISOString(), '2026-09-18T18:30:00.000Z');
+    assert.equal(one.to.toISOString(), '2026-09-19T18:30:00.000Z');
+
+    const month = inclusiveIstRange('2026-09-01', '2026-09-30');
+    assert.equal(month.from.toISOString(), '2026-08-31T18:30:00.000Z');
+    assert.equal(month.to.toISOString(), '2026-09-30T18:30:00.000Z');
+  });
+
+  it('prints stored UTC instants back in India time', () => {
+    assert.equal(formatIstDateTime('2026-09-19T06:30:00.000Z'), '19/09/2026 AT 12:00PM');
+    assert.equal(formatIstDate('2026-09-19T06:30:00.000Z'), '19/09/2026');
+    assert.equal(toIstDateTimeLocal('2026-09-19T06:30:00.000Z'), '2026-09-19T12:00');
+  });
+
+  it('does not use the current clock when a date is already saved', () => {
+    const details = normalizeDischargeDates({ deliveryDate: '2026-07-08T10:15' });
+    assert.equal(formatIstDateTime(details.deliveryDate), '08/07/2026 AT 10:15AM');
+  });
+});
+

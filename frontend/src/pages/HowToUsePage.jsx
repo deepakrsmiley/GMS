@@ -121,6 +121,7 @@ export default function HowToUsePage() {
           <p>
             <Link to="/lab" className="text-blue-600">Lab Orders</Link>: collect sample → processing → enter results →
             {' '}<Link to="/lab?tab=reports" className="text-blue-600">Lab Reports</Link> print.
+            {' '}Use <Link to="/lab?tab=daily" className="text-blue-600">Day Report</Link> for today / yesterday / this month / custom dates (count, amount, patient name, phone).
           </p>
           <h3>Billing</h3>
           <p>
