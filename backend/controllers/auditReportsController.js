@@ -939,8 +939,13 @@ async function buildLaboratory(from, to, filters = {}) {
     LabTest.countDocuments({ ...period, status: { $in: ['pending', 'sample_collected', 'processing'] } }),
     LabTest.countDocuments({ ...period, 'results.status': 'Critical' }),
     LabTest.find(list)
-      .populate('patient', 'name patientId')
-      .select('labNumber labType status priority totalAmount createdAt')
+      .populate('patient', 'name patientId phone')
+      .populate({
+        path: 'bill',
+        select: 'paidAmount status',
+        options: { skipOrganizationFilter: true },
+      })
+      .select('labNumber labType status priority totalAmount createdAt testProfile profiles')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -960,15 +965,23 @@ async function buildLaboratory(from, to, filters = {}) {
       ...byStatus.map((r) => ({ label: `Status: ${r._id}`, value: r.count })),
       ...byType.map((r) => ({ label: r._id || 'Other', value: r.count })),
     ],
-    details: details.map((t) => ({
-      labNumber: t.labNumber,
-      patient: t.patient?.name || '—',
-      labType: t.labType,
-      status: t.status,
-      priority: t.priority,
-      amount: t.totalAmount || 0,
-      date: t.createdAt,
-    })),
+    details: details.map((t) => {
+      const bill = t.bill && typeof t.bill === 'object' ? t.bill : null;
+      const billed = bill && !['cancelled', 'refunded'].includes(bill.status);
+      return {
+        labNumber: t.labNumber,
+        uhid: t.patient?.patientId || '—',
+        patient: t.patient?.name || '—',
+        phone: t.patient?.phone || '—',
+        tests: (t.profiles || []).length ? t.profiles.join(' + ') : (t.testProfile || '—'),
+        labType: t.labType,
+        status: t.status,
+        priority: t.priority,
+        amount: t.totalAmount || 0,
+        paid: billed ? Number(bill.paidAmount || 0) : 0,
+        date: t.createdAt,
+      };
+    }),
     exceptions: [
       flag('critical', 'Critical results', critical),
       flag('pending', 'In-progress orders', pending, 20, 1),

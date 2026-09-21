@@ -4,8 +4,8 @@ import toast from 'react-hot-toast';
 import Modal from '../common/Modal';
 import patientProfileApi from '../../services/patientProfileApi';
 import {
-  ACCEPT_TYPES, blobFromVideo, fileToPage, isImageFile, isPdfFile,
-  preparePageForStorage, revokePage,
+  ACCEPT_TYPES, blobFromVideo, ensurePreparedPage, fileToPage, isImageFile, isPdfFile,
+  prefetchPreparedPage, revokePage,
 } from '../../utils/prescriptionImage';
 import '../../styles/prescriptionScan.css';
 
@@ -91,6 +91,7 @@ export default function BulkScanPrescriptionModal({
   const visitById = (id) => visits.find((v) => String(v._id) === String(id));
 
   const pushItems = (nextItems) => {
+    nextItems.forEach((item) => item.pages.forEach((p) => prefetchPreparedPage(p, { grayscale })));
     setItems((prev) => {
       const merged = [...prev, ...nextItems].slice(0, MAX_ITEMS);
       if (prev.length + nextItems.length > MAX_ITEMS) {
@@ -104,6 +105,7 @@ export default function BulkScanPrescriptionModal({
 
   const addPagesToActive = (pages) => {
     if (!pages.length) return;
+    pages.forEach((p) => prefetchPreparedPage(p, { grayscale }));
     setItems((prev) => {
       if (!prev.length) {
         const item = { id: newId(), visitId: defaultVisit, pages };
@@ -159,8 +161,8 @@ export default function BulkScanPrescriptionModal({
     try {
       const constraints = {
         video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 2560 }, height: { ideal: 1440 } }
-          : { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } },
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -240,18 +242,31 @@ export default function BulkScanPrescriptionModal({
     setSaving(true);
     let saved = 0;
     try {
-      for (let i = 0; i < ready.length; i += 1) {
-        const item = ready[i];
-        setProgress(`Saving ${i + 1} of ${ready.length}…`);
-        const form = new FormData();
-        const prepared = await Promise.all(item.pages.map((p) => preparePageForStorage(p, { grayscale })));
-        prepared.forEach((file, idx) => form.append('files', file, file.name || `page-${idx + 1}`));
-        form.append('opRegistration', item.visitId);
-        form.append('scanSource', tab === 'scanner' ? 'scanner' : 'upload');
-        form.append('grayscale', grayscale ? 'true' : 'false');
-        await patientProfileApi.scanPrescription(patientId, form);
-        saved += 1;
-      }
+      const CONCURRENCY = 3;
+      let nextIndex = 0;
+      let failed = null;
+      const worker = async () => {
+        while (nextIndex < ready.length && !failed) {
+          const i = nextIndex;
+          nextIndex += 1;
+          const item = ready[i];
+          setProgress(`Saving ${Math.min(i + 1, ready.length)} of ${ready.length}…`);
+          const form = new FormData();
+          const prepared = await Promise.all(item.pages.map((p) => ensurePreparedPage(p, { grayscale })));
+          prepared.forEach((file, idx) => form.append('files', file, file.name || `page-${idx + 1}`));
+          form.append('opRegistration', item.visitId);
+          form.append('scanSource', tab === 'scanner' ? 'scanner' : 'upload');
+          form.append('grayscale', grayscale ? 'true' : 'false');
+          try {
+            await patientProfileApi.scanPrescription(patientId, form);
+            saved += 1;
+          } catch (err) {
+            failed = err;
+            throw err;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ready.length) }, worker));
       toast.success(`${saved} prescription${saved === 1 ? '' : 's'} saved to this patient`);
       onSaved?.(saved);
       reset();

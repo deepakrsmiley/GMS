@@ -125,6 +125,7 @@ export default function LabDayReport({ branding, onOpenReport }) {
         name: r.patient?.name,
         phone: r.patient?.phone,
         tests: r.testProfile,
+        doctor: r.doctor?.name || '',
         amount: r.amount,
         paid: r.paid,
         status: r.status,
@@ -136,6 +137,7 @@ export default function LabDayReport({ branding, onOpenReport }) {
         { key: 'name', header: 'Patient' },
         { key: 'phone', header: 'Phone' },
         { key: 'tests', header: 'Tests' },
+        { key: 'doctor', header: 'Doctor' },
         { key: 'amount', header: 'Amount' },
         { key: 'paid', header: 'Paid' },
         { key: 'status', header: 'Status' },
@@ -157,7 +159,7 @@ export default function LabDayReport({ branding, onOpenReport }) {
         onSearchSubmit={() => setQ(search.trim())}
       />
       <p className="text-xs text-slate-500">
-        Daily / monthly / custom register of patients who came for lab. Print this list, or open a row to print that patient’s result report.
+        Same day register for every hospital — today, yesterday, this month, or custom dates. Print or Excel. Open a completed row to print that patient’s result.
       </p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -208,6 +210,7 @@ export default function LabDayReport({ branding, onOpenReport }) {
                   <th className="px-4 py-2">Patient</th>
                   <th className="px-4 py-2">Phone</th>
                   <th className="px-4 py-2">Tests</th>
+                  <th className="px-4 py-2">Doctor</th>
                   <th className="px-4 py-2">Amount</th>
                   <th className="px-4 py-2">Paid</th>
                   <th className="px-4 py-2">Status</th>
@@ -224,6 +227,7 @@ export default function LabDayReport({ branding, onOpenReport }) {
                     <td className="px-4 py-2 font-medium">{r.patient?.name || '—'}</td>
                     <td className="px-4 py-2">{r.patient?.phone || '—'}</td>
                     <td className="px-4 py-2 text-xs">{r.testProfile || `${r.testsCount || 0} tests`}</td>
+                    <td className="px-4 py-2 text-xs">{r.doctor?.name ? `Dr. ${String(r.doctor.name).replace(/^(dr\.?\s*)+/i, '')}` : '—'}</td>
                     <td className="px-4 py-2 font-semibold">{money(r.amount)}</td>
                     <td className="px-4 py-2">{r.billed ? money(r.paid) : 'Unbilled'}</td>
                     <td className="px-4 py-2 capitalize">{String(r.status || '').replace(/_/g, ' ')}</td>
@@ -239,7 +243,7 @@ export default function LabDayReport({ branding, onOpenReport }) {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-300 font-bold">
-                  <td className="px-4 py-2" colSpan={7}>Total — {summary.count} labs</td>
+                  <td className="px-4 py-2" colSpan={8}>Total — {summary.count} labs</td>
                   <td className="px-4 py-2">{money(summary.amount)}</td>
                   <td className="px-4 py-2">{money(summary.paid)}</td>
                   <td colSpan={2} />

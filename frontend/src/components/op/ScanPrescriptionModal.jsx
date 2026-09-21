@@ -7,8 +7,8 @@ import toast from 'react-hot-toast';
 import Modal from '../common/Modal';
 import patientProfileApi from '../../services/patientProfileApi';
 import {
-  ACCEPT_TYPES, blobFromVideo, cropPage, fileToPage, isImageFile, isPdfFile,
-  preparePageForStorage, revokePage, rotatePage,
+  ACCEPT_TYPES, blobFromVideo, cropPage, ensurePreparedPage, fileToPage, isImageFile, isPdfFile,
+  prefetchPreparedPage, revokePage, rotatePage,
 } from '../../utils/prescriptionImage';
 import '../../styles/prescriptionScan.css';
 
@@ -59,6 +59,12 @@ export default function ScanPrescriptionModal({ isOpen, onClose, visit, visits, 
   }, [isOpen, visit?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const page = pages[active];
+
+  useEffect(() => {
+    if (!pages.length) return undefined;
+    pages.forEach((p) => prefetchPreparedPage(p, { grayscale }));
+    return undefined;
+  }, [grayscale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reset = useCallback(() => {
     pages.forEach(revokePage);
@@ -115,6 +121,7 @@ export default function ScanPrescriptionModal({ isOpen, onClose, visit, visits, 
         toast.error('Upload one PDF, or scan pages as images to combine them');
         return;
       }
+      next.forEach((p) => prefetchPreparedPage(p, { grayscale }));
       setPages((prev) => {
         const merged = [...prev, ...next].slice(0, 12);
         if (prev.length + next.length > 12) toast.error('A prescription can have at most 12 pages');
@@ -135,8 +142,8 @@ export default function ScanPrescriptionModal({ isOpen, onClose, visit, visits, 
     try {
       const constraints = {
         video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 2560 }, height: { ideal: 1440 } }
-          : { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } },
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+          : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -274,7 +281,7 @@ export default function ScanPrescriptionModal({ isOpen, onClose, visit, visits, 
     setSaving(true);
     try {
       const form = new FormData();
-      const prepared = await Promise.all(pages.map((p) => preparePageForStorage(p, { grayscale })));
+      const prepared = await Promise.all(pages.map((p) => ensurePreparedPage(p, { grayscale })));
       prepared.forEach((file, i) => form.append('files', file, file.name || `page-${i + 1}`));
       form.append('opRegistration', activeVisit._id);
       form.append('scanSource', tab === 'scanner' ? 'scanner' : 'upload');

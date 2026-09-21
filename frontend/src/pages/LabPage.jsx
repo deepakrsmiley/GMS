@@ -302,9 +302,18 @@ export default function LabPage() {
   });
 
   const { data: labBillsData, isLoading: labBillsLoading } = useQuery({
-    queryKey: ['labBills', page],
+    queryKey: ['labBills', page, reportRange.from, reportRange.to, reportQ],
     enabled: tab === 'bills',
-    queryFn: () => api.get(`/lab/bills?page=${page}&limit=20`).then((r) => r.data),
+    queryFn: () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: '20',
+        from: reportRange.from,
+        to: reportRange.to,
+      });
+      if (reportQ) params.set('q', reportQ);
+      return api.get(`/lab/bills?${params}`).then((r) => r.data);
+    },
   });
 
   const { data: dashData } = useQuery({
@@ -755,7 +764,7 @@ export default function LabPage() {
         ))}
       </div>
 
-      {tab === 'reports' && (
+      {(tab === 'reports' || tab === 'bills') && (
         <div className="space-y-2">
           <LabDateRangeBar
             preset={reportPreset}
@@ -772,7 +781,9 @@ export default function LabPage() {
             onSearchSubmit={() => { setReportQ(reportSearch.trim()); setPage(1); }}
           />
           <p className="text-xs text-slate-500">
-            Result reports stored day-wise by the day the patient came. Open Yesterday to print that day’s reports.
+            {tab === 'reports'
+              ? 'Result reports stored day-wise by the day the patient came. Open Yesterday to print that day’s reports.'
+              : 'Lab invoices for the selected dates. Same today / yesterday / month / custom filter as Day Report.'}
           </p>
         </div>
       )}

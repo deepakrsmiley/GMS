@@ -54,6 +54,7 @@ const QUICK_ACTIONS = [
   { label: 'Admit Patient (IP)', icon: BedDouble, to: '/ip-admissions', color: 'text-emerald-600 bg-emerald-50', module: 'ip' },
   { label: 'Add Prescription', icon: FileSpreadsheet, to: '/pharmacy?tab=prescriptions', color: 'text-orange-600 bg-orange-50', module: 'pharmacy' },
   { label: 'Lab Test', icon: FlaskConical, to: '/lab', color: 'text-teal-600 bg-teal-50', module: 'lab' },
+  { label: 'Lab Day Report', icon: FileSpreadsheet, to: '/lab?tab=daily', color: 'text-cyan-600 bg-cyan-50', module: 'lab' },
   { label: 'New Invoice', icon: Receipt, to: '/billing', color: 'text-indigo-600 bg-indigo-50', module: 'billing' },
 ];
 

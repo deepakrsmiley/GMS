@@ -10,10 +10,11 @@ const User = require('../models/User');
 const Department = require('../models/Department');
 const Document = require('../models/Document');
 const logger = require('../utils/logger');
-const { allocateDailyOpToken, allocateBillNumber } = require('../utils/generateId');
+const { allocateDailyOpToken, allocateBillNumber, allocateLabNumber } = require('../utils/generateId');
 const { withOrganization } = require('../middleware/tenant');
 const { istDayBounds, kolkataToday } = require('../utils/istDay');
 const { markSourcesAsBilled } = require('../services/billingService');
+const { userHasPermission } = require('../utils/billingAccess');
 const {
   EMERGENCY_SURCHARGE,
   resolveOpConsultationFee,
@@ -590,26 +591,102 @@ exports.saveConsultation = asyncHandler(async (req, res, next) => {
   const {
     consultationNotes, diagnosis, vitals, followUpDate, status,
     examinationFindings, investigationsAdvised, chiefComplaint,
+    prescription, labOrder, serviceUsages,
   } = req.body;
-  const op = await OPRegistration.findByIdAndUpdate(
-    req.params.id,
-    {
-      consultationNotes,
-      diagnosis,
-      vitals,
-      followUpDate,
-      examinationFindings,
-      investigationsAdvised,
-      ...(chiefComplaint !== undefined ? { chiefComplaint } : {}),
-      status: status || 'sent_to_pharmacy',
-      consultationEnd: new Date(),
-    },
-    { new: true },
-  ).populate('patient doctor department');
 
+  const op = await OPRegistration.findById(req.params.id);
   if (!op) return next(new ErrorResponse('Registration not found', 404));
 
-  if (req.app.get('io')) req.app.get('io').emit('queue:update', { type: 'consultation_saved', data: op });
+  op.consultationNotes = consultationNotes;
+  op.diagnosis = diagnosis;
+  if (vitals !== undefined) op.vitals = vitals;
+  op.followUpDate = followUpDate;
+  op.examinationFindings = examinationFindings;
+  op.investigationsAdvised = investigationsAdvised;
+  if (chiefComplaint !== undefined) op.chiefComplaint = chiefComplaint;
+  op.status = status || 'sent_to_pharmacy';
+  op.consultationEnd = new Date();
+
+  const can = (code) => userHasPermission(req.user, code);
+  const extras = [];
+
+  if (prescription) {
+    if (!can('CREATE_PRESCRIPTION')) {
+      return next(new ErrorResponse('You do not have permission to create a prescription', 403));
+    }
+    extras.push(
+      Prescription.create({
+        patient: op.patient,
+        doctor: prescription.doctor || op.doctor || req.user._id,
+        opRegistration: op._id,
+        diagnosis: prescription.diagnosis || diagnosis || undefined,
+        advice: prescription.advice,
+        followUpDate: prescription.followUpDate,
+        medicines: Array.isArray(prescription.medicines) ? prescription.medicines : [],
+      }).then((rx) => {
+        op.prescriptions.push(rx._id);
+        return rx;
+      }),
+    );
+  }
+
+  if (labOrder && (labOrder.tests?.length || labOrder.profiles?.length)) {
+    if (!can('CREATE_LAB_ORDER')) {
+      return next(new ErrorResponse('You do not have permission to order lab tests', 403));
+    }
+    extras.push((async () => {
+      const tests = Array.isArray(labOrder.tests) ? labOrder.tests : [];
+      if (!tests.length) {
+        throw new ErrorResponse('Select at least one lab test / profile', 400);
+      }
+      const labNumber = await allocateLabNumber();
+      const labTest = await LabTest.create({
+        patient: op.patient,
+        doctor: labOrder.doctor || op.doctor || req.user._id,
+        opRegistration: op._id,
+        labNumber,
+        createdBy: req.user._id,
+        orderSource: 'doctor',
+        profiles: labOrder.profiles || [],
+        testProfile: labOrder.testProfile,
+        tests,
+        totalAmount: labOrder.totalAmount || 0,
+        sampleType: labOrder.sampleType || 'blood',
+        priority: labOrder.priority || 'routine',
+        labType: labOrder.labType || 'Other',
+      });
+      op.labTests.push(labTest._id);
+      return labTest;
+    })());
+  }
+
+  if (Array.isArray(serviceUsages) && serviceUsages.length) {
+    if (!can('CREATE_SERVICE_USAGE')) {
+      return next(new ErrorResponse('You do not have permission to add procedures', 403));
+    }
+    serviceUsages.forEach((p) => {
+      if (!p?.serviceName || p.unitPrice === undefined || p.unitPrice === null) return;
+      op.serviceUsages.push({
+        serviceName: p.serviceName,
+        category: p.category || 'Procedure',
+        chargeType: p.chargeType || 'per_use',
+        quantity: Number(p.quantity) || 1,
+        unitPrice: Number(p.unitPrice),
+        notes: p.notes || '',
+        administeredBy: req.user._id,
+      });
+    });
+  }
+
+  if (extras.length) await Promise.all(extras);
+  await op.save();
+  await op.populate('patient doctor department');
+
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('queue:update', { type: 'consultation_saved', data: op });
+    if (labOrder) io.emit('lab:update', { type: 'created' });
+  }
 
   res.status(200).json({ success: true, data: op });
 });

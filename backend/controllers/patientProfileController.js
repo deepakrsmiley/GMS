@@ -590,9 +590,6 @@ exports.uploadDocument = asyncHandler(async (req, res, next) => {
 });
 
 const saveScannedPrescription = async (req, res, next, { replaceDoc = null } = {}) => {
-  const patient = await getPatientOr404(req.params.id);
-  if (!patient) return next(new ErrorResponse('Patient not found', 404));
-
   const files = req.files || [];
   if (!files.length) return next(new ErrorResponse('Please scan or upload at least one page', 400));
   if (files.length > 12) return next(new ErrorResponse('A prescription can have at most 12 pages', 400));
@@ -602,10 +599,14 @@ const saveScannedPrescription = async (req, res, next, { replaceDoc = null } = {
     return next(new ErrorResponse('OP visit is required to store a scanned prescription', 400));
   }
 
-  const visit = await OPRegistration.findOne({ _id: opRegistrationId, patient: patient._id })
-    .populate('doctor', 'name')
-    .populate('department', 'name')
-    .lean();
+  const [patient, visit] = await Promise.all([
+    getPatientOr404(req.params.id),
+    OPRegistration.findOne({ _id: opRegistrationId, patient: req.params.id })
+      .populate('doctor', 'name')
+      .populate('department', 'name')
+      .lean(),
+  ]);
+  if (!patient) return next(new ErrorResponse('Patient not found', 404));
   if (!visit) return next(new ErrorResponse('OP visit not found for this patient', 404));
 
   if (replaceDoc && String(replaceDoc.opRegistration) !== String(visit._id)) {
@@ -613,6 +614,7 @@ const saveScannedPrescription = async (req, res, next, { replaceDoc = null } = {
   }
 
   const documentNumber = await allocatePrescriptionDocNumber(req.organizationId);
+
   let stored;
   try {
     stored = await persistScanFiles({
@@ -669,7 +671,7 @@ const saveScannedPrescription = async (req, res, next, { replaceDoc = null } = {
     });
   }
 
-  await logActivity(req, {
+  void logActivity(req, {
     action: replaceDoc ? 'Prescription Re-scan' : 'Prescription Scan',
     module: 'OP',
     description: replaceDoc
@@ -690,8 +692,23 @@ const saveScannedPrescription = async (req, res, next, { replaceDoc = null } = {
     },
   });
 
-  const populated = await Document.findById(doc._id).populate(SCAN_DOC_POPULATE);
-  res.status(replaceDoc ? 200 : 201).json({ success: true, data: serializeDocument(populated) });
+  const data = serializeDocument({
+    ...doc.toObject(),
+    uploadedBy: { _id: req.user._id, name: req.user.name, role: req.user.role },
+    doctor: visit.doctor,
+    department: visit.department,
+    opRegistration: {
+      _id: visit._id,
+      tokenNumber: visit.tokenNumber,
+      tokenDate: visit.tokenDate,
+      diagnosis: visit.diagnosis,
+      createdAt: visit.createdAt,
+    },
+    replaces: replaceDoc
+      ? { _id: replaceDoc._id, documentNumber: replaceDoc.documentNumber, createdAt: replaceDoc.createdAt }
+      : undefined,
+  });
+  res.status(replaceDoc ? 200 : 201).json({ success: true, data });
 };
 
 exports.scanPrescription = asyncHandler(async (req, res, next) => {

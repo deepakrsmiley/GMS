@@ -93,6 +93,7 @@ export const WORKFLOWS = {
       { id: 'order', label: 'Order', hint: 'Doctor or lab desk', to: '/lab' },
       { id: 'collect', label: 'Sample', hint: 'Collect', to: '/lab' },
       { id: 'result', label: 'Results', hint: 'Enter + print', to: '/lab?tab=reports' },
+      { id: 'daily', label: 'Day report', hint: 'Today / month / print', to: '/lab?tab=daily' },
     ],
   },
   billing: {
@@ -147,7 +148,8 @@ export const ROLE_PLAYBOOKS = {
     title: 'Lab — your day',
     steps: [
       { label: 'Open Lab Orders', to: '/lab', detail: 'Sample collected → processing → results.' },
-      { label: 'Enter results and print', to: '/lab?tab=reports', detail: 'Doctor sees the report after you complete it.' },
+      { label: 'Enter results and print', to: '/lab?tab=reports', detail: 'Pick Today or Yesterday to reprint that day’s stored reports.' },
+      { label: 'Print the day report', to: '/lab?tab=daily', detail: 'Count, amount, patient name and phone. Today, yesterday, this month, or custom dates.' },
     ],
   },
   'Accountant': {

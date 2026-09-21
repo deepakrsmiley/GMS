@@ -404,7 +404,8 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
   const searchQuery = q.trim().substring(0, 100);
   const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  const medicines = await Medicine.find({
+  const lite = req.query.lite === '1' || req.query.lite === 'true';
+  const query = Medicine.find({
     $or: [
       { name: { $regex: escaped, $options: 'i' } },
       { genericName: { $regex: escaped, $options: 'i' } },
@@ -414,7 +415,14 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
     currentStock: { $gt: 0 },
   })
     .sort({ name: 1 })
-    .limit(25)
+    .limit(25);
+
+  if (lite) {
+    const medicines = await query.select('name genericName category currentStock unitOfMeasure sellingPrice').lean();
+    return res.status(200).json({ success: true, count: medicines.length, data: medicines });
+  }
+
+  const medicines = await query
     .select('name genericName category currentStock sellingPrice gstPercent unitOfMeasure mrp hsnCode batches');
 
   const data = medicines

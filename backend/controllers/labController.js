@@ -257,13 +257,29 @@ exports.getLabBills = asyncHandler(async (req, res) => {
   };
   if (req.query.patient) filter.patient = req.query.patient;
 
+  const extras = [buildLabDateFilter(req.query)];
+  if (req.query.q) {
+    const term = String(req.query.q).trim();
+    const rx = new RegExp(escapeRegex(term), 'i');
+    const patients = await Patient.find({
+      $or: [{ name: rx }, { phone: rx }, { patientId: rx }],
+    }).select('_id').limit(80);
+    extras.push({
+      $or: [
+        { billNumber: rx },
+        { patient: { $in: patients.map((p) => p._id) } },
+      ],
+    });
+  }
+  const findFilter = mergeLabFilters(filter, ...extras);
+
   const [data, total] = await Promise.all([
-    Bill.find(filter)
+    Bill.find(findFilter)
       .populate('patient', 'patientId name age gender phone')
       .sort('-createdAt')
       .skip(skip)
       .limit(limit),
-    Bill.countDocuments(filter),
+    Bill.countDocuments(findFilter),
   ]);
 
   res.status(200).json({

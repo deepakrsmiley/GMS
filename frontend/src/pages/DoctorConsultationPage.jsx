@@ -128,7 +128,7 @@ export default function DoctorConsultationPage() {
       return undefined;
     }
     const t = setTimeout(() => {
-      api.get(`/pharmacy/search?q=${encodeURIComponent(medQuery.trim())}`)
+      api.get(`/pharmacy/search?q=${encodeURIComponent(medQuery.trim())}&lite=1`)
         .then((r) => setMedResults(r.data.data || []))
         .catch(() => setMedResults([]));
     }, 250);
@@ -313,48 +313,37 @@ export default function DoctorConsultationPage() {
           ...(customLabName.trim() ? [customLabName.trim()] : []),
         ].join(', ') || undefined,
         status: nextStatus,
-      });
-
-      if (labPayload) {
-        await api.post('/lab', labPayload);
-      }
-
-      if (canLogServices && pendingProcedures.length) {
-        await Promise.all(
-          pendingProcedures.map((p) => api.post(`/op/${opId}/service-usage`, {
+        prescription: goPharmacy
+          ? {
+            patient: patientId,
+            doctor: op?.doctor?._id || op?.doctor || user?.id,
+            diagnosis: diagnosis || undefined,
+            advice: notes || undefined,
+            followUpDate: followUp || undefined,
+            medicines: pendingRx.map((m) => ({
+              medicine: m.medicine || undefined,
+              medicineName: m.medicineName,
+              dosage: m.dosage,
+              frequency: m.frequency,
+              duration: m.duration,
+              quantity: m.quantity,
+              instructions: m.instructions,
+              route: m.route || 'oral',
+            })),
+          }
+          : undefined,
+        labOrder: labPayload || undefined,
+        serviceUsages: canLogServices && pendingProcedures.length
+          ? pendingProcedures.map((p) => ({
             serviceName: p.serviceName,
             category: p.category,
             chargeType: p.chargeType,
             quantity: p.quantity,
             unitPrice: p.unitPrice,
             notes: p.notes || '',
-          })),
-        );
-      }
-
-      // Always create / refresh Rx when sending to pharmacy so pharmacist sees the visit.
-      if (goPharmacy) {
-        await api.post('/prescriptions', {
-          patient: patientId,
-          doctor: op?.doctor?._id || op?.doctor || user?.id,
-          opRegistration: opId,
-          diagnosis: diagnosis || undefined,
-          advice: notes || undefined,
-          followUpDate: followUp || undefined,
-          medicines: pendingRx.map((m) => ({
-            medicine: m.medicine || undefined,
-            medicineName: m.medicineName,
-            dosage: m.dosage,
-            frequency: m.frequency,
-            duration: m.duration,
-            quantity: m.quantity,
-            instructions: m.instructions,
-            route: m.route || 'oral',
-          })),
-        });
-        // Ensure queue status is pharmacy even if lab create ran earlier.
-        await api.put(`/op/${opId}/status`, { status: 'sent_to_pharmacy' });
-      }
+          }))
+          : undefined,
+      });
     },
     onSuccess: () => {
       const bits = [];

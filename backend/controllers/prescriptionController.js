@@ -9,33 +9,34 @@ const IPAdmission = require('../models/IPAdmission');
 // @route   POST /api/prescriptions
 // @access  Private (Doctor, Super Admin, Admin)
 exports.createPrescription = asyncHandler(async (req, res, next) => {
-  // If doctor field is not provided, use the logged in user's ID
   if (!req.body.doctor) {
     req.body.doctor = req.user._id;
   }
 
-  // Verify patient exists
-  const patient = await Patient.findById(req.body.patient);
-  if (!patient) {
+  const patientExists = await Patient.exists({ _id: req.body.patient });
+  if (!patientExists) {
     return next(new ErrorResponse('Patient not found', 404));
   }
 
   const prescription = await Prescription.create(req.body);
 
-  // If there is an OPRegistration link, push this prescription to it
+  const links = [];
   if (req.body.opRegistration) {
-    await OPRegistration.findByIdAndUpdate(req.body.opRegistration, {
+    links.push(OPRegistration.findByIdAndUpdate(req.body.opRegistration, {
       $push: { prescriptions: prescription._id },
       status: 'sent_to_pharmacy',
-    });
-    if (req.app.get('io')) req.app.get('io').emit('queue:update', { type: 'prescription_created' });
+    }));
   }
-
-  // If there is an IPAdmission link, push this prescription onto that admission's record too
   if (req.body.ipAdmission) {
-    await IPAdmission.findByIdAndUpdate(req.body.ipAdmission, {
+    links.push(IPAdmission.findByIdAndUpdate(req.body.ipAdmission, {
       $push: { prescriptions: prescription._id },
-    });
+    }));
+  }
+  if (links.length) await Promise.all(links);
+
+  const io = req.app.get('io');
+  if (io && req.body.opRegistration) {
+    io.emit('queue:update', { type: 'prescription_created' });
   }
 
   res.status(201).json({
