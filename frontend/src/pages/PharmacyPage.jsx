@@ -1784,12 +1784,17 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
           subtitle="OP prescriptions and counter medicine sale"
           actions={(
             canViewDashboard ? (
-              <Link
-                to="/masters/medicines"
-                className="btn-secondary text-xs py-2"
-              >
-                <Package size={14} /> Medicine Master
-              </Link>
+              <>
+                <Link to="/pharmacy/purchases" className="btn-primary text-xs py-2">
+                  <Package size={14} /> Purchases
+                </Link>
+                <Link
+                  to="/masters/medicines"
+                  className="btn-secondary text-xs py-2"
+                >
+                  <Package size={14} /> Medicine Master
+                </Link>
+              </>
             ) : null
           )}
         />

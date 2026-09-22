@@ -4,6 +4,8 @@ const Prescription = require('../models/Prescription');
 const Bill = require('../models/Bill');
 const { getAvailableStock, getExpiredBatches } = require('../utils/pharmacyStockHelper');
 
+const RECEIPT_TYPES = ['stock_in', 'purchase'];
+
 const startOfDay = (d = new Date()) => {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -125,11 +127,11 @@ Medicine.aggregate([
             { $group: { _id: null, count: { $sum: 1 }, qty: { $sum: { $abs: '$quantityChanged' } }, value: { $sum: '$totalValue' } } },
           ],
           todayAdded: [
-            { $match: { type: 'stock_in', transactionDate: { $gte: today } } },
+            { $match: { type: { $in: RECEIPT_TYPES }, transactionDate: { $gte: today } } },
             { $group: { _id: null, count: { $sum: 1 }, qty: { $sum: '$quantityChanged' }, value: { $sum: '$totalValue' } } },
           ],
           monthlyPurchase: [
-            { $match: { type: 'stock_in', transactionDate: { $gte: monthStart } } },
+            { $match: { type: { $in: RECEIPT_TYPES }, transactionDate: { $gte: monthStart } } },
             { $group: { _id: null, value: { $sum: '$totalValue' } } },
           ],
           monthlyDispense: [
@@ -142,7 +144,7 @@ Medicine.aggregate([
             { $sort: { _id: 1 } },
           ],
           purchases: [
-            { $match: { type: 'stock_in', transactionDate: { $gte: new Date(today.getFullYear(), today.getMonth() - 5, 1) } } },
+            { $match: { type: { $in: RECEIPT_TYPES }, transactionDate: { $gte: new Date(today.getFullYear(), today.getMonth() - 5, 1) } } },
             { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$transactionDate' } }, qty: { $sum: '$quantityChanged' }, value: { $sum: '$totalValue' } } },
             { $sort: { _id: 1 } },
           ],
@@ -157,7 +159,7 @@ Medicine.aggregate([
     ]),
     StockMovement.aggregate([
       { $match: { transactionDate: { $gte: new Date(today.getFullYear(), today.getMonth() - 5, 1) } } },
-      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$transactionDate' } }, stockIn: { $sum: { $cond: [{ $eq: ['$type', 'stock_in'] }, '$totalValue', 0] } }, stockOut: { $sum: { $cond: [{ $in: ['$type', ['dispense', 'bill_deduct']] }, '$totalValue', 0] } } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$transactionDate' } }, stockIn: { $sum: { $cond: [{ $in: ['$type', RECEIPT_TYPES] }, '$totalValue', 0] } }, stockOut: { $sum: { $cond: [{ $in: ['$type', ['dispense', 'bill_deduct']] }, '$totalValue', 0] } } } },
       { $sort: { _id: 1 } },
     ]),
     StockMovement.find().sort('-transactionDate').limit(20).populate('addedBy', 'name role').lean(),
@@ -170,6 +172,12 @@ Medicine.aggregate([
   const expiringSoonCount = expiringAgg[0]?.count || 0;
   const expiredCount = expiredAgg[0]?.count || 0;
   const pendingPrescriptions = await Prescription.countDocuments({ status: 'active' });
+  let purchaseCards = {};
+  try {
+    purchaseCards = await require('./purchaseService').getDashboardCards();
+  } catch (_) {
+    purchaseCards = {};
+  }
 
   const alerts = [
     lowStock > 0 && { type: 'low_stock', icon: '⚠', message: `${lowStock} Medicines Low In Stock`, count: lowStock, severity: 'warning' },
@@ -192,6 +200,16 @@ Medicine.aggregate([
       monthlyPurchaseValue: stats.monthlyPurchase?.[0]?.value || 0,
       monthlyDispensingValue: stats.monthlyDispense?.[0]?.value || 0,
       pendingPrescriptions,
+      totalPurchases: purchaseCards.totalPurchases || 0,
+      totalPurchaseCount: purchaseCards.totalPurchaseCount || 0,
+      todayPurchases: purchaseCards.todayPurchases || 0,
+      todayPurchaseCount: purchaseCards.todayPurchaseCount || 0,
+      monthPurchases: purchaseCards.monthPurchases || 0,
+      monthPurchaseCount: purchaseCards.monthPurchaseCount || 0,
+      purchaseReturns: purchaseCards.purchaseReturns || 0,
+      purchaseReturnCount: purchaseCards.purchaseReturnCount || 0,
+      monthReturns: purchaseCards.monthReturns || 0,
+      currentStockValue: purchaseCards.currentStockValue || 0,
     },
     alerts,
     charts: {
@@ -216,7 +234,9 @@ Medicine.aggregate([
 const formatActivityLabel = (movement) => {
   const qty = Math.abs(movement.quantityChanged);
   switch (movement.type) {
-    case 'stock_in': return `+${qty} Added`;
+    case 'stock_in':
+    case 'purchase': return `+${qty} Purchased`;
+    case 'purchase_return': return `-${qty} Purchase return`;
     case 'dispense':
     case 'bill_deduct': return `-${qty} Dispensed`;
     case 'dispose': return `-${qty} Disposed`;
@@ -331,7 +351,7 @@ exports.getReportData = async (reportType, options = {}) => {
       return { title: 'Inventory Valuation Report', rows };
     }
     case 'supplier-purchase': {
-      const rows = await StockMovement.find({ type: 'stock_in' }).sort('-transactionDate').limit(500).populate('supplier', 'name').populate('addedBy', 'name').lean();
+      const rows = await StockMovement.find({ type: { $in: RECEIPT_TYPES } }).sort('-transactionDate').limit(500).populate('supplier', 'name').populate('addedBy', 'name').lean();
       return { title: 'Supplier Purchase Report', rows };
     }
     case 'dispensing': {
@@ -345,7 +365,7 @@ exports.getReportData = async (reportType, options = {}) => {
     case 'today-stock-in': {
       const { start, end } = dayRange(options.date);
       const rows = await StockMovement.find({
-        type: 'stock_in',
+        type: { $in: RECEIPT_TYPES },
         transactionDate: { $gte: start, $lte: end },
       }).sort('-transactionDate').populate('supplier', 'name').populate('addedBy', 'name').lean();
       return { title: `Today Stock Added (${start.toLocaleDateString('en-IN')})`, rows };

@@ -25,6 +25,7 @@ const NurseStationPage = lazy(() => import('./pages/NurseStationPage'));
 const ChangeRequestsPage = lazy(() => import('./pages/ChangeRequestsPage'));
 const BillingPage = lazy(() => import('./pages/BillingPage'));
 const PharmacyPage = lazy(() => import('./pages/PharmacyPage'));
+const PharmacyPurchasesPage = lazy(() => import('./pages/PharmacyPurchasesPage'));
 const PharmacyReportsPage = lazy(() => import('./pages/PharmacyReportsPage'));
 const LabPage = lazy(() => import('./pages/LabPage'));
 const AssetComplaintPage = lazy(() => import('./pages/AssetComplaintPage'));
@@ -108,6 +109,7 @@ export default function App() {
             <Route path="/change-requests" element={<ProtectedRoute routeKey="change-requests"><ChangeRequestsPage /></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute routeKey="billing"><BillingPage /></ProtectedRoute>} />
             <Route path="/pharmacy" element={<ProtectedRoute routeKey="pharmacy"><PharmacyPage /></ProtectedRoute>} />
+            <Route path="/pharmacy/purchases" element={<ProtectedRoute routeKey="pharmacy"><PharmacyPurchasesPage /></ProtectedRoute>} />
 
             <Route path="/pharmacy-reports" element={<ProtectedRoute routeKey="pharmacy-reports"><PharmacyReportsPage /></ProtectedRoute>} />
             <Route path="/pharmacy-billing" element={<Navigate to="/pharmacy-reports" replace />} />

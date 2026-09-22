@@ -14,6 +14,7 @@ const fmt = (n) =>
 
 const emptyDefaults = {
   name: '',
+  company: '',
   contactPerson: '',
   phone: '',
   email: '',
@@ -24,6 +25,7 @@ const emptyDefaults = {
   gstNumber: '',
   drugLicense: '',
   creditDays: 30,
+  paymentTerms: '',
   openingAmount: 0,
   amountPaid: 0,
   outstanding: 0,
@@ -352,6 +354,9 @@ export default function DistributorDesk() {
                 <Field label="Distributor name *" required>
                   <input {...register('name', { required: true })} className="input-field text-sm" placeholder="Company / agency name" />
                 </Field>
+                <Field label="Company">
+                  <input {...register('company')} className="input-field text-sm" placeholder="Legal company name" />
+                </Field>
                 <Field label="Contact person">
                   <input {...register('contactPerson')} className="input-field text-sm" placeholder="Sales / owner name" />
                 </Field>
@@ -405,6 +410,9 @@ export default function DistributorDesk() {
                     className="input-field text-sm"
                     placeholder="30"
                   />
+                </Field>
+                <Field label="Payment terms">
+                  <input {...register('paymentTerms')} className="input-field text-sm" placeholder="30 days credit" />
                 </Field>
                 <Field label="Opening amount (₹)">
                   <input {...register('openingAmount', { valueAsNumber: true })} type="number" min="0" step="0.01" className="input-field text-sm" />

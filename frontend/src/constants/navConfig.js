@@ -22,6 +22,7 @@ export const NAV_ITEMS = [
   { id: 'billing',          to: '/billing',                 label: 'Billing',            icon: 'Receipt',         permission: 'VIEW_BILLING',           module: 'billing', group: 'money', roles: ['Super Admin', 'Admin', 'Pharmacist', 'Accountant', 'Receptionist'] },
   { id: 'prescriptions',    to: '/pharmacy?tab=prescriptions', label: 'Prescriptions',  icon: 'ClipboardList',   permission: 'VIEW_PRESCRIPTION',      module: 'pharmacy', group: 'clinical', roles: ['Super Admin', 'Doctor', 'Pharmacist', 'Receptionist'] },
   { id: 'pharmacy',         to: '/pharmacy?tab=prescriptions', label: 'Pharmacy',        icon: 'Pill',            permission: 'VIEW_PHARMACY',          module: 'pharmacy', group: 'clinical', roles: ['Super Admin', 'Admin', 'Pharmacist'] },
+  { id: 'pharmacy-purchases', to: '/pharmacy/purchases',     label: 'Purchases',          icon: 'Truck',           permission: 'VIEW_PHARMACY',          module: 'pharmacy', group: 'clinical', roles: ['Super Admin', 'Admin', 'Pharmacist'] },
   { id: 'pharmacy-reports', to: '/pharmacy-reports',        label: 'Pharmacy Reports',   icon: 'FileBarChart2',   permission: 'VIEW_PHARMACY',          module: 'pharmacy', group: 'clinical', roles: ['Super Admin', 'Admin', 'Pharmacist'] },
   { id: 'lab-orders',       to: '/lab',                     label: 'Lab Orders',         icon: 'FlaskConical',    permission: 'VIEW_LAB',               module: 'lab', group: 'clinical', roles: ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist', 'Pharmacist'] },
   { id: 'lab-reports',      to: '/lab?tab=reports',         label: 'Lab Reports',        icon: 'FileBarChart',    permission: 'VIEW_LAB',               module: 'lab', group: 'clinical', roles: ['Super Admin', 'Admin', 'Doctor', 'Lab Technician', 'Nurse', 'Receptionist'] },
@@ -180,7 +181,7 @@ export const filterNavForUser = (user) => {
     : NAV_ITEMS.filter((item) => {
       if (item.id === 'how-to-use') return true;
       if (item.id === 'masters') return hasMastersAccess(user);
-      if (item.id === 'pharmacy' || item.id === 'pharmacy-reports' || item.id === 'expiry-report') {
+      if (item.id === 'pharmacy' || item.id === 'pharmacy-reports' || item.id === 'expiry-report' || item.id === 'pharmacy-purchases') {
         return PHARMACY_ROUTE_PERMS.some((code) => hasPermission(user, code)) || hasPermission(user, 'VIEW_BILLING');
       }
       return hasPermission(user, item.permission);

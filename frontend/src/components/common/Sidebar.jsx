@@ -8,7 +8,7 @@ import {
   Building2, UserCog, Activity, Settings, Stethoscope,
   FileText, ClipboardList, Package, FileBarChart, Clock,
   FileBarChart2, ShieldCheck, AlertTriangle, MonitorPlay, Database,
-  ChevronRight, HeartPulse, ClipboardCheck, Wrench, BookOpen,
+  ChevronRight, HeartPulse, ClipboardCheck, Wrench, BookOpen, Truck,
 } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
 import { logout } from '../../redux/slices/authSlice';
@@ -25,7 +25,7 @@ const ICON_MAP = {
   BarChart3, Building2, UserCog, Activity, Settings, Stethoscope,
   FileText, ClipboardList, Package, FileBarChart, Clock, FileBarChart2,
   AlertTriangle, MonitorPlay, Database, HeartPulse, ClipboardCheck, Wrench,
-  ShieldCheck, BookOpen,
+  ShieldCheck, BookOpen, Truck,
 };
 
 export default function Sidebar({ isDesktop = true }) {

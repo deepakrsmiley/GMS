@@ -6,6 +6,7 @@ const batchSchema = new mongoose.Schema({
   manufacturer: String,
   expiryDate: { type: Date, required: true },
   quantity: { type: Number, default: 0, min: [0, 'Batch quantity cannot be negative'] },
+  freeQuantity: { type: Number, default: 0, min: 0 },
   purchasePrice: Number,
   sellingPrice: Number,
   mrp: Number,

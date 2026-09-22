@@ -3,6 +3,7 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const supplierSchema = new mongoose.Schema({
   name: { type: String, required: true },
+  company: String,
   contactPerson: String,
   phone: { type: String, required: true },
   email: String,
@@ -14,6 +15,7 @@ const supplierSchema = new mongoose.Schema({
   drugLicense: String,
 
   creditDays: { type: Number, default: 30 },
+  paymentTerms: String,
 
   openingAmount: {
     type: Number,

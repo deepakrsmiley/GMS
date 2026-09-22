@@ -7,6 +7,8 @@ require('./Bed');
 require('./Room');
 require('./Medicine');
 require('./StockMovement');
+require('./Purchase');
+require('./PurchaseReturn');
 require('./Bill');
 require('./LabTest');
 require('./TestMaster');

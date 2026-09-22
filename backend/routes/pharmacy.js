@@ -89,6 +89,8 @@ router.get('/expiry-report/meta', VIEW, getExpiryReportMeta);
 router.get('/expiry-report/export', VIEW, exportExpiryReport);
 router.get('/expiry-report', VIEW, getExpiryReport);
 
+router.use('/purchases', require('./purchases'));
+
 router.route('/')
   .get(VIEW, advancedResults(Medicine, 'supplier'), getMedicines)
   .post(CREATE_MED, createMedicine);

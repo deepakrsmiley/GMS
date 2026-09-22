@@ -109,6 +109,94 @@ const upsertBatchStock = (medicine, {
 };
 
 /**
+ * Receipt from a supplier invoice.
+ * Physical stock = paid quantity + free quantity.
+ * Does not change the medicine master selling price or purchase price.
+ * An existing batch keeps its original purchase rate.
+ */
+const receivePurchaseBatch = (medicine, {
+  batchNumber,
+  paidQuantity,
+  freeQuantity = 0,
+  expiryDate,
+  purchaseRate,
+  supplierInvoice,
+  receivedDate,
+} = {}) => {
+  const paid = Number(paidQuantity) || 0;
+  const free = Number(freeQuantity) || 0;
+  if (free < 0) {
+    const err = new Error('Free quantity cannot be negative');
+    err.statusCode = 400;
+    throw err;
+  }
+  const physical = paid + free;
+  const normalized = normalizeBatchNumber(batchNumber);
+  if (!normalized) {
+    const err = new Error('Batch number is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (physical <= 0) {
+    const err = new Error('Stock quantity must be greater than zero');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const expiry = expiryDate ? new Date(expiryDate) : null;
+  const existing = findActiveBatch(medicine, normalized);
+  if (existing) {
+    const before = Number(existing.quantity) || 0;
+    existing.quantity = before + physical;
+    existing.freeQuantity = (Number(existing.freeQuantity) || 0) + free;
+    if ((existing.purchasePrice == null || existing.purchasePrice === '') && purchaseRate != null && purchaseRate !== '') {
+      existing.purchasePrice = Number(purchaseRate);
+    }
+    if (supplierInvoice) existing.supplierInvoice = supplierInvoice;
+    if (!existing.expiryDate && expiry && !Number.isNaN(expiry.getTime())) existing.expiryDate = expiry;
+    return {
+      batch: existing,
+      merged: true,
+      physical,
+      batchQtyBefore: before,
+      batchQtyAfter: existing.quantity,
+    };
+  }
+
+  if (!expiry || Number.isNaN(expiry.getTime())) {
+    const err = new Error('Expiry date is required for a new batch');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (expiry < new Date()) {
+    const err = new Error('Cannot purchase an already expired batch');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  medicine.batches.push({
+    batchNumber: normalized,
+    quantity: physical,
+    freeQuantity: free,
+    expiryDate: expiry,
+    purchasePrice: purchaseRate != null && purchaseRate !== '' ? Number(purchaseRate) : medicine.purchasePrice,
+    sellingPrice: medicine.sellingPrice,
+    mrp: medicine.mrp,
+    manufacturer: medicine.manufacturer,
+    supplierInvoice,
+    receivedDate: receivedDate ? new Date(receivedDate) : new Date(),
+  });
+  const batch = medicine.batches[medicine.batches.length - 1];
+  return {
+    batch,
+    merged: false,
+    physical,
+    batchQtyBefore: 0,
+    batchQtyAfter: physical,
+  };
+};
+
+/**
  * Deduct stock. If preferredBatchNumber is set, deduct only from that batch
  * (needed when pharmacy picks a specific batch with its own price).
  */
@@ -150,6 +238,9 @@ const logStockMovement = async ({
   quantityAfter,
   quantityChanged,
   unitPrice = 0,
+  totalValue,
+  batchQuantityBefore,
+  batchQuantityAfter,
   supplier,
   referenceId,
   referenceModel,
@@ -164,8 +255,12 @@ const logStockMovement = async ({
     quantityBefore,
     quantityAfter,
     quantityChanged,
+    batchQuantityBefore,
+    batchQuantityAfter,
     unitPrice,
-    totalValue: Math.abs(quantityChanged) * (unitPrice || medicine.sellingPrice || 0),
+    totalValue: totalValue != null
+      ? Number(totalValue)
+      : Math.abs(quantityChanged) * (unitPrice || medicine.sellingPrice || 0),
     supplier: supplier || medicine.supplier,
     referenceId,
     referenceModel,
@@ -233,6 +328,7 @@ module.exports = {
   sameBatchNumber,
   findActiveBatch,
   upsertBatchStock,
+  receivePurchaseBatch,
   deductFromUsableBatches,
   logStockMovement,
   validateDispensable,

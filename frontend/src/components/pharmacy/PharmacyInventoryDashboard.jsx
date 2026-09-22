@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Package, AlertTriangle, TrendingDown, TrendingUp, Clock, XCircle,
@@ -398,6 +399,36 @@ export default function PharmacyInventoryDashboard({ children }) {
             </div>
             );
           })}
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-xl p-4">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Purchases
+          </p>
+          <Link to="/pharmacy/purchases" className="text-xs font-semibold text-blue-700 hover:underline">
+            Open purchase entry
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          {[
+            { key: 'totalPurchases', label: 'Total Purchases' },
+            { key: 'todayPurchases', label: "Today's Purchases" },
+            { key: 'monthPurchases', label: "This Month's Purchases" },
+            { key: 'purchaseReturns', label: 'Purchase Returns' },
+            { key: 'monthReturns', label: "This Month's Returns" },
+            { key: 'currentStockValue', label: 'Current Stock Value' },
+          ].map((card) => (
+            <Link
+              key={card.key}
+              to="/pharmacy/purchases"
+              className="rounded-lg bg-slate-50 dark:bg-gray-900/50 border border-slate-100 dark:border-gray-700 px-4 py-3 hover:border-blue-200"
+            >
+              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">{card.label}</p>
+              <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-white mt-1">{fmtCurrency(cards[card.key])}</p>
+            </Link>
+          ))}
         </div>
       </div>
 
