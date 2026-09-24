@@ -117,7 +117,7 @@ const sanitizeBillItems = (items = []) =>
       .filter((item) => item.quantity > 0),
   );
 
-const fillFromMedicine = (next, medicine) => {
+const fillFromMedicine = (next, medicine, { assignMissingBatch = true } = {}) => {
   next.type = 'medicine';
   next.name = medicine.name;
   next.description = next.description || medicine.name;
@@ -136,7 +136,7 @@ const fillFromMedicine = (next, medicine) => {
       if (!next.expiryDate) next.expiryDate = batchData.expiryDate;
       if (!next.mfgDate) next.mfgDate = batchData.receivedDate;
     }
-  } else if (!batchKey && medicine.batches?.length) {
+  } else if (assignMissingBatch && !batchKey && medicine.batches?.length) {
     const validBatch = medicine.batches.find((b) => !b.isDisposed && b.quantity > 0);
     if (validBatch) {
       next.batchNumber = validBatch.batchNumber;
@@ -149,7 +149,7 @@ const fillFromMedicine = (next, medicine) => {
 };
 
 /** One query for all medicines — invalid IDs are dropped instead of crashing the save. */
-const enrichMedicineItems = async (items = []) => {
+const enrichMedicineItems = async (items = [], options = {}) => {
   const ids = [];
   for (const item of items) {
     const id = asObjectId(item?.medicine);
@@ -172,7 +172,7 @@ const enrichMedicineItems = async (items = []) => {
     }
     next.medicine = id;
     const medicine = byId.get(String(id));
-    if (medicine) fillFromMedicine(next, medicine);
+    if (medicine) fillFromMedicine(next, medicine, options);
     return next;
   });
 };

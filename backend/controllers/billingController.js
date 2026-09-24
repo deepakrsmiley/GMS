@@ -17,6 +17,7 @@ const {
   deductMedicineStock,
   restoreMedicineStock,
   restoreBillItemsStock,
+  stockQuantityDeltas,
 } = require("../utils/stockManager");
 const {
   getPatientBillableCharges,
@@ -37,18 +38,6 @@ const {
   pickIpAdmissionId,
   normalizePaymentMode,
 } = require("../utils/billItems");
-
-const stockFingerprint = (items = []) =>
-  stockableMedicineItems(items)
-    .map((item) =>
-      [
-        String(item.medicine?._id || item.medicine || ""),
-        String(item.batch || item.batchNumber || ""),
-        Number(item.quantity || 0),
-      ].join(":"),
-    )
-    .sort()
-    .join("|");
 
 const safeStockRollback = async (fn) => {
   try {
@@ -576,12 +565,14 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
 
   let stockAdjusted = false;
   let sanitizedItems = null;
+  let stockRestore = [];
+  let stockDeduct = [];
 
   if (update.items) {
     try {
       sanitizedItems = keepExistingItemIds(
         bill,
-        sanitizeBillItems(await enrichMedicineItems(update.items)),
+        sanitizeBillItems(await enrichMedicineItems(update.items, { assignMissingBatch: false })),
       );
     } catch (error) {
       return next(toBillError(error));
@@ -589,23 +580,28 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
     if (!sanitizedItems.length) {
       return next(new ErrorResponse("Bill must contain at least one item", 400));
     }
-    const oldStockable = stockableMedicineItems(oldBill.items || []);
-    const newStockable = stockableMedicineItems(sanitizedItems);
-    const stockChanged = stockFingerprint(oldBill.items) !== stockFingerprint(sanitizedItems);
+    ({ restore: stockRestore, deduct: stockDeduct } = stockQuantityDeltas(
+      oldBill.items || [],
+      sanitizedItems,
+    ));
 
-    if (stockChanged && (oldStockable.length || newStockable.length)) {
+    if (stockRestore.length || stockDeduct.length) {
       try {
-        await restoreBillItemsStock(oldStockable, {
-          userId: req.user._id,
-          remarks: `Stock restored before bill edit: ${reason}`,
-          referenceId: bill._id,
-          referenceModel: 'Bill',
-        });
-        await validateMedicineStock(newStockable);
-        await deductMedicineStock(newStockable, req.user._id);
+        if (stockRestore.length) {
+          await restoreBillItemsStock(stockRestore, {
+            userId: req.user._id,
+            remarks: `Stock restored before bill edit: ${reason}`,
+            referenceId: bill._id,
+            referenceModel: 'Bill',
+          });
+        }
+        if (stockDeduct.length) {
+          await validateMedicineStock(stockDeduct);
+          await deductMedicineStock(stockDeduct, req.user._id);
+        }
         stockAdjusted = true;
       } catch (error) {
-        await safeStockRollback(() => deductMedicineStock(oldStockable, req.user._id));
+        await safeStockRollback(() => deductMedicineStock(stockRestore, req.user._id));
         return next(toBillError(error));
       }
     }
@@ -652,17 +648,21 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    await bill.save();
+    await bill.save({ validateModifiedOnly: true });
   } catch (error) {
-    if (stockAdjusted && sanitizedItems) {
+    if (stockAdjusted) {
       await safeStockRollback(async () => {
-        await restoreBillItemsStock(stockableMedicineItems(sanitizedItems), {
-          userId: req.user._id,
-          remarks: 'Stock restored — bill save failed',
-          referenceId: bill._id,
-          referenceModel: 'Bill',
-        });
-        await deductMedicineStock(stockableMedicineItems(oldBill.items), req.user._id);
+        if (stockDeduct?.length) {
+          await restoreBillItemsStock(stockDeduct, {
+            userId: req.user._id,
+            remarks: 'Stock restored — bill save failed',
+            referenceId: bill._id,
+            referenceModel: 'Bill',
+          });
+        }
+        if (stockRestore?.length) {
+          await deductMedicineStock(stockRestore, req.user._id);
+        }
       });
     }
     return next(toBillError(error));

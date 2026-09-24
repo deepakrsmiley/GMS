@@ -151,6 +151,46 @@ const restoreMedicineStock = async (deducted = [], meta = {}) => {
   }
 };
 
+const stockLineKey = (item = {}) =>
+  [
+    String(item.medicine?._id || item.medicine || ''),
+    String(item.batch || item.batchNumber || '').trim(),
+  ].join(':');
+
+/** Only the quantity that changed should move stock. Unchanged lines on an
+ *  older bill must not be deducted again against today's remaining stock. */
+const stockQuantityDeltas = (oldItems = [], newItems = []) => {
+  const group = (items) => {
+    const map = new Map();
+    stockableMedicineItems(items).forEach((item) => {
+      const key = stockLineKey(item);
+      const prev = map.get(key);
+      map.set(key, {
+        medicine: item.medicine?._id || item.medicine,
+        batch: item.batch || item.batchNumber,
+        batchNumber: item.batchNumber || item.batch,
+        description: item.description || item.name,
+        unitPrice: item.unitPrice,
+        quantity: (prev?.quantity || 0) + Number(item.quantity || 0),
+      });
+    });
+    return map;
+  };
+
+  const before = group(oldItems);
+  const after = group(newItems);
+  const restore = [];
+  const deduct = [];
+  new Set([...before.keys(), ...after.keys()]).forEach((key) => {
+    const oldQty = before.get(key)?.quantity || 0;
+    const newQty = after.get(key)?.quantity || 0;
+    const delta = newQty - oldQty;
+    if (delta > 0) deduct.push({ ...after.get(key), quantity: delta });
+    else if (delta < 0) restore.push({ ...before.get(key), quantity: -delta });
+  });
+  return { restore, deduct };
+};
+
 const restoreBillItemsStock = async (items = [], meta = {}) => {
   const entries = stockableMedicineItems(items).map((item) => ({
     medicine: item.medicine,
@@ -168,4 +208,5 @@ module.exports = {
   deductMedicineStock,
   restoreMedicineStock,
   restoreBillItemsStock,
+  stockQuantityDeltas,
 };
