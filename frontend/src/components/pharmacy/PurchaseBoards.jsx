@@ -22,36 +22,37 @@ export function PurchaseReturnHistory() {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row gap-2 justify-between">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purchase Return History</h2>
-        <input className="input-field text-sm sm:w-64" placeholder="Return no, invoice, medicine" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+    <section className="pur-card">
+      <div className="pur-toolbar">
+        <h2>Return history</h2>
+        <input className="input-field text-sm" placeholder="Return no, invoice, medicine" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
       </div>
-      <div className="bg-white dark:bg-gray-800 border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-xs min-w-[900px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>{['Return', 'Supplier', 'Invoice', 'Date', 'Medicine', 'Batch', 'Qty', 'Value', 'Reason', 'Created by', ''].map((h) => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
+      <div className="pur-table-wrap">
+        <table className="pur-table">
+          <thead>
+            <tr>{['Return', 'Supplier', 'Invoice', 'Date', 'Medicine', 'Batch', 'Qty', 'Value', 'Reason', 'Created by', ''].map((h) => <th key={h}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={11} className="px-3 py-6 text-slate-400">Loading returns…</td></tr>}
+            {isLoading && <tr><td colSpan={11} className="pur-empty">Loading returns…</td></tr>}
             {rows.map((row) => (
-              <tr key={row._id} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-semibold">{row.returnNumber}</td>
-                <td className="px-3 py-2">{row.supplierName}</td>
-                <td className="px-3 py-2">{row.originalInvoice}</td>
-                <td className="px-3 py-2">{fmtDate(row.returnDate)}</td>
-                <td className="px-3 py-2">{row.medicineSummary}</td>
-                <td className="px-3 py-2">{row.batchSummary}</td>
-                <td className="px-3 py-2 tabular-nums">{row.totalReturnQuantity}</td>
-                <td className="px-3 py-2 tabular-nums">{inr(row.totalReturnValue)}</td>
-                <td className="px-3 py-2">{row.reason}</td>
-                <td className="px-3 py-2">{row.createdByName}</td>
-                <td className="px-3 py-2 space-x-2 whitespace-nowrap">
-                  <button type="button" className="text-blue-700 font-semibold" onClick={() => view(row._id)}>View / Print</button>
+              <tr key={row._id}>
+                <td className="font-semibold">{row.returnNumber}</td>
+                <td>{row.supplierName}</td>
+                <td>{row.originalInvoice}</td>
+                <td>{fmtDate(row.returnDate)}</td>
+                <td>{row.medicineSummary}</td>
+                <td>{row.batchSummary}</td>
+                <td className="tabular-nums">{row.totalReturnQuantity}</td>
+                <td className="tabular-nums">{inr(row.totalReturnValue)}</td>
+                <td>{row.reason}</td>
+                <td>{row.createdByName}</td>
+                <td>
+                  <div className="pur-row-actions">
+                  <button type="button" className="pur-link" onClick={() => view(row._id)}>View / Print</button>
                   {row.status === 'active' && (
                     <button
                       type="button"
-                      className="text-slate-600 font-semibold"
+                      className="pur-link pur-link--muted"
                       onClick={async () => {
                         const reason = window.prompt('Reason for reversing this return');
                         if (!reason) return;
@@ -66,14 +67,17 @@ export function PurchaseReturnHistory() {
                       Reverse
                     </button>
                   )}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <Pager page={data?.page || 1} pages={data?.pages || 1} onPage={setPage} />
-    </div>
+      <div className="px-4 py-3">
+        <Pager page={data?.page || 1} pages={data?.pages || 1} onPage={setPage} />
+      </div>
+    </section>
   );
 }
 
@@ -87,10 +91,11 @@ export function StockLedgerPanel() {
   });
   const rows = data?.data || [];
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row gap-2">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white flex-1">Stock Ledger</h2>
-        <input className="input-field text-sm sm:w-56" placeholder="Medicine or batch" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+    <section className="pur-card">
+      <div className="pur-toolbar">
+        <h2>Stock ledger</h2>
+        <div className="flex flex-wrap gap-2">
+        <input className="input-field text-sm" placeholder="Medicine or batch" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         <select className="input-field text-sm sm:w-44" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}>
           <option value="">All movements</option>
           <option value="purchase">Purchase</option>
@@ -102,32 +107,35 @@ export function StockLedgerPanel() {
           <option value="stock_adjustment_reduce">Adjustment out</option>
           <option value="dispose">Expired / disposed</option>
         </select>
+        </div>
       </div>
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-xs min-w-[760px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>{['Date', 'Type', 'Medicine', 'Batch', 'Reference', 'Qty', 'Balance'].map((h) => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
+      <div className="pur-table-wrap">
+        <table className="pur-table">
+          <thead>
+            <tr>{['Date', 'Type', 'Medicine', 'Batch', 'Reference', 'Qty', 'Balance'].map((h) => <th key={h}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={7} className="px-3 py-6 text-slate-400">Loading ledger…</td></tr>}
+            {isLoading && <tr><td colSpan={7} className="pur-empty">Loading ledger…</td></tr>}
             {rows.map((row) => (
-              <tr key={row._id} className="border-t border-slate-100">
-                <td className="px-3 py-2">{fmtDate(row.date)}</td>
-                <td className="px-3 py-2">{row.label}</td>
-                <td className="px-3 py-2">{row.medicineName}</td>
-                <td className="px-3 py-2">{row.batchNumber || '—'}</td>
-                <td className="px-3 py-2 max-w-[220px] truncate">{row.reference}</td>
-                <td className={`px-3 py-2 tabular-nums font-semibold ${row.quantityChanged < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+              <tr key={row._id}>
+                <td>{fmtDate(row.date)}</td>
+                <td>{row.label}</td>
+                <td>{row.medicineName}</td>
+                <td>{row.batchNumber || '—'}</td>
+                <td className="max-w-[220px] truncate">{row.reference}</td>
+                <td className={`tabular-nums font-semibold ${row.quantityChanged < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                   {row.quantityChanged > 0 ? `+${row.quantityChanged}` : row.quantityChanged}
                 </td>
-                <td className="px-3 py-2 tabular-nums">{row.balance}</td>
+                <td className="tabular-nums">{row.balance}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <Pager page={data?.page || 1} pages={data?.pages || 1} onPage={setPage} />
-    </div>
+      <div className="px-4 py-3">
+        <Pager page={data?.page || 1} pages={data?.pages || 1} onPage={setPage} />
+      </div>
+    </section>
   );
 }
 
@@ -139,33 +147,33 @@ export function StockValuationPanel() {
   });
   const rows = data?.data || [];
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row gap-2 justify-between">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Stock Valuation</h2>
-        <input className="input-field text-sm sm:w-56" placeholder="Medicine or batch" value={q} onChange={(e) => setQ(e.target.value)} />
+    <section className="pur-card">
+      <div className="pur-toolbar">
+        <h2>Stock value</h2>
+        <input className="input-field text-sm" placeholder="Medicine or batch" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="w-full text-xs min-w-[680px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>{['Medicine', 'Batch', 'Expiry', 'Quantity', 'Purchase rate', 'Stock value'].map((h) => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
+      <div className="pur-table-wrap">
+        <table className="pur-table">
+          <thead>
+            <tr>{['Medicine', 'Batch', 'Expiry', 'Quantity', 'Purchase rate', 'Stock value'].map((h) => <th key={h}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={6} className="px-3 py-6 text-slate-400">Calculating stock value…</td></tr>}
+            {isLoading && <tr><td colSpan={6} className="pur-empty">Calculating stock value…</td></tr>}
             {rows.map((row) => (
-              <tr key={`${row.medicineId}-${row.batchNumber}`} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-semibold">{row.medicineName}</td>
-                <td className="px-3 py-2">{row.batchNumber}</td>
-                <td className="px-3 py-2">{fmtDate(row.expiryDate)}</td>
-                <td className="px-3 py-2 tabular-nums">{row.quantity}</td>
-                <td className="px-3 py-2 tabular-nums">{inr(row.purchaseRate)}</td>
-                <td className="px-3 py-2 tabular-nums font-semibold">{inr(row.stockValue)}</td>
+              <tr key={`${row.medicineId}-${row.batchNumber}`}>
+                <td className="font-semibold">{row.medicineName}</td>
+                <td>{row.batchNumber}</td>
+                <td>{fmtDate(row.expiryDate)}</td>
+                <td className="tabular-nums">{row.quantity}</td>
+                <td className="tabular-nums">{inr(row.purchaseRate)}</td>
+                <td className="tabular-nums font-semibold">{inr(row.stockValue)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="text-sm font-semibold text-slate-800">Total Inventory Purchase Value: {inr(data?.totalInventoryPurchaseValue)}</p>
-    </div>
+      <p className="px-4 py-3 text-sm font-semibold text-slate-800">Total stock value {inr(data?.totalInventoryPurchaseValue)}</p>
+    </section>
   );
 }
 
@@ -180,9 +188,10 @@ export function PurchaseReportsPanel() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col lg:flex-row gap-2 lg:items-end">
-        <label className="text-xs text-slate-500">Report
-          <select className="input-field text-sm mt-1" value={type} onChange={(e) => setType(e.target.value)}>
+      <section className="pur-card">
+      <div className="pur-card__body pur-grid">
+        <label className="pur-field">Report
+          <select className="input-field text-sm" value={type} onChange={(e) => setType(e.target.value)}>
             <option value="daily">Daily purchase</option>
             <option value="monthly">Monthly purchase</option>
             <option value="supplier">Supplier-wise</option>
@@ -191,13 +200,14 @@ export function PurchaseReportsPanel() {
             <option value="net">Net purchase</option>
           </select>
         </label>
-        <label className="text-xs text-slate-500">From
-          <input type="date" className="input-field text-sm mt-1" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <label className="pur-field">From
+          <input type="date" className="input-field text-sm" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label className="text-xs text-slate-500">To
-          <input type="date" className="input-field text-sm mt-1" value={to} onChange={(e) => setTo(e.target.value)} />
+        <label className="pur-field">To
+          <input type="date" className="input-field text-sm" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
       </div>
+      </section>
       {isLoading && <p className="text-xs text-slate-400">Loading report…</p>}
       {data?.type === 'net' && (
         <div className="grid sm:grid-cols-3 gap-3">
@@ -230,25 +240,25 @@ export function PurchaseReportsPanel() {
 
 function Card({ label, value }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-lg font-bold tabular-nums text-slate-900">{value}</p>
+    <div className="pur-stat">
+      <span>{label}</span>
+      <strong className="tabular-nums">{value}</strong>
     </div>
   );
 }
 
 function SimpleTable({ headers, rows }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-      <table className="w-full text-xs min-w-[520px]">
-        <thead className="bg-slate-50 text-slate-500">
-          <tr>{headers.map((h) => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
+    <div className="pur-card pur-table-wrap">
+      <table className="pur-table">
+        <thead>
+          <tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr>
         </thead>
         <tbody>
-          {rows.length === 0 && <tr><td colSpan={headers.length} className="px-3 py-6 text-slate-400">No rows in this period.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={headers.length} className="pur-empty">No rows in this period.</td></tr>}
           {rows.map((row, i) => (
-            <tr key={i} className="border-t border-slate-100">
-              {row.map((cell, j) => <td key={j} className="px-3 py-2 tabular-nums">{cell}</td>)}
+            <tr key={i}>
+              {row.map((cell, j) => <td key={j} className="tabular-nums">{cell}</td>)}
             </tr>
           ))}
         </tbody>

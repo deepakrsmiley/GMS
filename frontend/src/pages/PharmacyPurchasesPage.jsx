@@ -12,15 +12,19 @@ import {
   PurchaseReportsPanel,
 } from '../components/pharmacy/PurchaseBoards';
 import { printPurchase } from '../utils/purchaseMoney';
+import '../styles/purchase.css';
 
-const TABS = [
-  { id: 'entry', label: 'Purchase Entry' },
-  { id: 'history', label: 'Purchase History' },
-  { id: 'return', label: 'Purchase Return' },
-  { id: 'return-history', label: 'Return History' },
-  { id: 'ledger', label: 'Stock Ledger' },
-  { id: 'valuation', label: 'Stock Valuation' },
-  { id: 'reports', label: 'Purchase Reports' },
+const WORK = [
+  { id: 'entry', label: 'New purchase' },
+  { id: 'history', label: 'History' },
+  { id: 'return', label: 'Return' },
+];
+
+const RECORDS = [
+  { id: 'return-history', label: 'Return history' },
+  { id: 'ledger', label: 'Ledger' },
+  { id: 'valuation', label: 'Stock value' },
+  { id: 'reports', label: 'Reports' },
 ];
 
 export default function PharmacyPurchasesPage() {
@@ -35,23 +39,38 @@ export default function PharmacyPurchasesPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="pur">
       <PageHeader
         icon={ShoppingBag}
         title="Purchases"
-        subtitle="Record supplier invoices, returns, stock value, and the movement ledger"
+        subtitle="Record a supplier invoice, then review history, returns, and stock value"
       />
-      <div className="corp-tabs overflow-x-auto">
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setTab(item.id, item.id === 'return' ? { purchase: purchaseId } : {})}
-            className={`corp-tab whitespace-nowrap ${tab === item.id ? 'corp-tab-active' : ''}`}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="pur-nav">
+        <div className="corp-tabs pur-nav__main">
+          {WORK.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id, item.id === 'return' ? { purchase: purchaseId } : {})}
+              className={`corp-tab whitespace-nowrap ${tab === item.id ? 'corp-tab-active' : ''}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="pur-nav__records">
+          <span className="pur-nav__label">Records</span>
+          {RECORDS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              className={`pur-chip ${tab === item.id ? 'pur-chip--on' : ''}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
       {tab === 'entry' && (
         <PurchaseEntry onSaved={(purchase, shouldPrint) => {

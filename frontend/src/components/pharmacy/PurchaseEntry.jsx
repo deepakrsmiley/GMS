@@ -13,6 +13,8 @@ const blankLine = () => ({
   sellingPrice: '',
   batchNumber: '',
   expiry: '',
+  quantityUnit: 'pcs',
+  packSize: '',
   quantity: '',
   freeQuantity: '',
   purchaseRate: '',
@@ -70,6 +72,7 @@ export default function PurchaseEntry({ onSaved }) {
       medicineName: medicine.name,
       sellingPrice: medicine.sellingPrice,
       gstPercent: medicine.gstPercent ?? 0,
+      packSize: medicine.unitsPerStrip || '',
       search: medicine.name,
       open: false,
       results: [],
@@ -83,6 +86,8 @@ export default function PurchaseEntry({ onSaved }) {
       medicineId: line.medicineId,
       batchNumber: line.batchNumber,
       expiryDate: line.expiry,
+      quantityUnit: line.quantityUnit === 'strip' ? 'strip' : 'pcs',
+      packSize: line.quantityUnit === 'strip' ? Number(line.packSize) : 1,
       quantity: Number(line.quantity),
       freeQuantity: Number(line.freeQuantity) || 0,
       purchaseRate: Number(line.purchaseRate),
@@ -100,6 +105,15 @@ export default function PurchaseEntry({ onSaved }) {
     }
     if (!body.items.length) {
       setError('Add a medicine from the medicine master.');
+      return;
+    }
+    const stripMissing = lines.some((line) => {
+      if (!line.medicineId || line.quantityUnit !== 'strip') return false;
+      const pack = Number(line.packSize);
+      return !Number.isInteger(pack) || pack < 1;
+    });
+    if (stripMissing) {
+      setError('For a strip, enter how many pcs are in one strip.');
       return;
     }
     setSaving(true);
@@ -123,160 +137,203 @@ export default function PurchaseEntry({ onSaved }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-xl p-4">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purchase Entry</h2>
-        <p className="text-xs text-slate-500 mt-0.5">Supplier invoice increases batch stock at the purchase rate. Selling price stays as it is.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-          <label className="text-xs text-slate-500 sm:col-span-2">
-            Supplier
-            <select className="input-field text-sm mt-1" value={header.supplier} onChange={(e) => setHeader({ ...header, supplier: e.target.value })}>
-              <option value="">Select supplier</option>
-              {suppliers.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-slate-500">
-            Supplier invoice number
-            <input className="input-field text-sm mt-1" value={header.supplierInvoiceNumber} onChange={(e) => setHeader({ ...header, supplierInvoiceNumber: e.target.value })} placeholder="INV-10245" />
-          </label>
-          <label className="text-xs text-slate-500">
-            Purchase date
-            <input type="date" className="input-field text-sm mt-1" value={header.purchaseDate} onChange={(e) => setHeader({ ...header, purchaseDate: e.target.value })} />
-          </label>
-          <label className="text-xs text-slate-500">
-            Due date
-            <input type="date" className="input-field text-sm mt-1" value={header.dueDate} onChange={(e) => setHeader({ ...header, dueDate: e.target.value })} />
-          </label>
-          <label className="text-xs text-slate-500">
-            Payment type
-            <select className="input-field text-sm mt-1" value={header.paymentType} onChange={(e) => setHeader({ ...header, paymentType: e.target.value })}>
-              <option value="credit">Credit</option>
-              <option value="cash">Cash</option>
-              <option value="upi">UPI</option>
-              <option value="card">Card</option>
-              <option value="cheque">Cheque</option>
-              <option value="neft">NEFT</option>
-            </select>
-          </label>
-          <label className="text-xs text-slate-500">
-            Payment status
-            <select className="input-field text-sm mt-1" value={header.paymentStatus} onChange={(e) => setHeader({ ...header, paymentStatus: e.target.value })}>
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partial</option>
-              <option value="paid">Paid</option>
-            </select>
-          </label>
-          <label className="text-xs text-slate-500">
-            GST
-            <select className="input-field text-sm mt-1" value={header.gstMode} onChange={(e) => setHeader({ ...header, gstMode: e.target.value })}>
-              <option value="intra">Intra-state (CGST + SGST)</option>
-              <option value="inter">Inter-state (IGST)</option>
-            </select>
-          </label>
-          <label className="text-xs text-slate-500 sm:col-span-2">
-            Reference number
-            <input className="input-field text-sm mt-1" value={header.referenceNumber} onChange={(e) => setHeader({ ...header, referenceNumber: e.target.value })} />
-          </label>
-          <label className="text-xs text-slate-500 sm:col-span-2">
-            Notes
-            <input className="input-field text-sm mt-1" value={header.notes} onChange={(e) => setHeader({ ...header, notes: e.target.value })} />
-          </label>
+      <section className="pur-card">
+        <header className="pur-card__head">
+          <div>
+            <h2>Supplier invoice</h2>
+            <p>Enter the bill first. Each medicine can be added as pieces or as strips. Selling price on the bill stays unchanged.</p>
+          </div>
+        </header>
+        <div className="pur-card__body">
+          <div className="pur-grid">
+            <Field label="Supplier" className="pur-field--wide">
+              <select className="input-field text-sm" value={header.supplier} onChange={(e) => setHeader({ ...header, supplier: e.target.value })}>
+                <option value="">Select supplier</option>
+                {suppliers.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Invoice number">
+              <input className="input-field text-sm" value={header.supplierInvoiceNumber} onChange={(e) => setHeader({ ...header, supplierInvoiceNumber: e.target.value })} placeholder="INV-10245" />
+            </Field>
+            <Field label="Purchase date">
+              <input type="date" className="input-field text-sm" value={header.purchaseDate} onChange={(e) => setHeader({ ...header, purchaseDate: e.target.value })} />
+            </Field>
+            <Field label="Due date">
+              <input type="date" className="input-field text-sm" value={header.dueDate} onChange={(e) => setHeader({ ...header, dueDate: e.target.value })} />
+            </Field>
+            <Field label="Payment type">
+              <select className="input-field text-sm" value={header.paymentType} onChange={(e) => setHeader({ ...header, paymentType: e.target.value })}>
+                <option value="credit">Credit</option>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+                <option value="cheque">Cheque</option>
+                <option value="neft">NEFT</option>
+              </select>
+            </Field>
+            <Field label="Payment status">
+              <select className="input-field text-sm" value={header.paymentStatus} onChange={(e) => setHeader({ ...header, paymentStatus: e.target.value })}>
+                <option value="unpaid">Unpaid</option>
+                <option value="partial">Partial</option>
+                <option value="paid">Paid</option>
+              </select>
+            </Field>
+            <Field label="GST">
+              <select className="input-field text-sm" value={header.gstMode} onChange={(e) => setHeader({ ...header, gstMode: e.target.value })}>
+                <option value="intra">Within state (CGST + SGST)</option>
+                <option value="inter">Other state (IGST)</option>
+              </select>
+            </Field>
+            <details className="pur-more">
+              <summary>Reference and notes</summary>
+              <div className="pur-more__grid">
+                <Field label="Reference number">
+                  <input className="input-field text-sm" value={header.referenceNumber} onChange={(e) => setHeader({ ...header, referenceNumber: e.target.value })} />
+                </Field>
+                <Field label="Notes">
+                  <input className="input-field text-sm" value={header.notes} onChange={(e) => setHeader({ ...header, notes: e.target.value })} />
+                </Field>
+              </div>
+            </details>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs min-w-[980px]">
-            <thead className="bg-slate-50 dark:bg-gray-900/40 text-slate-500">
-              <tr>
-                {['Medicine', 'Batch', 'Expiry', 'Qty', 'Free', 'Purchase rate', 'Discount', 'GST %', 'Total', ''].map((h) => (
-                  <th key={h} className="px-2 py-2 text-left font-semibold">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line, index) => {
-                const priced = totals.lines[index];
-                return (
-                  <tr key={line.key} className="border-t border-slate-100 dark:border-gray-700 align-top">
-                    <td className="px-2 py-2 min-w-[180px] relative">
-                      <input
-                        className="input-field text-xs"
-                        value={line.search}
-                        placeholder="Search Dolo…"
-                        onChange={(e) => searchMedicine(line.key, e.target.value)}
-                        onFocus={() => line.results?.length && setLine(line.key, { open: true })}
-                      />
+      <section className="pur-card">
+        <header className="pur-card__head">
+          <div>
+            <h2>Medicines</h2>
+            <p>Strip quantity is stored as pieces. Example: 10 strips × 10 pcs adds 100 pcs to stock. Rate follows the unit you choose.</p>
+          </div>
+        </header>
+        <div className="pur-card__body">
+          <div className="pur-lines">
+            {lines.map((line, index) => {
+              const priced = totals.lines[index];
+              const stockPcs = line.quantityUnit === 'strip' && Number(line.packSize) >= 1
+                ? (Number(line.quantity) + (Number(line.freeQuantity) || 0)) * Number(line.packSize)
+                : 0;
+              return (
+                <article key={line.key} className="pur-line">
+                  <div className="pur-line__top">
+                    <span className="pur-line__num">{index + 1}</span>
+                    <div className="pur-line__search">
+                      <Field label="Medicine">
+                        <input
+                          className="input-field text-sm"
+                          value={line.search}
+                          placeholder="Search medicine name"
+                          onChange={(e) => searchMedicine(line.key, e.target.value)}
+                          onFocus={() => line.results?.length && setLine(line.key, { open: true })}
+                        />
+                      </Field>
                       {line.medicineName && (
-                        <p className="mt-1 text-[11px] text-slate-500">Billing price {inr(line.sellingPrice)} stays unchanged</p>
+                        <p className="pur-hint">Billing price {inr(line.sellingPrice)} stays unchanged</p>
                       )}
                       {line.open && line.results?.length > 0 && (
-                        <div className="absolute z-20 mt-1 w-64 bg-white dark:bg-gray-800 border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+                        <div className="pur-suggest">
                           {line.results.map((med) => (
-                            <button
-                              type="button"
-                              key={med._id}
-                              className="block w-full text-left px-3 py-2 hover:bg-slate-50 text-xs"
-                              onClick={() => pickMedicine(line.key, med)}
-                            >
-                              <span className="font-semibold text-slate-800">{med.name}</span>
-                              <span className="block text-slate-400">{med.genericName || 'Medicine master'}</span>
+                            <button type="button" key={med._id} onClick={() => pickMedicine(line.key, med)}>
+                              <strong>{med.name}</strong>
+                              <span>{med.genericName || 'Medicine master'}</span>
                             </button>
                           ))}
                         </div>
                       )}
-                    </td>
-                    <td className="px-2 py-2"><input className="input-field text-xs w-28" value={line.batchNumber} onChange={(e) => setLine(line.key, { batchNumber: e.target.value })} /></td>
-                    <td className="px-2 py-2"><input type="month" className="input-field text-xs w-32" value={line.expiry} onChange={(e) => setLine(line.key, { expiry: e.target.value })} /></td>
-                    <td className="px-2 py-2"><input type="number" min="0" className="input-field text-xs w-20 text-right" value={line.quantity} onChange={(e) => setLine(line.key, { quantity: e.target.value })} /></td>
-                    <td className="px-2 py-2"><input type="number" min="0" className="input-field text-xs w-16 text-right" value={line.freeQuantity} onChange={(e) => setLine(line.key, { freeQuantity: e.target.value })} /></td>
-                    <td className="px-2 py-2"><input type="number" min="0" step="0.01" className="input-field text-xs w-24 text-right" value={line.purchaseRate} onChange={(e) => setLine(line.key, { purchaseRate: e.target.value })} /></td>
-                    <td className="px-2 py-2"><input type="number" min="0" step="0.01" className="input-field text-xs w-20 text-right" value={line.discount} onChange={(e) => setLine(line.key, { discount: e.target.value })} /></td>
-                    <td className="px-2 py-2"><input type="number" min="0" step="0.01" className="input-field text-xs w-16 text-right" value={line.gstPercent} onChange={(e) => setLine(line.key, { gstPercent: e.target.value })} /></td>
-                    <td className="px-2 py-2 text-right font-semibold tabular-nums text-slate-800">{inr(priced?.total)}</td>
-                    <td className="px-2 py-2">
-                      <button type="button" className="text-slate-400 hover:text-red-600" onClick={() => setLines((rows) => rows.length === 1 ? [blankLine()] : rows.filter((r) => r.key !== line.key))}>
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-3 py-3 border-t border-slate-100 flex flex-col lg:flex-row lg:items-end gap-3 justify-between">
-          <button type="button" className="btn-secondary text-xs" onClick={() => setLines((rows) => [...rows, blankLine()])}>
-            <Plus size={14} /> Add Medicine
-          </button>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs min-w-[280px]">
-            <label className="text-slate-500 col-span-2 sm:col-span-3">
-              Overall discount
-              <input type="number" min="0" className="input-field text-xs mt-1" value={header.overallDiscount} onChange={(e) => setHeader({ ...header, overallDiscount: e.target.value })} />
-            </label>
-            <Stat label="Gross" value={inr(totals.gross)} />
-            <Stat label="Taxable" value={inr(totals.taxable)} />
-            <Stat label={header.gstMode === 'inter' ? 'IGST' : 'CGST + SGST'} value={inr(totals.tax)} />
-            <Stat label="Grand total" value={inr(totals.grand)} strong />
+                    </div>
+                    <button
+                      type="button"
+                      className="pur-icon-btn"
+                      aria-label="Remove medicine"
+                      onClick={() => setLines((rows) => (rows.length === 1 ? [blankLine()] : rows.filter((r) => r.key !== line.key)))}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <div className="pur-line__grid">
+                    <Field label="Batch">
+                      <input className="input-field text-sm" value={line.batchNumber} onChange={(e) => setLine(line.key, { batchNumber: e.target.value })} />
+                    </Field>
+                    <Field label="Expiry">
+                      <input type="month" className="input-field text-sm" value={line.expiry} onChange={(e) => setLine(line.key, { expiry: e.target.value })} />
+                    </Field>
+                    <Field label="Unit">
+                      <div className="pur-unit">
+                        <button type="button" className={line.quantityUnit === 'pcs' ? 'is-on' : ''} onClick={() => setLine(line.key, { quantityUnit: 'pcs' })}>Pcs</button>
+                        <button type="button" className={line.quantityUnit === 'strip' ? 'is-on' : ''} onClick={() => setLine(line.key, { quantityUnit: 'strip' })}>Strip</button>
+                      </div>
+                    </Field>
+                    <Field label={line.quantityUnit === 'strip' ? 'Strips' : 'Quantity'}>
+                      <input type="number" min="0" className="input-field text-sm" value={line.quantity} onChange={(e) => setLine(line.key, { quantity: e.target.value })} />
+                      {stockPcs > 0 && <p className="pur-hint">Adds {stockPcs} pcs to stock</p>}
+                    </Field>
+                    {line.quantityUnit === 'strip' && (
+                      <Field label="Pcs in one strip">
+                        <input type="number" min="1" step="1" className="input-field text-sm" value={line.packSize} placeholder="10" onChange={(e) => setLine(line.key, { packSize: e.target.value })} />
+                      </Field>
+                    )}
+                    <Field label={line.quantityUnit === 'strip' ? 'Free strips' : 'Free pcs'}>
+                      <input type="number" min="0" className="input-field text-sm" value={line.freeQuantity} onChange={(e) => setLine(line.key, { freeQuantity: e.target.value })} />
+                    </Field>
+                    <Field label={line.quantityUnit === 'strip' ? 'Rate per strip' : 'Rate per pc'}>
+                      <input type="number" min="0" step="0.01" className="input-field text-sm" value={line.purchaseRate} onChange={(e) => setLine(line.key, { purchaseRate: e.target.value })} />
+                    </Field>
+                    <Field label="Discount">
+                      <input type="number" min="0" step="0.01" className="input-field text-sm" value={line.discount} onChange={(e) => setLine(line.key, { discount: e.target.value })} />
+                    </Field>
+                    <Field label="GST %">
+                      <input type="number" min="0" step="0.01" className="input-field text-sm" value={line.gstPercent} onChange={(e) => setLine(line.key, { gstPercent: e.target.value })} />
+                    </Field>
+                  </div>
+                  <div className="pur-line__foot">
+                    <span>Line total</span>
+                    <strong className="tabular-nums">{inr(priced?.total)}</strong>
+                  </div>
+                </article>
+              );
+            })}
           </div>
+          <button type="button" className="pur-add" onClick={() => setLines((rows) => [...rows, blankLine()])}>
+            <Plus size={16} /> Add medicine
+          </button>
         </div>
-      </div>
+      </section>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn-primary" disabled={saving} onClick={() => save(false)}>Save Purchase</button>
-        <button type="button" className="btn-secondary" disabled={saving} onClick={() => save(true)}>Save & Print</button>
-        <button type="button" className="btn-secondary" onClick={() => { setLines([blankLine()]); setError(''); }}>Cancel</button>
-      </div>
+      <section className="pur-card pur-summary">
+        {error && <p className="pur-error">{error}</p>}
+        <Field label="Overall discount">
+          <input type="number" min="0" className="input-field text-sm" value={header.overallDiscount} onChange={(e) => setHeader({ ...header, overallDiscount: e.target.value })} />
+        </Field>
+        <div className="pur-stats">
+          <Stat label="Gross" value={inr(totals.gross)} />
+          <Stat label="Taxable" value={inr(totals.taxable)} />
+          <Stat label={header.gstMode === 'inter' ? 'IGST' : 'CGST + SGST'} value={inr(totals.tax)} />
+          <Stat label="Grand total" value={inr(totals.grand)} total />
+        </div>
+        <div className="pur-actions">
+          <button type="button" className="btn-primary" disabled={saving} onClick={() => save(false)}>Save purchase</button>
+          <button type="button" className="btn-secondary" disabled={saving} onClick={() => save(true)}>Save and print</button>
+          <button type="button" className="btn-secondary" onClick={() => { setLines([blankLine()]); setError(''); }}>Clear</button>
+        </div>
+      </section>
     </div>
   );
 }
 
-function Stat({ label, value, strong }) {
+function Field({ label, children, className = '' }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={`tabular-nums ${strong ? 'font-bold text-slate-900' : 'font-semibold text-slate-700'}`}>{value}</p>
+    <label className={`pur-field ${className}`}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Stat({ label, value, total }) {
+  return (
+    <div className={`pur-stat ${total ? 'pur-stat--total' : ''}`}>
+      <span>{label}</span>
+      <strong className="tabular-nums">{value}</strong>
     </div>
   );
 }

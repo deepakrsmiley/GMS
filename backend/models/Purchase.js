@@ -8,6 +8,8 @@ const purchaseItemSchema = new mongoose.Schema({
   expiryDate: { type: Date, required: true },
   quantity: { type: Number, required: true, min: 0 },
   freeQuantity: { type: Number, default: 0, min: 0 },
+  quantityUnit: { type: String, enum: ['pcs', 'strip'], default: 'pcs' },
+  packSize: { type: Number, default: 1, min: 1 },
   purchaseRate: { type: Number, required: true, min: 0 },
   sellingPrice: { type: Number, min: 0 },
   discountAmount: { type: Number, default: 0 },

@@ -9,6 +9,10 @@ const {
   effectiveUnitCost,
   parseExpiry,
   stockValue,
+  resolvePurchaseUnit,
+  stockPieces,
+  invoiceUnitsOnHand,
+  pieceRate,
 } = require('../utils/purchaseCalc');
 const { receivePurchaseBatch } = require('../utils/pharmacyStockHelper');
 
@@ -37,6 +41,24 @@ describe('purchase calculations', () => {
     ], 0, 'inter');
     assert.equal(summary.igstTotal, 54);
     assert.equal(summary.cgstTotal, 0);
+  });
+
+  it('converts a strip purchase into pieces for stock', () => {
+    const unit = resolvePurchaseUnit({ quantityUnit: 'strip', packSize: 10 });
+    assert.equal(unit.quantityUnit, 'strip');
+    assert.equal(unit.packSize, 10);
+    assert.equal(stockPieces(12, unit.packSize), 120);
+    assert.equal(stockPieces(2, unit.packSize), 20);
+    assert.equal(pieceRate(15, 10), 1.5);
+    assert.equal(invoiceUnitsOnHand(95, 10), 9);
+    assert.equal(resolvePurchaseUnit({ quantityUnit: 'pcs', packSize: 10 }).packSize, 1);
+  });
+
+  it('rejects a strip line without a whole pcs-per-strip', () => {
+    assert.throws(
+      () => resolvePurchaseUnit({ quantityUnit: 'strip', packSize: 0 }),
+      (err) => err.message === 'Pcs in one strip must be a whole number of at least 1',
+    );
   });
 
   it('keeps free quantity out of the invoice rate', () => {

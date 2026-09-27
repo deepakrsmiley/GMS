@@ -159,6 +159,36 @@ const physicalQty = (paid, free = 0) => {
   return round2(p + f);
 };
 
+/**
+ * Purchase lines are entered as strips or pieces.
+ * Stock is always stored in pieces. A strip line multiplies by pcs-in-one-strip.
+ */
+const resolvePurchaseUnit = (raw = {}) => {
+  const quantityUnit = raw.quantityUnit === 'strip' ? 'strip' : 'pcs';
+  if (quantityUnit === 'pcs') return { quantityUnit, packSize: 1 };
+  const packSize = Number(raw.packSize);
+  if (!Number.isFinite(packSize) || packSize < 1 || Math.floor(packSize) !== packSize) {
+    throw fail('Pcs in one strip must be a whole number of at least 1');
+  }
+  if (packSize > 500) throw fail('Pcs in one strip cannot be more than 500');
+  return { quantityUnit, packSize };
+};
+
+const stockPieces = (invoiceQty, packSize = 1) =>
+  round2((Number(invoiceQty) || 0) * (Number(packSize) || 1));
+
+const invoiceUnitsOnHand = (batchPieces, packSize = 1) => {
+  const pack = Number(packSize) || 1;
+  const onHand = Math.max(0, Number(batchPieces) || 0);
+  if (pack <= 1) return round2(onHand);
+  return Math.floor((onHand + 1e-9) / pack);
+};
+
+const pieceRate = (invoiceRate, packSize = 1) => {
+  const pack = Number(packSize) || 1;
+  return round4((Number(invoiceRate) || 0) / pack);
+};
+
 const effectiveUnitCost = (netValue, units) => {
   const u = Number(units) || 0;
   if (u <= 0) return 0;
@@ -218,6 +248,10 @@ module.exports = {
   applyOverallDiscount,
   summarizePurchase,
   physicalQty,
+  resolvePurchaseUnit,
+  stockPieces,
+  invoiceUnitsOnHand,
+  pieceRate,
   effectiveUnitCost,
   stockValue,
   returnValue,

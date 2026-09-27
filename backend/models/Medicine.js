@@ -34,6 +34,7 @@ const medicineSchema = new mongoose.Schema({
   manufacturer: String,
   supplier: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier' },
   unitOfMeasure: { type: String, default: 'Nos' },
+  unitsPerStrip: { type: Number, min: 1 },
   currentStock: { type: Number, default: 0, min: [0, 'Medicine stock cannot be negative'] },
   minimumStock: { type: Number, default: 10, min: [0, 'Minimum stock cannot be negative'] },
   maximumStock: Number,

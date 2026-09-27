@@ -1980,7 +1980,9 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
         <form
           onSubmit={handleSubmit((d) => {
             if (editMed) {
-              updateMed.mutate({ id: editMed._id, data: d });
+              const data = { ...d };
+              if (!data.unitsPerStrip) delete data.unitsPerStrip;
+              updateMed.mutate({ id: editMed._id, data });
               return;
             }
 
@@ -1991,6 +1993,7 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
               initialReceivedDate,
               ...medicineData
             } = d;
+            if (!medicineData.unitsPerStrip) delete medicineData.unitsPerStrip;
 
             // Only attach an initial batch if the user actually filled it in.
             if (initialBatchNumber && initialQuantity && initialExpiryDate) {
@@ -2081,6 +2084,25 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
                 type="number"
                 step="0.01"
                 className="input-field"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Pcs in one strip
+              </label>
+              <input
+                {...register("unitsPerStrip", {
+                  setValueAs: (v) => {
+                    if (v === '' || v == null) return undefined;
+                    const n = Number(v);
+                    return Number.isFinite(n) && n >= 1 ? n : undefined;
+                  },
+                })}
+                type="number"
+                min="1"
+                step="1"
+                className="input-field"
+                placeholder="e.g. 10"
               />
             </div>
             <div>

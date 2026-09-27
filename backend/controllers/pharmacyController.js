@@ -420,7 +420,7 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
 
   if (catalog) {
     const medicines = await query
-      .select('name genericName category currentStock sellingPrice purchasePrice gstPercent unitOfMeasure mrp')
+      .select('name genericName category currentStock sellingPrice purchasePrice gstPercent unitOfMeasure unitsPerStrip mrp')
       .lean();
     return res.status(200).json({ success: true, count: medicines.length, data: medicines });
   }

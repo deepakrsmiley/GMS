@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 import Modal from '../common/Modal';
-import { inr, printPurchase } from '../../utils/purchaseMoney';
+import { inr, printPurchase, purchaseUnitText } from '../../utils/purchaseMoney';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
@@ -56,39 +56,41 @@ export default function PurchaseHistoryPanel({ onReturn }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purchase History</h2>
-        <input className="input-field text-sm sm:w-64" placeholder="Invoice, supplier, number" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
-      </div>
-      {message && <p className="text-xs text-slate-600">{message}</p>}
-      <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-xl overflow-x-auto">
-        <table className="w-full text-xs min-w-[860px]">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              {['Invoice', 'Supplier', 'Date', 'Items', 'Quantity', 'Value', 'Payment', 'Returns', 'Created by', ''].map((h) => (
-                <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <tr><td className="px-3 py-6 text-slate-400" colSpan={10}>Loading purchases…</td></tr>}
-            {!isLoading && rows.length === 0 && <tr><td className="px-3 py-6 text-slate-400" colSpan={10}>No purchases yet.</td></tr>}
-            {rows.map((row) => (
-              <tr key={row._id} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-semibold">{row.supplierInvoiceNumber}</td>
-                <td className="px-3 py-2">{row.supplierName || row.supplier?.name}</td>
-                <td className="px-3 py-2">{fmtDate(row.purchaseDate)}</td>
-                <td className="px-3 py-2 tabular-nums">{row.itemCount}</td>
-                <td className="px-3 py-2 tabular-nums">{row.totalQuantity}</td>
-                <td className="px-3 py-2 tabular-nums">{inr(row.grandTotal)}</td>
-                <td className="px-3 py-2 capitalize">{row.paymentStatus}</td>
-                <td className="px-3 py-2 capitalize">{row.status === 'cancelled' ? 'Cancelled' : row.returnStatus}</td>
-                <td className="px-3 py-2">{row.createdByName || row.createdBy?.name}</td>
-                <td className="px-3 py-2 whitespace-nowrap space-x-2">
-                  <button type="button" className="text-blue-700 font-semibold" onClick={() => setOpenId(row._id)}>View</button>
-                  {row.status === 'active' && (
-                    <>
-                      <button type="button" className="text-slate-600 font-semibold" onClick={async () => {
+      <section className="pur-card">
+        <div className="pur-toolbar">
+          <h2>Purchase history</h2>
+          <input className="input-field text-sm" placeholder="Invoice, supplier, or number" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+        </div>
+        {message && <p className="px-4 py-2 text-sm text-slate-600">{message}</p>}
+        <div className="pur-table-wrap">
+          <table className="pur-table">
+            <thead>
+              <tr>
+                {['Invoice', 'Supplier', 'Date', 'Items', 'Stock qty', 'Value', 'Payment', 'Returns', 'Created by', ''].map((h) => (
+                  <th key={h}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && <tr><td className="pur-empty" colSpan={10}>Loading purchases…</td></tr>}
+              {!isLoading && rows.length === 0 && <tr><td className="pur-empty" colSpan={10}>No purchases yet.</td></tr>}
+              {rows.map((row) => (
+                <tr key={row._id}>
+                  <td className="font-semibold">{row.supplierInvoiceNumber}</td>
+                  <td>{row.supplierName || row.supplier?.name}</td>
+                  <td>{fmtDate(row.purchaseDate)}</td>
+                  <td className="tabular-nums">{row.itemCount}</td>
+                  <td className="tabular-nums">{row.totalQuantity}</td>
+                  <td className="tabular-nums font-semibold">{inr(row.grandTotal)}</td>
+                  <td><span className={payBadge(row.paymentStatus)}>{row.paymentStatus}</span></td>
+                  <td><span className={row.status === 'cancelled' ? 'badge-red' : 'badge-gray'}>{row.status === 'cancelled' ? 'Cancelled' : row.returnStatus}</span></td>
+                  <td>{row.createdByName || row.createdBy?.name}</td>
+                  <td>
+                    <div className="pur-row-actions">
+                      <button type="button" className="pur-link" onClick={() => setOpenId(row._id)}>View</button>
+                      {row.status === 'active' && (
+                        <>
+                          <button type="button" className="pur-link pur-link--muted" onClick={async () => {
                         const full = await api.get(`/pharmacy/purchases/${row._id}`);
                         const doc = full.data.data;
                         setEdit({
@@ -100,17 +102,19 @@ export default function PurchaseHistoryPanel({ onReturn }) {
                           referenceNumber: doc.referenceNumber || '',
                           notes: doc.notes || '',
                         });
-                      }}>Edit</button>
-                      <button type="button" className="text-slate-600 font-semibold" onClick={async () => { const full = await api.get(`/pharmacy/purchases/${row._id}`); printPurchase(full.data.data); }}>Print</button>
-                      <button type="button" className="text-amber-700 font-semibold" onClick={() => onReturn?.(row._id)}>Return</button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                          }}>Edit</button>
+                          <button type="button" className="pur-link pur-link--muted" onClick={async () => { const full = await api.get(`/pharmacy/purchases/${row._id}`); printPurchase(full.data.data); }}>Print</button>
+                          <button type="button" className="pur-link pur-link--warn" onClick={() => onReturn?.(row._id)}>Return</button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <Pager page={data?.page || 1} pages={data?.pages || 1} onPage={setPage} />
 
       <Modal isOpen={!!openId} onClose={() => setOpenId(null)} title="Purchase Information" size="xl">
@@ -124,10 +128,10 @@ export default function PurchaseHistoryPanel({ onReturn }) {
               <Info label="Payment" value={detail.data.paymentStatus} />
               <Info label="Status" value={detail.data.status} />
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs min-w-[720px]">
-                <thead className="text-slate-500">
-                  <tr>{['Medicine', 'Batch', 'Expiry', 'Qty', 'Rate', 'Discount', 'GST', 'Total', 'Returned', 'Remaining'].map((h) => <th key={h} className="py-1 text-left">{h}</th>)}</tr>
+            <div className="pur-table-wrap">
+              <table className="pur-table">
+                <thead>
+                  <tr>{['Medicine', 'Batch', 'Expiry', 'Qty', 'Rate', 'Discount', 'GST', 'Total', 'Returned', 'Remaining'].map((h) => <th key={h}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {(detail.data.items || []).map((item) => (
@@ -135,8 +139,8 @@ export default function PurchaseHistoryPanel({ onReturn }) {
                       <td className="py-2">{item.medicineName}</td>
                       <td>{item.batchNumber}</td>
                       <td>{fmtDate(item.expiryDate)}</td>
-                      <td className="tabular-nums">{item.quantity}{item.freeQuantity ? ` +${item.freeQuantity} free` : ''}</td>
-                      <td className="tabular-nums">{inr(item.purchaseRate)}</td>
+                      <td className="tabular-nums">{purchaseUnitText(item)}{item.freeQuantity ? ` + ${purchaseUnitText(item, item.freeQuantity)} free` : ''}</td>
+                      <td className="tabular-nums">{inr(item.purchaseRate)}{item.quantityUnit === 'strip' ? ' / strip' : ''}</td>
                       <td className="tabular-nums">{inr(item.discountAmount)}</td>
                       <td>{item.gstPercent}%</td>
                       <td className="tabular-nums">{inr(item.lineTotal)}</td>
@@ -187,6 +191,12 @@ export default function PurchaseHistoryPanel({ onReturn }) {
       </Modal>
     </div>
   );
+}
+
+function payBadge(status) {
+  if (status === 'paid') return 'badge-green capitalize';
+  if (status === 'partial') return 'badge-yellow capitalize';
+  return 'badge-gray capitalize';
 }
 
 function Info({ label, value }) {

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 import Modal from '../common/Modal';
-import { inr, RETURN_REASONS } from '../../utils/purchaseMoney';
+import { inr, RETURN_REASONS, purchaseUnitText } from '../../utils/purchaseMoney';
 
 const todayInput = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
@@ -111,65 +111,72 @@ export default function PurchaseReturnPanel({ purchaseId }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-xl p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Purchase Return</h2>
-        <p className="text-xs text-slate-500">Return value uses the invoice purchase rate, not the selling price.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <label className="text-xs text-slate-500">Supplier
-            <select className="input-field text-sm mt-1" value={supplier} onChange={(e) => { setSupplier(e.target.value); setSelectedId(''); }}>
+      <section className="pur-card">
+        <header className="pur-card__head">
+          <div>
+            <h2>Return to supplier</h2>
+            <p>Pick the original invoice, then enter how many strips or pieces to send back. Value uses the purchase rate.</p>
+          </div>
+        </header>
+        <div className="pur-card__body">
+        <div className="pur-grid">
+          <label className="pur-field pur-field--wide">Supplier
+            <select className="input-field text-sm" value={supplier} onChange={(e) => { setSupplier(e.target.value); setSelectedId(''); }}>
               <option value="">Select supplier</option>
               {(suppliersData?.data || []).map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
             </select>
           </label>
-          <label className="text-xs text-slate-500">Original purchase invoice
-            <select className="input-field text-sm mt-1" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+          <label className="pur-field pur-field--wide">Original invoice
+            <select className="input-field text-sm" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
               <option value="">Select invoice</option>
               {(invoices.data?.data || []).map((row) => (
                 <option key={row._id} value={row._id}>{row.supplierInvoiceNumber} · {inr(row.grandTotal)}</option>
               ))}
             </select>
           </label>
-          <label className="text-xs text-slate-500">Return date
-            <input type="date" className="input-field text-sm mt-1" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+          <label className="pur-field">Return date
+            <input type="date" className="input-field text-sm" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
           </label>
-          <label className="text-xs text-slate-500">Return reason
-            <select className="input-field text-sm mt-1" value={reason} onChange={(e) => setReason(e.target.value)}>
+          <label className="pur-field">Reason
+            <select className="input-field text-sm" value={reason} onChange={(e) => setReason(e.target.value)}>
               {RETURN_REASONS.map((item) => <option key={item}>{item}</option>)}
             </select>
           </label>
-          <label className="text-xs text-slate-500 sm:col-span-2 lg:col-span-4">Notes
-            <input className="input-field text-sm mt-1" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supplier agreed to replace this batch." />
+          <label className="pur-field pur-span-4">Notes
+            <input className="input-field text-sm" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supplier agreed to replace this batch." />
           </label>
         </div>
-      </div>
+        </div>
+      </section>
 
       {lines.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-xl overflow-x-auto">
-          <table className="w-full text-xs min-w-[760px]">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>{['Medicine', 'Batch', 'Available', 'Return qty', 'Purchase rate', 'Return value'].map((h) => <th key={h} className="px-3 py-2 text-left">{h}</th>)}</tr>
+        <div className="pur-card pur-table-wrap">
+          <table className="pur-table">
+            <thead>
+              <tr>{['Medicine', 'Batch', 'Available', 'Return qty', 'Purchase rate', 'Return value'].map((h) => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {lines.map((item) => {
                 const entered = Number(qty[item._id]) || 0;
                 const bad = entered > (item.availableToReturn || 0);
                 return (
-                  <tr key={item._id} className="border-t border-slate-100">
-                    <td className="px-3 py-2 font-semibold">{item.medicineName}</td>
-                    <td className="px-3 py-2">{item.batchNumber}</td>
-                    <td className="px-3 py-2 tabular-nums">{item.availableToReturn}</td>
-                    <td className="px-3 py-2">
+                  <tr key={item._id}>
+                    <td className="font-semibold">{item.medicineName}</td>
+                    <td>{item.batchNumber}</td>
+                    <td className="tabular-nums">{purchaseUnitText(item, item.availableToReturn)}</td>
+                    <td>
                       <input
                         type="number"
                         min="0"
                         className={`input-field text-xs w-24 ${bad ? 'border-red-400' : ''}`}
                         value={qty[item._id] || ''}
+                        placeholder={item.quantityUnit === 'strip' ? 'Strips' : 'Pcs'}
                         onChange={(e) => setQty({ ...qty, [item._id]: e.target.value })}
                       />
                       {bad && <p className="text-red-600 mt-1">Return quantity cannot exceed available quantity.</p>}
                     </td>
-                    <td className="px-3 py-2 tabular-nums">{inr(item.purchaseRate)}</td>
-                    <td className="px-3 py-2 tabular-nums font-semibold">{inr(entered * (item.purchaseRate || 0))}</td>
+                    <td className="tabular-nums">{inr(item.purchaseRate)}{item.quantityUnit === 'strip' ? ' / strip' : ''}</td>
+                    <td className="tabular-nums font-semibold">{inr(entered * (item.purchaseRate || 0))}</td>
                   </tr>
                 );
               })}
@@ -179,7 +186,7 @@ export default function PurchaseReturnPanel({ purchaseId }) {
       )}
 
       {draft.length > 0 && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+        <div className="pur-card pur-card__body">
           <h3 className="text-sm font-semibold text-slate-800">Return Summary</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3 text-xs">
             <Sum label="Original quantity" value={summary.originalQuantity} />

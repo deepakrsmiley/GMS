@@ -21,6 +21,10 @@ const {
   parseExpiry,
   summarizePurchase,
   physicalQty,
+  resolvePurchaseUnit,
+  stockPieces,
+  invoiceUnitsOnHand,
+  pieceRate,
   effectiveUnitCost,
   stockValue,
   returnValue,
@@ -152,6 +156,7 @@ const prepareLines = async (rawItems, gstMode) => {
 
     const freeQuantity = Number(raw.freeQuantity || 0);
     if (freeQuantity < 0) fail('Free quantity cannot be negative');
+    const unit = resolvePurchaseUnit(raw);
     const expiryDate = parseExpiry(raw.expiryDate);
     const sellingPrice = Number(medicine.sellingPrice) || 0;
     drafts.push({
@@ -160,6 +165,8 @@ const prepareLines = async (rawItems, gstMode) => {
       expiryDate,
       quantity: raw.quantity,
       freeQuantity,
+      quantityUnit: unit.quantityUnit,
+      packSize: unit.packSize,
       purchaseRate: raw.purchaseRate,
       discount: raw.discountAmount != null ? raw.discountAmount : raw.discount,
       gstPercent: raw.gstPercent != null && raw.gstPercent !== '' ? raw.gstPercent : (medicine.gstPercent || 0),
@@ -177,12 +184,15 @@ const prepareLines = async (rawItems, gstMode) => {
   return drafts.map((draft, index) => {
     const priced = summary.lines[index];
     const units = physicalQty(priced.quantity, draft.freeQuantity);
+    const stockUnits = stockPieces(units, draft.packSize);
     return {
       ...draft,
       ...priced,
       freeQuantity: draft.freeQuantity,
       physical: units,
-      effectiveUnitCost: effectiveUnitCost(priced.grossAmount, units),
+      stockUnits,
+      pieceRate: pieceRate(priced.purchaseRate, draft.packSize),
+      effectiveUnitCost: effectiveUnitCost(priced.grossAmount, stockUnits),
     };
   });
 };
@@ -198,10 +208,10 @@ const applyReceipts = async (lines, { supplierInvoice, receivedDate }) => {
       const qtyBefore = medicine.currentStock;
       const result = receivePurchaseBatch(medicine, {
         batchNumber: line.batchNumber,
-        paidQuantity: line.quantity,
-        freeQuantity: line.freeQuantity,
+        paidQuantity: stockPieces(line.quantity, line.packSize),
+        freeQuantity: stockPieces(line.freeQuantity, line.packSize),
         expiryDate: line.expiryDate,
-        purchaseRate: line.purchaseRate,
+        purchaseRate: line.pieceRate,
         supplierInvoice,
         receivedDate,
       });
@@ -216,7 +226,7 @@ const applyReceipts = async (lines, { supplierInvoice, receivedDate }) => {
         medicineId: medicine._id,
         batchNumber: result.batch.batchNumber,
         physical: result.physical,
-        free: line.freeQuantity,
+        free: stockPieces(line.freeQuantity, line.packSize),
         merged: result.merged,
       });
       line.stock = {
@@ -245,11 +255,12 @@ const decoratePurchase = async (doc) => {
     const med = byId.get(String(item.medicine?._id || item.medicine));
     const batch = med ? findActiveBatch(med, item.batchNumber) : null;
     const batchQty = batch ? Number(batch.quantity) || 0 : 0;
+    const pack = item.quantityUnit === 'strip' ? (Number(item.packSize) || 1) : 1;
     const info = returnableQuantity({
       purchasedQty: item.quantity,
       freeQty: item.freeQuantity,
       returnedQty: item.returnedQuantity,
-      batchQty,
+      batchQty: invoiceUnitsOnHand(batchQty, pack),
     });
     const rate = Number(item.purchaseRate) || 0;
     const batchRate = batch && batch.purchasePrice != null ? Number(batch.purchasePrice) : rate;
@@ -325,7 +336,7 @@ exports.createPurchase = async (req) => {
     return {
       ...line,
       ...priced,
-      effectiveUnitCost: effectiveUnitCost(priced.grossAmount, line.physical),
+      effectiveUnitCost: effectiveUnitCost(priced.grossAmount, line.stockUnits),
     };
   });
 
@@ -357,6 +368,8 @@ exports.createPurchase = async (req) => {
         expiryDate: line.expiryDate,
         quantity: line.quantity,
         freeQuantity: line.freeQuantity,
+        quantityUnit: line.quantityUnit,
+        packSize: line.packSize,
         purchaseRate: line.purchaseRate,
         sellingPrice: line.sellingPrice,
         discountAmount: line.discountAmount,
@@ -382,7 +395,7 @@ exports.createPurchase = async (req) => {
       igstTotal: summary.igstTotal,
       netPurchaseValue: summary.netPurchaseValue,
       grandTotal: summary.grandTotal,
-      totalQuantity: round2(lines.reduce((s, line) => s + line.physical, 0)),
+      totalQuantity: round2(lines.reduce((s, line) => s + line.stockUnits, 0)),
       returnStatus: 'none',
       status: 'active',
       ...who,
@@ -400,10 +413,10 @@ exports.createPurchase = async (req) => {
       type: 'purchase',
       quantityBefore: line.stock.qtyBefore,
       quantityAfter: line.stock.qtyAfter,
-      quantityChanged: line.physical,
+      quantityChanged: line.stockUnits,
       batchQuantityBefore: line.stock.batchQtyBefore,
       batchQuantityAfter: line.stock.batchQtyAfter,
-      unitPrice: line.purchaseRate,
+      unitPrice: line.pieceRate,
       totalValue: line.grossAmount,
       supplier: supplier._id,
       referenceId: purchase._id,
@@ -520,14 +533,15 @@ const releasePurchaseStock = async (purchase, req, remarks) => {
     const medicine = await Medicine.findById(item.medicine);
     if (!medicine) fail(`Medicine for ${item.medicineName} is no longer available`, 409);
     const batch = findActiveBatch(medicine, item.batchNumber);
-    const physical = physicalQty(item.quantity, item.freeQuantity);
+    const pack = item.quantityUnit === 'strip' ? (Number(item.packSize) || 1) : 1;
+    const physical = stockPieces(physicalQty(item.quantity, item.freeQuantity), pack);
     if (!batch || Number(batch.quantity) < physical) {
       fail(`Some of ${item.medicineName} batch ${item.batchNumber} has already been used. Use Purchase Return for the remaining stock.`);
     }
     const qtyBefore = medicine.currentStock;
     const batchBefore = Number(batch.quantity);
     batch.quantity = round2(batchBefore - physical);
-    batch.freeQuantity = Math.max(0, (Number(batch.freeQuantity) || 0) - (Number(item.freeQuantity) || 0));
+    batch.freeQuantity = Math.max(0, (Number(batch.freeQuantity) || 0) - stockPieces(item.freeQuantity, pack));
     syncCurrentStock(medicine);
     medicine.markModified('batches');
     await medicine.save();
@@ -540,7 +554,7 @@ const releasePurchaseStock = async (purchase, req, remarks) => {
       quantityChanged: -physical,
       batchQuantityBefore: batchBefore,
       batchQuantityAfter: batch.quantity,
-      unitPrice: item.purchaseRate,
+      unitPrice: pieceRate(item.purchaseRate, pack),
       totalValue: -Number(item.grossAmount || 0),
       supplier: purchase.supplier,
       referenceId: purchase._id,
@@ -601,15 +615,17 @@ const buildReturnLines = async (purchase, requestedItems) => {
     if (!medicine) fail(`${item.medicineName} is no longer in the medicine master`, 404);
     const batch = findActiveBatch(medicine, item.batchNumber);
     const batchQty = batch ? Number(batch.quantity) || 0 : 0;
+    const pack = item.quantityUnit === 'strip' ? (Number(item.packSize) || 1) : 1;
     const info = returnableQuantity({
       purchasedQty: item.quantity,
       freeQty: item.freeQuantity,
       returnedQty: item.returnedQuantity,
-      batchQty,
+      batchQty: invoiceUnitsOnHand(batchQty, pack),
     });
     assertReturnQuantity(qty, info.available, { remainingOnInvoice: info.remainingOnInvoice });
 
     const rate = Number(item.purchaseRate) || 0;
+    const stockQuantity = stockPieces(qty, pack);
     const value = returnValue(qty, rate);
     const returnedAfter = round2((Number(item.returnedQuantity) || 0) + qty);
     const remaining = round2(physicalQty(item.quantity, item.freeQuantity) - returnedAfter);
@@ -625,6 +641,9 @@ const buildReturnLines = async (purchase, requestedItems) => {
       originalValue: stockValue(item.quantity, rate),
       availableQuantity: info.available,
       returnQuantity: qty,
+      quantityUnit: item.quantityUnit === 'strip' ? 'strip' : 'pcs',
+      packSize: pack,
+      stockQuantity,
       purchaseRate: rate,
       sellingPrice: Number(item.sellingPrice) || Number(medicine.sellingPrice) || 0,
       returnValue: value,
@@ -689,12 +708,12 @@ exports.createReturn = async (req) => {
   for (const line of lines) {
     const medicine = line.medicine;
     const batch = findActiveBatch(medicine, line.batchNumber);
-    if (!batch || Number(batch.quantity) < line.returnQuantity) {
+    if (!batch || Number(batch.quantity) < line.stockQuantity) {
       fail('Return quantity cannot exceed available quantity.');
     }
     const qtyBefore = medicine.currentStock;
     const batchBefore = Number(batch.quantity);
-    batch.quantity = round2(batchBefore - line.returnQuantity);
+    batch.quantity = round2(batchBefore - line.stockQuantity);
     syncCurrentStock(medicine);
     medicine.markModified('batches');
     await medicine.save();
@@ -731,6 +750,9 @@ exports.createReturn = async (req) => {
       originalQuantity: line.originalQuantity,
       availableQuantity: line.availableQuantity,
       returnQuantity: line.returnQuantity,
+      quantityUnit: line.quantityUnit,
+      packSize: line.packSize,
+      stockQuantity: line.stockQuantity,
       purchaseRate: line.purchaseRate,
       sellingPrice: line.sellingPrice,
       returnValue: line.returnValue,
@@ -748,7 +770,7 @@ exports.createReturn = async (req) => {
       const medicine = await Medicine.findById(line.medicine._id);
       if (!medicine) continue;
       const batch = findActiveBatch(medicine, line.batchNumber);
-      if (batch) batch.quantity = round2((Number(batch.quantity) || 0) + line.returnQuantity);
+      if (batch) batch.quantity = round2((Number(batch.quantity) || 0) + line.stockQuantity);
       syncCurrentStock(medicine);
       medicine.markModified('batches');
       await medicine.save();
@@ -767,10 +789,10 @@ exports.createReturn = async (req) => {
       type: 'purchase_return',
       quantityBefore: line.qtyBefore,
       quantityAfter: line.qtyAfter,
-      quantityChanged: -line.returnQuantity,
+      quantityChanged: -line.stockQuantity,
       batchQuantityBefore: line.batchQtyBefore,
       batchQuantityAfter: line.batchQtyAfter,
-      unitPrice: line.purchaseRate,
+      unitPrice: pieceRate(line.purchaseRate, line.packSize),
       totalValue: -line.returnValue,
       supplier: purchase.supplier,
       referenceId: doc._id,
@@ -866,11 +888,15 @@ exports.cancelReturn = async (req) => {
     if (!batch) fail(`Batch ${item.batchNumber} no longer exists, so this return cannot be reversed`);
     const qtyBefore = medicine.currentStock;
     const batchBefore = Number(batch.quantity) || 0;
-    batch.quantity = round2(batchBefore + item.returnQuantity);
+    const purchaseItem = purchase.items.id(item.purchaseItemId);
+    const pack = purchaseItem?.quantityUnit === 'strip' ? (Number(purchaseItem.packSize) || 1) : 1;
+    const pieces = Number(item.stockQuantity) > 0
+      ? Number(item.stockQuantity)
+      : stockPieces(item.returnQuantity, pack);
+    batch.quantity = round2(batchBefore + pieces);
     syncCurrentStock(medicine);
     medicine.markModified('batches');
     await medicine.save();
-    const purchaseItem = purchase.items.id(item.purchaseItemId);
     if (purchaseItem) {
       purchaseItem.returnedQuantity = round2(Math.max(0, (purchaseItem.returnedQuantity || 0) - item.returnQuantity));
     }
@@ -880,10 +906,10 @@ exports.cancelReturn = async (req) => {
       type: 'purchase_return',
       quantityBefore: qtyBefore,
       quantityAfter: medicine.currentStock,
-      quantityChanged: item.returnQuantity,
+      quantityChanged: pieces,
       batchQuantityBefore: batchBefore,
       batchQuantityAfter: batch.quantity,
-      unitPrice: item.purchaseRate,
+      unitPrice: pieceRate(item.purchaseRate, pack),
       totalValue: item.returnValue,
       supplier: doc.supplier,
       referenceId: doc._id,

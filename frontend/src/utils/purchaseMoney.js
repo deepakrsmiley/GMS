@@ -70,6 +70,17 @@ export const previewInvoice = (lines, overallDiscount = 0, gstMode = 'intra') =>
   };
 };
 
+export const purchaseUnitText = (item, qty) => {
+  const n = qty == null ? Number(item?.quantity) || 0 : Number(qty) || 0;
+  if (item?.quantityUnit === 'strip') {
+    const pack = Number(item.packSize) || 0;
+    const pcs = pack ? Math.round((n * pack + Number.EPSILON) * 100) / 100 : null;
+    const strips = `${n} strip${n === 1 ? '' : 's'}`;
+    return pcs != null ? `${strips} (${pcs} pcs)` : strips;
+  }
+  return `${n} pcs`;
+};
+
 const esc = (v) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 const openPrint = (title, body) => {
@@ -97,9 +108,8 @@ export const printPurchase = (purchase) => {
     <td>${esc(item.medicineName)}</td>
     <td>${esc(item.batchNumber)}</td>
     <td>${item.expiryDate ? new Date(item.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</td>
-    <td class="right">${item.quantity}</td>
-    <td class="right">${item.freeQuantity || 0}</td>
-    <td class="right">${inr(item.purchaseRate)}</td>
+    <td class="right">${esc(purchaseUnitText(item))}${item.freeQuantity ? ` + ${esc(purchaseUnitText(item, item.freeQuantity))} free` : ''}</td>
+    <td class="right">${inr(item.purchaseRate)}${item.quantityUnit === 'strip' ? ' / strip' : ' / pc'}</td>
     <td class="right">${inr(item.discountAmount)}</td>
     <td class="right">${item.gstPercent || 0}%</td>
     <td class="right">${inr(item.lineTotal)}</td>
@@ -109,7 +119,7 @@ export const printPurchase = (purchase) => {
     <p>${esc(purchase.supplier?.name || purchase.supplierName)} · ${esc(purchase.supplierInvoiceNumber)}</p>
     <p>${purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString('en-IN') : ''} · ${esc(purchase.purchaseNumber || '')}</p>
     <table>
-      <thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="right">Qty</th><th class="right">Free</th><th class="right">Rate</th><th class="right">Discount</th><th class="right">GST</th><th class="right">Total</th></tr></thead>
+      <thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Discount</th><th class="right">GST</th><th class="right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="totals">
@@ -125,8 +135,8 @@ export const printReturn = (doc) => {
   const rows = (doc.items || []).map((item) => `<tr>
     <td>${esc(item.medicineName)}</td>
     <td>${esc(item.batchNumber)}</td>
-    <td class="right">${item.returnQuantity}</td>
-    <td class="right">${inr(item.purchaseRate)}</td>
+    <td class="right">${esc(purchaseUnitText(item, item.returnQuantity))}</td>
+    <td class="right">${inr(item.purchaseRate)}${item.quantityUnit === 'strip' ? ' / strip' : ' / pc'}</td>
     <td class="right">${inr(item.returnValue)}</td>
   </tr>`).join('');
   openPrint(doc.returnNumber, `
