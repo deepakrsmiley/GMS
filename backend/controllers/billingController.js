@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const asyncHandler = require("../utils/asyncHandler");
 const ErrorResponse = require("../utils/errorResponse");
 const logger = require("../utils/logger");
@@ -472,11 +473,19 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   const medicineItems = getMedicineItems(payload.items);
   const newMeds = stockableMedicineItems(payload.items);
   const alreadyIssuedMeds = medicineItems.length - newMeds.length;
+  const billId = new mongoose.Types.ObjectId();
 
   let deductedStock = [];
   if (newMeds.length > 0) {
-    await validateMedicineStock(newMeds);
-    deductedStock = await deductMedicineStock(newMeds, req.user._id);
+    try {
+      await validateMedicineStock(newMeds);
+      deductedStock = await deductMedicineStock(newMeds, req.user._id, {
+        referenceId: billId,
+        referenceModel: "Bill",
+      });
+    } catch (error) {
+      return next(toBillError(error));
+    }
   }
 
   let bill;
@@ -503,6 +512,7 @@ exports.createBill = asyncHandler(async (req, res, next) => {
         paidAt: new Date(),
       }];
     }
+    payload._id = billId;
     bill = await Bill.create(payload);
   } catch (error) {
     await restoreMedicineStock(deductedStock, {
@@ -597,7 +607,11 @@ exports.updateBill = asyncHandler(async (req, res, next) => {
         }
         if (stockDeduct.length) {
           await validateMedicineStock(stockDeduct);
-          await deductMedicineStock(stockDeduct, req.user._id);
+          await deductMedicineStock(stockDeduct, req.user._id, {
+            referenceId: bill._id,
+            referenceModel: "Bill",
+            remarks: `Bill ${bill.billNumber}`,
+          });
         }
         stockAdjusted = true;
       } catch (error) {

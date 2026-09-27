@@ -104,17 +104,25 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
     next();
   });
 
+  const finite = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
   billSchema.pre('save', function (next) {
-  this.subtotal = this.items.reduce(
-    (sum, item) => sum + item.unitPrice * item.quantity,
+  this.subtotal = (this.items || []).reduce(
+    (sum, item) => sum + finite(item.unitPrice) * finite(item.quantity),
     0
   );
 
-  this.totalGST = this.items.reduce(
-    (sum, item) => sum + (item.gstAmount || 0),
+  this.totalGST = (this.items || []).reduce(
+    (sum, item) => sum + finite(item.gstAmount),
     0
   );
 
+  this.discount = finite(this.discount);
+  this.paidAmount = finite(this.paidAmount);
+  this.advanceAmount = finite(this.advanceAmount);
   this.discountAmount =
     (this.subtotal + this.totalGST) * (this.discount / 100);
 

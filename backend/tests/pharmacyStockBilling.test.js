@@ -66,6 +66,22 @@ describe('editing an older bill only moves the quantity that changed', () => {
     assert.equal(deduct.length, 0);
   });
 
+  it('keeps type on the delta so a bill edit actually moves stock', () => {
+    const oldItems = [
+      { type: 'consultation', description: 'Doctor consultation fee', quantity: 1, unitPrice: 150 },
+    ];
+    const next = [
+      ...oldItems,
+      { type: 'medicine', medicine: 'med-iv', batch: 'W/56', quantity: 1, unitPrice: 180, description: 'IV SET' },
+    ];
+    const { deduct, restore } = stockQuantityDeltas(oldItems, next);
+    assert.equal(restore.length, 0);
+    assert.equal(deduct.length, 1);
+    assert.equal(deduct[0].type, 'medicine');
+    assert.equal(deduct[0].quantity, 1);
+    assert.equal(stockableMedicineItems(deduct).length, 1);
+  });
+
   it('deducts only the extra quantity and restores only the removed quantity', () => {
     const next = [
       { type: 'medicine', medicine: 'med-a', batch: 'B1', quantity: 12, referenceModel: 'Medicine' },

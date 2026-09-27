@@ -60,9 +60,10 @@ const validateMedicineStock = async (items) => {
   }
 };
 
-const deductMedicineStock = async (items, userId = null) => {
+const deductMedicineStock = async (items, userId = null, meta = {}) => {
   const deducted = [];
 
+  try {
   for (const item of stockableMedicineItems(items)) {
     const quantity = Number(item.quantity || 0);
     const medicine = await Medicine.findById(item.medicine);
@@ -91,7 +92,16 @@ const deductMedicineStock = async (items, userId = null) => {
     medicine.markModified('batches');
     await medicine.save({ validateBeforeSave: true });
 
+    deducted.push({
+      medicine: item.medicine,
+      type: 'medicine',
+      quantity,
+      batch: primaryBatch,
+      name: medicine.name,
+    });
+
     if (userId) {
+      const batchNote = primaryBatch ? `batch ${primaryBatch}` : 'FEFO';
       await logStockMovement({
         medicine,
         batchNumber: primaryBatch,
@@ -101,25 +111,33 @@ const deductMedicineStock = async (items, userId = null) => {
         quantityChanged: -quantity,
         unitPrice: item.unitPrice || medicine.sellingPrice,
         userId,
-        remarks: preferredBatch
-          ? `Billed medicine deduction (batch ${preferredBatch})`
-          : 'Billed medicine deduction',
+        referenceId: meta.referenceId,
+        referenceModel: meta.referenceModel || 'Bill',
+        remarks: meta.remarks
+          ? `${meta.remarks} (${batchNote})`
+          : `Billed medicine deduction (${batchNote})`,
       });
     }
 
     item.batch = primaryBatch || item.batch;
     item.batchNumber = item.batchNumber || primaryBatch || item.batch;
     item.name = item.name || medicine.name;
-
-    deducted.push({
-      medicine: item.medicine,
-      quantity,
-      batch: primaryBatch,
-      name: medicine.name,
-    });
   }
 
   return deducted;
+  } catch (error) {
+    if (deducted.length) {
+      try {
+        await restoreMedicineStock(deducted, {
+          userId,
+          remarks: 'Stock restored — deduction rolled back',
+          referenceId: meta.referenceId,
+          referenceModel: meta.referenceModel || 'Bill',
+        });
+      } catch (_) { /* keep the original deduction error */ }
+    }
+    throw error;
+  }
 };
 
 const restoreMedicineStock = async (deducted = [], meta = {}) => {
@@ -169,6 +187,7 @@ const stockQuantityDeltas = (oldItems = [], newItems = []) => {
         medicine: item.medicine?._id || item.medicine,
         batch: item.batch || item.batchNumber,
         batchNumber: item.batchNumber || item.batch,
+        type: 'medicine',
         description: item.description || item.name,
         unitPrice: item.unitPrice,
         quantity: (prev?.quantity || 0) + Number(item.quantity || 0),
