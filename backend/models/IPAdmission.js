@@ -156,6 +156,7 @@ const ipAdmissionSchema = new mongoose.Schema({
     emergencyContact: String,
     allergyAlert: String, // Override / extra allergy line at top
     addressNote: String, // Optional address override line
+    printPatient: { type: mongoose.Schema.Types.Mixed }, // Editable name/age/IP/dates/etc on the paper
     rchId: String,
     dama: { type: String, enum: ['Yes', 'No'], default: 'No' },
     referred: { type: String, enum: ['Yes', 'No'], default: 'No' },

@@ -151,6 +151,49 @@ const fitPdfText = (doc, s, maxW) => {
   return t;
 };
 
+/** Identity fields on the discharge paper. Missing keys stay ON so older summaries still print them. */
+const PATIENT_HEADER_PRINT_KEYS = [
+  'patientName',
+  'ageSex',
+  'ipNo',
+  'doa',
+  'dod',
+  'consultant',
+  'department',
+  'address',
+  'phone',
+  'uhid',
+];
+
+const dischargeSectionOn = (printSections, key) => {
+  if (printSections == null || typeof printSections !== 'object' || Array.isArray(printSections)) return true;
+  if (printSections[key] === undefined && PATIENT_HEADER_PRINT_KEYS.includes(key)) return true;
+  return Boolean(printSections[key]);
+};
+
+const pairDischargeInfoRows = (pairs) => {
+  const rows = [];
+  for (let i = 0; i < pairs.length; i += 2) {
+    const a = pairs[i];
+    const b = pairs[i + 1];
+    rows.push(b ? [a[0], a[1], b[0], b[1]] : [a[0], a[1]]);
+  }
+  return rows;
+};
+
+const pickDischargeHeader = (override, fallback) => {
+  const o = override == null ? '' : String(override).trim();
+  if (o) return o;
+  const f = fallback == null ? '' : String(fallback).trim();
+  return f;
+};
+
+const formatDischargePhone = (value) => {
+  const raw = pickDischargeHeader(value, '');
+  if (!raw) return '';
+  return /^ph\s*:/i.test(raw) ? raw : `PH: ${raw}`;
+};
+
 module.exports = {
   attachDischargeFonts,
   pdfSafe,
@@ -158,4 +201,9 @@ module.exports = {
   setDsFont,
   dsText,
   fitPdfText,
+  PATIENT_HEADER_PRINT_KEYS,
+  dischargeSectionOn,
+  pairDischargeInfoRows,
+  pickDischargeHeader,
+  formatDischargePhone,
 };

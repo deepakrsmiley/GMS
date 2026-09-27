@@ -3,7 +3,7 @@ const { renderBrandingHeader, fetchImageBuffer } = require('./pdfBranding');
 const brandingService = require('../services/brandingService');
 const { generatePremiumInvoicePDF, generatePremiumThermalPrint } = require('./invoicePdfGenerator');
 const { formatIstDate, formatIstDateTime } = require('./istDay');
-const { attachDischargeFonts, pdfSafe, setDsFont, dsText, fitPdfText } = require('./dischargePrint');
+const { attachDischargeFonts, pdfSafe, setDsFont, dsText, fitPdfText, dischargeSectionOn, pairDischargeInfoRows, pickDischargeHeader, formatDischargePhone } = require('./dischargePrint');
 
 const PAGE = { width: 595.28, height: 841.89 };
 const MARGIN = 45;
@@ -517,6 +517,7 @@ const drawDischargeSection = (doc, title, content, state) => {
 };
 
 const drawDischargeInfoGrid = (doc, rows, state) => {
+  if (!rows.length) return;
   const left = DS_MARGIN + DS_INNER;
   const width = PAGE.width - (DS_MARGIN + DS_INNER) * 2;
   const rowH = 16;
@@ -525,9 +526,12 @@ const drawDischargeInfoGrid = (doc, rows, state) => {
   const top = doc.y;
   const col2X = left + width / 2;
   const labelW = 76;
+  const hasRight = rows.some((row) => row[2]);
 
   doc.rect(left, top, width, totalH).lineWidth(0.9).strokeColor('#111').stroke();
-  doc.moveTo(col2X, top).lineTo(col2X, top + totalH).lineWidth(0.6).strokeColor('#333').stroke();
+  if (hasRight) {
+    doc.moveTo(col2X, top).lineTo(col2X, top + totalH).lineWidth(0.6).strokeColor('#333').stroke();
+  }
   for (let i = 1; i < rows.length; i += 1) {
     const y = top + rowH * i;
     doc.moveTo(left, y).lineTo(left + width, y).lineWidth(0.5).strokeColor('#555').stroke();
@@ -537,9 +541,10 @@ const drawDischargeInfoGrid = (doc, rows, state) => {
     const y = top + i * rowH + 4;
     const half = width / 2 - 10;
     const valW = half - labelW;
+    const leftValW = hasRight ? valW : width - labelW - 12;
     doc.fontSize(7.5).fillColor('#111');
     dsText(doc, `${row[0]}:`, left + 4, y, { bold: true, width: labelW, lineBreak: false });
-    dsText(doc, fitPdfText(doc, row[1], valW), left + 4 + labelW, y, { width: valW, lineBreak: false });
+    dsText(doc, fitPdfText(doc, row[1], leftValW), left + 4 + labelW, y, { width: leftValW, lineBreak: false });
     if (row[2]) {
       dsText(doc, `${row[2]}:`, col2X + 4, y, { bold: true, width: labelW, lineBreak: false });
       dsText(doc, fitPdfText(doc, row[3], valW), col2X + 4 + labelW, y, { width: valW, lineBreak: false });
@@ -555,10 +560,7 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
   const patient = admission.patient || {};
   const ma = d.maternityAdvice || {};
   const ps = d.printSections;
-  const sectionOn = (key) => {
-    if (ps == null || typeof ps !== 'object' || Array.isArray(ps)) return true;
-    return Boolean(ps[key]);
-  };
+  const sectionOn = (key) => dischargeSectionOn(ps, key);
   const includeMaternity = sectionOn('maternityAdvice') && !!(ma.motherCondition || ma.babyCondition || (ma.adviceChecked || []).length);
   const state = { pageNo: 1 };
 
@@ -604,56 +606,87 @@ const generateDischargeSummaryPDF = async (admission, res, branding) => {
     .lineWidth(0.75).strokeColor('#111').stroke();
   doc.moveDown(0.28);
 
-  const consultant = admission.doctor?.name
-    ? `DR.${pdfSafe(admission.doctor.name).replace(/^dr\.?\s*/i, '').toUpperCase()}${admission.doctor.specialization ? ` ${pdfSafe(admission.doctor.specialization)}` : ''}`
-    : '';
-  const ageSex = [
-    patient.age != null ? `${patient.age} YRS` : '',
-    patient.gender ? String(patient.gender).toUpperCase() : '',
-  ].filter(Boolean).join(' / ');
+  const pp = (d.printPatient && typeof d.printPatient === 'object' && !Array.isArray(d.printPatient))
+    ? d.printPatient
+    : {};
+  const consultant = pickDischargeHeader(
+    pp.consultant,
+    admission.doctor?.name
+      ? `DR.${pdfSafe(admission.doctor.name).replace(/^dr\.?\s*/i, '').toUpperCase()}${admission.doctor.specialization ? ` ${pdfSafe(admission.doctor.specialization)}` : ''}`
+      : '',
+  );
+  const ageSex = pickDischargeHeader(
+    pp.ageSex,
+    [
+      patient.age != null ? `${patient.age} YRS` : '',
+      patient.gender ? String(patient.gender).toUpperCase() : '',
+    ].filter(Boolean).join(' / '),
+  );
+  const patientName = pickDischargeHeader(pp.name, patient.name || '');
+  const ipNo = pickDischargeHeader(pp.ipNo, admission.admissionNumber || '');
+  const doaText = pickDischargeHeader(pp.doa, fmtDischargeDT(admission.admissionDate));
+  const dodText = pickDischargeHeader(pp.dod, admission.dischargeDate ? fmtDischargeDT(admission.dischargeDate) : '');
+  const department = pickDischargeHeader(pp.department, admission.department?.name || '');
 
-  drawDischargeInfoGrid(doc, [
-    ['PATIENT NAME', pdfSafe(patient.name || '').toUpperCase(), 'D.O.A', fmtDischargeDT(admission.admissionDate)],
-    ['AGE/SEX', ageSex, 'D.O.DELIVERY', sectionOn('deliveryDate') ? fmtDischargeDT(d.deliveryDate) : ''],
-    ['IP.NO', admission.admissionNumber || '', 'D.O.D', admission.dischargeDate ? fmtDischargeDT(admission.dischargeDate) : ''],
-    ['CONSULTANT', consultant, 'DEPARTMENT', pdfSafe(admission.department?.name || '').toUpperCase()],
-  ], state);
+  const infoPairs = [];
+  if (sectionOn('patientName')) infoPairs.push(['PATIENT NAME', pdfSafe(patientName).toUpperCase()]);
+  if (sectionOn('doa')) infoPairs.push(['D.O.A', doaText]);
+  if (sectionOn('ageSex')) infoPairs.push(['AGE/SEX', pdfSafe(ageSex).toUpperCase()]);
+  if (sectionOn('deliveryDate')) infoPairs.push(['D.O.DELIVERY', fmtDischargeDT(d.deliveryDate)]);
+  if (sectionOn('ipNo')) infoPairs.push(['IP.NO', ipNo]);
+  if (sectionOn('dod')) infoPairs.push(['D.O.D', dodText]);
+  if (sectionOn('consultant')) infoPairs.push(['CONSULTANT', pdfSafe(consultant).toUpperCase()]);
+  if (sectionOn('department')) infoPairs.push(['DEPARTMENT', pdfSafe(department).toUpperCase()]);
+  drawDischargeInfoGrid(doc, pairDischargeInfoRows(infoPairs), state);
 
   const addr = patient.address || {};
-  const street = d.addressNote || addr.street || '';
-  const cityLine = d.addressNote ? '' : [addr.city, addr.state, addr.pincode].filter(Boolean).join(', ');
-  ensureDischargeSpace(doc, 40, state);
-  const addrTop = doc.y;
-  doc.fontSize(8).fillColor('#111');
-  dsText(doc, 'ADDRESS:', left, addrTop, { bold: true, lineBreak: false });
-  let ay = addrTop + 10;
-  if (street) {
-    dsText(doc, street.toUpperCase(), left, ay, { width: width * 0.62 });
-    ay = doc.y + 1;
-  }
-  if (cityLine) {
-    dsText(doc, cityLine.toUpperCase(), left, ay, { width: width * 0.62 });
-    ay = doc.y + 1;
-  }
-  if (!d.addressNote && patient.phone) {
-    dsText(doc, `PH: ${patient.phone}`, left, ay, { width: width * 0.62 });
-    ay = doc.y + 1;
-  }
-  let rightY = addrTop;
-  if (patient.patientId) {
-    dsText(doc, `UHID - ${patient.patientId}`, left + width * 0.62, rightY, {
-      bold: true, width: width * 0.38, align: 'right', lineBreak: false,
-    });
-    rightY += 11;
-  }
+  const addressOverride = pickDischargeHeader(pp.address, d.addressNote);
+  const street = addressOverride || addr.street || '';
+  const cityLine = addressOverride ? '' : [addr.city, addr.state, addr.pincode].filter(Boolean).join(', ');
+  const phoneLine = formatDischargePhone(pickDischargeHeader(pp.phone, patient.phone || ''));
+  const uhidText = pickDischargeHeader(pp.uhid, patient.patientId || '');
+  const showAddress = sectionOn('address');
+  const showPhone = sectionOn('phone') && !!phoneLine;
+  const showUhid = sectionOn('uhid') && !!uhidText;
   const rchId = sectionOn('rchId') ? (d.rchId || patient.rchId) : '';
-  if (rchId) {
-    dsText(doc, `RCH ID - ${rchId}`, left + width * 0.62, rightY, {
-      bold: true, width: width * 0.38, align: 'right', lineBreak: false,
-    });
-    rightY += 11;
+  if (showAddress || showPhone || showUhid || rchId) {
+    ensureDischargeSpace(doc, 40, state);
+    const addrTop = doc.y;
+    doc.fontSize(8).fillColor('#111');
+    let ay = addrTop;
+    if (showAddress) {
+      dsText(doc, 'ADDRESS:', left, addrTop, { bold: true, lineBreak: false });
+      ay = addrTop + 10;
+      if (street) {
+        String(street).split(/\r?\n/).filter((line) => String(line).trim()).forEach((line) => {
+          dsText(doc, line.toUpperCase(), left, ay, { width: width * 0.62 });
+          ay = doc.y + 1;
+        });
+      }
+      if (cityLine) {
+        dsText(doc, cityLine.toUpperCase(), left, ay, { width: width * 0.62 });
+        ay = doc.y + 1;
+      }
+    }
+    if (showPhone) {
+      dsText(doc, phoneLine, left, ay, { width: width * 0.62 });
+      ay = doc.y + 1;
+    }
+    let rightY = addrTop;
+    if (showUhid) {
+      dsText(doc, `UHID - ${uhidText}`, left + width * 0.62, rightY, {
+        bold: true, width: width * 0.38, align: 'right', lineBreak: false,
+      });
+      rightY += 11;
+    }
+    if (rchId) {
+      dsText(doc, `RCH ID - ${rchId}`, left + width * 0.62, rightY, {
+        bold: true, width: width * 0.38, align: 'right', lineBreak: false,
+      });
+      rightY += 11;
+    }
+    doc.y = Math.max(ay, rightY) + 4;
   }
-  doc.y = Math.max(ay, rightY) + 4;
 
   if (sectionOn('diagnosis')) {
     drawDischargeSection(doc, 'Diagnosis', d.diagnosis, state);

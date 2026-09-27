@@ -51,6 +51,33 @@
   padding: 0.75rem;
 }
 
+.ds-print-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .ds-print-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+.ds-patient-field {
+  margin-bottom: 0.7rem;
+}
+
+.ds-patient-field:last-child {
+  margin-bottom: 0;
+}
+
+.ds-patient-field .ds-section__check {
+  margin-bottom: 0.3rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ds-ink);
+}
+
 .ds-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -129,6 +129,19 @@ const DEFAULT_LAB_ROWS = [
   { name: 'CT', report: '' },
 ];
 
+const EMPTY_PRINT_PATIENT = {
+  name: '',
+  ageSex: '',
+  ipNo: '',
+  doa: '',
+  dod: '',
+  consultant: '',
+  department: '',
+  address: '',
+  phone: '',
+  uhid: '',
+};
+
 const EMPTY_FORM = {
   allergyAlert: '',
   addressNote: '',
@@ -170,16 +183,112 @@ const EMPTY_FORM = {
   death: 'No',
   remarks: '',
   printSections: {},
+  printPatient: { ...EMPTY_PRINT_PATIENT },
   maternityAdvice: { ...EMPTY_MATERNITY, dischargeDrugs: { ...EMPTY_MATERNITY.dischargeDrugs }, referral: { ...EMPTY_MATERNITY.referral } },
 };
 
 const YES_NO = [{ value: 'No', label: 'No' }, { value: 'Yes', label: 'Yes' }];
 
+const PATIENT_HEADER_PRINT_FIELDS = [
+  { id: 'patientName', key: 'name', label: 'Patient name', placeholder: 'Name as on the paper' },
+  { id: 'ageSex', key: 'ageSex', label: 'Age / Sex', placeholder: '28 YRS / FEMALE' },
+  { id: 'ipNo', key: 'ipNo', label: 'IP number', placeholder: 'IP number' },
+  { id: 'doa', key: 'doa', label: 'Date of admission', placeholder: 'D.O.A as on the paper' },
+  { id: 'dod', key: 'dod', label: 'Date of discharge', placeholder: 'D.O.D as on the paper' },
+  { id: 'consultant', key: 'consultant', label: 'Consultant', placeholder: 'DR.NAME' },
+  { id: 'department', key: 'department', label: 'Department', placeholder: 'Department' },
+  { id: 'address', key: 'address', label: 'Address', placeholder: 'Street, village', textarea: true },
+  { id: 'phone', key: 'phone', label: 'Phone', placeholder: 'Phone number' },
+  { id: 'uhid', key: 'uhid', label: 'UHID', placeholder: 'UHID' },
+];
+const PATIENT_HEADER_PRINT_KEYS = PATIENT_HEADER_PRINT_FIELDS.map((f) => f.id);
+
 const hasText = (v) => v != null && String(v).trim() !== '';
+
+function isPrintSectionOn(ps, key) {
+  if (ps?.[key] === undefined && PATIENT_HEADER_PRINT_KEYS.includes(key)) return true;
+  return !!ps?.[key];
+}
+
+function applyPatientHeaderDefaults(ps = {}) {
+  const next = { ...ps };
+  PATIENT_HEADER_PRINT_KEYS.forEach((k) => {
+    if (next[k] === undefined) next[k] = true;
+  });
+  return next;
+}
+
+function pairInfoRows(pairs) {
+  const rows = [];
+  for (let i = 0; i < pairs.length; i += 2) {
+    const a = pairs[i];
+    const b = pairs[i + 1];
+    rows.push(b ? [a[0], a[1], b[0], b[1]] : [a[0], a[1]]);
+  }
+  return rows;
+}
+
+function formatConsultant(admission) {
+  const name = admission?.doctor?.name;
+  if (!name) return '';
+  const spec = admission.doctor?.specialization ? ` ${admission.doctor.specialization}` : '';
+  return `DR.${String(name).replace(/^dr\.?\s*/i, '').toUpperCase()}${spec}`.trim();
+}
+
+function formatAgeSex(patient = {}) {
+  return [
+    patient.age != null && patient.age !== '' ? `${patient.age} YRS` : '',
+    patient.gender ? String(patient.gender).toUpperCase() : '',
+  ].filter(Boolean).join(' / ');
+}
+
+function formatPatientAddress(patient = {}) {
+  const addr = patient.address || {};
+  return [
+    addr.street,
+    [addr.city, addr.state, addr.pincode].filter(Boolean).join(', '),
+  ].filter(Boolean).join('\n');
+}
+
+function patientHeaderDefaults(admission) {
+  const patient = admission?.patient || {};
+  return {
+    patientName: patient.name || '',
+    ageSex: formatAgeSex(patient),
+    ipNo: admission?.admissionNumber || '',
+    doa: admission?.admissionDate ? (formatIstDateTime(admission.admissionDate) || '') : '',
+    dod: admission?.dischargeDate ? (formatIstDateTime(admission.dischargeDate) || '') : '',
+    consultant: formatConsultant(admission),
+    department: (admission?.department?.name || '').toUpperCase(),
+    address: formatPatientAddress(patient),
+    phone: patient.phone || '',
+    uhid: patient.patientId || '',
+  };
+}
+
+function normalizePrintPatient(raw, addressNote = '') {
+  const src = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? (raw.toObject?.() || raw)
+    : {};
+  const next = { ...EMPTY_PRINT_PATIENT, ...src };
+  if (!hasText(next.address) && hasText(addressNote)) next.address = addressNote;
+  return next;
+}
+
+function snapshotPrintPatient(form, admission) {
+  const defaults = patientHeaderDefaults(admission);
+  const out = normalizePrintPatient(form.printPatient, form.addressNote);
+  PATIENT_HEADER_PRINT_FIELDS.forEach(({ id, key }) => {
+    if (isPrintSectionOn(form.printSections, id) && !hasText(out[key])) {
+      out[key] = defaults[id] || '';
+    }
+  });
+  return out;
+}
 
 function inferPrintSections(dd = {}) {
   if (dd.printSections && typeof dd.printSections === 'object' && !Array.isArray(dd.printSections)) {
-    return { ...dd.printSections };
+    return applyPatientHeaderDefaults(dd.printSections);
   }
   const ps = {};
   const mark = (key, yes) => { if (yes) ps[key] = true; };
@@ -219,7 +328,7 @@ function inferPrintSections(dd = {}) {
   mark('adminFlags', dd.dama === 'Yes' || dd.referred === 'Yes' || dd.absconded === 'Yes' || dd.death === 'Yes' || hasText(dd.remarks));
   const ma = dd.maternityAdvice || {};
   mark('maternityAdvice', hasText(ma.motherCondition) || hasText(ma.babyCondition) || (ma.adviceChecked || []).length);
-  return ps;
+  return applyPatientHeaderDefaults(ps);
 }
 
 function SectionBlock({ id, title, form, setForm, children }) {
@@ -315,6 +424,7 @@ export default function IPAdmissionDetailPage() {
     if (!dd) {
       return {
         ...EMPTY_FORM,
+        printPatient: { ...EMPTY_PRINT_PATIENT },
         maternityAdvice: {
           ...EMPTY_MATERNITY,
           dischargeDrugs: { ...EMPTY_MATERNITY.dischargeDrugs },
@@ -343,6 +453,7 @@ export default function IPAdmissionDetailPage() {
         referral: { ...EMPTY_MATERNITY.referral, ...(ma.referral || {}) },
       },
       printSections: inferPrintSections(dd),
+      printPatient: normalizePrintPatient(dd.printPatient, dd.addressNote),
     };
   };
 
@@ -392,6 +503,7 @@ export default function IPAdmissionDetailPage() {
       printSections: {
         ...(f.printSections || {}),
         [key]: hasText(value) ? true : !!f.printSections?.[key],
+        ...(key === 'addressNote' && hasText(value) ? { address: true } : {}),
         ...(adminKeys.includes(key) ? { adminFlags: true } : {}),
       },
     }));
@@ -474,15 +586,20 @@ export default function IPAdmissionDetailPage() {
   };
 
   const handleReset = () => setForm(buildFormFromAdmission(admission));
-  const dischargeFormPayload = () => ({
-    ...form,
-    deliveryDate: form.deliveryDate ? istDateTimeToIso(form.deliveryDate) : null,
-    obstetricHistory: {
-      ...(form.obstetricHistory || {}),
-      lmp: form.obstetricHistory?.lmp || null,
-      edd: form.obstetricHistory?.edd || null,
-    },
-  });
+  const dischargeFormPayload = () => {
+    const printPatient = snapshotPrintPatient(form, admission);
+    return {
+      ...form,
+      deliveryDate: form.deliveryDate ? istDateTimeToIso(form.deliveryDate) : null,
+      printPatient,
+      addressNote: printPatient.address || form.addressNote || '',
+      obstetricHistory: {
+        ...(form.obstetricHistory || {}),
+        lmp: form.obstetricHistory?.lmp || null,
+        edd: form.obstetricHistory?.edd || null,
+      },
+    };
+  };
   const handleSaveDraft = () => {
     if (admission?.status === 'discharged' && !editReason.trim()) {
       toast.error('Please enter a reason for changing the discharge summary');
@@ -577,14 +694,51 @@ export default function IPAdmissionDetailPage() {
         ? `${(patient.allergies || []).join(', ').toUpperCase()} ALLERGY`
         : ''))
     : '';
-  const addressDisplay = form.addressNote
-    || [
-      patient.address?.street,
-      [patient.address?.city, patient.address?.state, patient.address?.pincode].filter(Boolean).join(', '),
-      patient.phone ? `PH: ${patient.phone}` : '',
-    ].filter(Boolean).join('\n');
+  const headerDefaults = patientHeaderDefaults(admission);
+  const printHeader = (id) => {
+    const field = PATIENT_HEADER_PRINT_FIELDS.find((f) => f.id === id);
+    const override = field ? form.printPatient?.[field.key] : '';
+    return hasText(override) ? override : (headerDefaults[id] || '');
+  };
+  const addressDisplay = printHeader('address');
+  const phoneRaw = printHeader('phone');
+  const phoneDisplay = phoneRaw ? (/^ph\s*:/i.test(phoneRaw) ? phoneRaw : `PH: ${phoneRaw}`) : '';
+  const uhidDisplay = printHeader('uhid');
   const rchDisplay = form.printSections?.rchId ? (form.rchId || patient.rchId || '') : '';
-  const shown = (key) => !!form.printSections?.[key];
+  const shown = (key) => isPrintSectionOn(form.printSections, key);
+  const togglePrintSection = (id) => {
+    const field = PATIENT_HEADER_PRINT_FIELDS.find((f) => f.id === id);
+    setForm((f) => {
+      const nextOn = !isPrintSectionOn(f.printSections, id);
+      const printPatient = normalizePrintPatient(f.printPatient, f.addressNote);
+      if (nextOn && field && !hasText(printPatient[field.key])) {
+        printPatient[field.key] = headerDefaults[id] || '';
+      }
+      return {
+        ...f,
+        printPatient,
+        printSections: { ...(f.printSections || {}), [id]: nextOn },
+      };
+    });
+  };
+  const setPrintPatientField = (key) => (e) => {
+    const value = e.target.value;
+    setForm((f) => ({
+      ...f,
+      printPatient: { ...normalizePrintPatient(f.printPatient, f.addressNote), [key]: value },
+      ...(key === 'address' ? { addressNote: value } : {}),
+    }));
+  };
+  const previewInfoRows = pairInfoRows([
+    shown('patientName') && ['PATIENT NAME', (printHeader('patientName') || '').toUpperCase()],
+    shown('doa') && ['D.O.A', printHeader('doa') || '—'],
+    shown('ageSex') && ['AGE/SEX', (printHeader('ageSex') || '').toUpperCase()],
+    shown('deliveryDate') && ['D.O.DELIVERY', form.deliveryDate ? fmtPaperDT(form.deliveryDate) : '—'],
+    shown('ipNo') && ['IP.NO', printHeader('ipNo') || '—'],
+    shown('dod') && ['D.O.D', printHeader('dod') || '—'],
+    shown('consultant') && ['CONSULTANT', (printHeader('consultant') || '').toUpperCase()],
+    shown('department') && ['DEPARTMENT', (printHeader('department') || '').toUpperCase()],
+  ].filter(Boolean));
 
   const counts = {
     medications: admission.medications?.length || 0,
@@ -831,7 +985,7 @@ export default function IPAdmissionDetailPage() {
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-gray-700 p-5 space-y-3 max-h-[78vh] overflow-y-auto">
                 <div>
                   <h3 className="text-base font-semibold text-slate-900 dark:text-white">Discharge Summary</h3>
-                  <p className="text-xs text-slate-500">Tick a section, enter the value. Only ticked sections appear on preview and print. Patient name, IP no, dates and consultant always print.</p>
+                  <p className="text-xs text-slate-500">Tick a field to print it, then edit the value. The edited text is what appears on the discharge summary. Untick to hide that field.</p>
                   {isDischarged && canEditDischargedSummary && (
                     <p className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                       Patient is discharged. Super Admin / Admin can still edit and save this summary.
@@ -846,19 +1000,53 @@ export default function IPAdmissionDetailPage() {
 
                 <div className="ds-page-banner">Page 1 of 3 <span>Header → Physical Examination</span></div>
 
+                <div className="ds-section">
+                  <h4 className="ds-section__head">Patient details on paper</h4>
+                  <div className="ds-section__body">
+                    <p className="text-xs text-slate-500 mb-3">Tick a field to show it on the paper. You can then edit that value (name, age, IP no, dates, and the rest). This changes only the discharge summary, not the patient file.</p>
+                    {PATIENT_HEADER_PRINT_FIELDS.map((field) => {
+                      const on = shown(field.id);
+                      const value = printHeader(field.id);
+                      return (
+                        <div key={field.id} className={`ds-patient-field ${on ? '' : 'ds-section--off'}`}>
+                          <label className="ds-section__check">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => togglePrintSection(field.id)}
+                            />
+                            <span>{field.label}</span>
+                          </label>
+                          {on && (field.textarea ? (
+                            <textarea
+                              rows={3}
+                              className="input-field"
+                              value={value}
+                              onChange={setPrintPatientField(field.key)}
+                              placeholder={field.placeholder}
+                            />
+                          ) : (
+                            <input
+                              className="input-field"
+                              value={value}
+                              onChange={setPrintPatientField(field.key)}
+                              placeholder={field.placeholder}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <SectionBlock id="allergyAlert" title="Allergy alert (top of paper)" form={form} setForm={setForm}>
                   <input className="input-field" value={form.allergyAlert} onChange={set('allergyAlert')} placeholder="INJ. XONE ALLERGY (leave blank to use patient allergies)" />
                 </SectionBlock>
 
                 <SectionBlock id="deliveryDate" title="D.O.Delivery" form={form} setForm={setForm}>
-                  <p className="text-xs text-slate-500 mb-2">Name, age/sex, IP no, DOA, DOD, consultant &amp; department always print. Tick this to show delivery date.</p>
+                  <p className="text-xs text-slate-500 mb-2">Tick this to show delivery date on the paper with the other patient details.</p>
                   <label className="ds-label">D.O.Delivery</label>
                   <input type="datetime-local" className="input-field" value={form.deliveryDate} onChange={set('deliveryDate')} />
-                </SectionBlock>
-
-                <SectionBlock id="addressNote" title="Address override" form={form} setForm={setForm}>
-                  <label className="ds-label">Address (blank uses patient address)</label>
-                  <textarea rows={3} className="input-field" value={form.addressNote} onChange={set('addressNote')} placeholder="Street, village, PH: …" />
                 </SectionBlock>
 
                 <SectionBlock id="rchId" title="RCH ID" form={form} setForm={setForm}>
@@ -1094,32 +1282,38 @@ export default function IPAdmissionDetailPage() {
                       <p className="ds-title">Discharge Summary</p>
                     </div>
 
+                    {previewInfoRows.length > 0 && (
                     <table className="ds-info-table">
                       <tbody>
-                        {[
-                          ['PATIENT NAME', (patient.name || '').toUpperCase(), 'D.O.A', fmtPaperDT(admission.admissionDate)],
-                          ['AGE/SEX', `${patient.age != null ? `${patient.age} YRS` : ''} / ${(patient.gender || '').toUpperCase()}`, 'D.O.DELIVERY', shown('deliveryDate') && form.deliveryDate ? fmtPaperDT(form.deliveryDate) : '—'],
-                          ['IP.NO', admission.admissionNumber || '—', 'D.O.D', admission.dischargeDate ? fmtPaperDT(admission.dischargeDate) : '—'],
-                          ['CONSULTANT', admission.doctor?.name ? `DR.${admission.doctor.name.replace(/^dr\.?\s*/i, '').toUpperCase()}` : '—', 'DEPARTMENT', (admission.department?.name || '').toUpperCase()],
-                        ].map(([l1, v1, l2, v2]) => (
+                        {previewInfoRows.map(([l1, v1, l2, v2]) => (
                           <tr key={l1}>
-                            <td><strong>{l1}:</strong> {v1}</td>
-                            <td><strong>{l2}:</strong> {v2}</td>
+                            <td colSpan={l2 ? 1 : 2}><strong>{l1}:</strong> {v1}</td>
+                            {l2 ? <td><strong>{l2}:</strong> {v2}</td> : null}
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    )}
 
+                    {(shown('address') || (shown('phone') && phoneDisplay) || (shown('uhid') && uhidDisplay) || rchDisplay) && (
                     <div className="ds-preview-addr">
                       <div>
-                        <p className="font-bold underline">ADDRESS:</p>
-                        <p className="ds-block uppercase">{addressDisplay || '—'}</p>
+                        {shown('address') && (
+                          <>
+                            <p className="font-bold underline">ADDRESS:</p>
+                            <p className="ds-block uppercase">{addressDisplay || '—'}</p>
+                          </>
+                        )}
+                        {shown('phone') && phoneDisplay && (
+                          <p className="ds-block">{phoneDisplay}</p>
+                        )}
                       </div>
                       <div className="text-right font-bold whitespace-nowrap">
-                        {patient.patientId && <p>UHID - {patient.patientId}</p>}
+                        {shown('uhid') && uhidDisplay && <p>UHID - {uhidDisplay}</p>}
                         {rchDisplay && <p>RCH ID - {rchDisplay}</p>}
                       </div>
                     </div>
+                    )}
 
                     {shown('diagnosis') && form.diagnosis && (
                       <>
