@@ -12,6 +12,28 @@ import { isPlatformOrg, isClientOrg } from '../utils/hospitalA';
 
 const fetchOrgs = () => api.get('/organizations').then((r) => r.data.data);
 
+const EMAIL_OK = /^\S+@\S+\.\S+$/;
+
+const loginFromForm = (form) => ({
+  name: String(form.elements.name?.value || '').trim(),
+  email: String(form.elements.email?.value || '').trim(),
+  password: String(form.elements.password?.value || ''),
+  phone: String(form.elements.phone?.value || '').trim(),
+});
+
+const loginError = (login) => {
+  if (!login.name || !login.email || !login.password) {
+    return 'Enter name, email and password. Email is the username they use to sign in.';
+  }
+  if (!EMAIL_OK.test(login.email)) {
+    return 'Enter a valid email address. That email is the login username.';
+  }
+  if (login.password.length < 6) {
+    return 'Password must be at least 6 characters.';
+  }
+  return '';
+};
+
 const ModuleChecklist = ({ value, onChange }) => {
   const selected = new Set(value || []);
   const toggle = (id) => {
@@ -114,8 +136,8 @@ export default function OrganizationsPage() {
 
   const adminMut = useMutation({
     mutationFn: ({ id, payload }) => api.post(`/organizations/${id}/admins`, payload).then((r) => r.data.data),
-    onSuccess: () => {
-      toast.success('Client hospital login created. Share email and password with that hospital.');
+    onSuccess: (_data, variables) => {
+      toast.success(`Login created for ${variables.payload.email}. They sign in with that email and password.`);
       setAdminOrg(null);
       setAdmin({ name: '', email: '', password: '', phone: '' });
     },
@@ -264,11 +286,14 @@ export default function OrganizationsPage() {
           </div>
           <ModuleChecklist value={createModules} onChange={setCreateModules} />
           <div>
-            <p className="text-xs font-medium text-gray-600 mb-2">Hospital administrator (optional)</p>
+            <p className="text-xs font-medium text-gray-600 mb-2">Hospital login (optional)</p>
+            <p className="text-xs text-gray-500 -mt-1">
+              If you fill any of these, name, email and password are all required. They sign in with the email, not the name.
+            </p>
             <div className="grid md:grid-cols-2 gap-3">
               {['name', 'email', 'phone', 'password'].map((key) => (
                 <label key={key} className="text-xs font-medium text-gray-600">
-                  {key === 'password' ? 'Temporary password' : `Admin ${key}`}
+                  {key === 'password' ? 'Password' : key === 'email' ? 'Email (login username)' : `Admin ${key}`}
                   <input
                     type={key === 'password' ? 'password' : 'text'}
                     className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
@@ -282,17 +307,33 @@ export default function OrganizationsPage() {
           <div className="flex gap-2">
             <button
               type="button"
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60"
               onClick={() => {
-                const payload = { ...form, enabledModules: createModules };
-                if (createAdmin.name && createAdmin.email && createAdmin.password) {
-                  payload.admin = createAdmin;
+                if (!form.name.trim() || !form.code.trim()) {
+                  toast.error('Hospital name and code are required');
+                  return;
                 }
+                const login = {
+                  name: createAdmin.name.trim(),
+                  email: createAdmin.email.trim(),
+                  password: createAdmin.password,
+                  phone: createAdmin.phone.trim(),
+                };
+                const startedLogin = login.name || login.email || login.password || login.phone;
+                if (startedLogin) {
+                  const problem = loginError(login);
+                  if (problem) {
+                    toast.error(problem);
+                    return;
+                  }
+                }
+                const payload = { ...form, name: form.name.trim(), code: form.code.trim(), enabledModules: createModules };
+                if (startedLogin) payload.admin = login;
                 createMut.mutate(payload);
               }}
-              disabled={!form.name || !form.code || createMut.isPending}
+              disabled={createMut.isPending}
             >
-              Create
+              {createMut.isPending ? 'Creating…' : 'Create'}
             </button>
             <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => { setCreateOpen(false); setSearchParams({}); }}>
               Cancel
@@ -322,35 +363,61 @@ export default function OrganizationsPage() {
       )}
 
       {adminOrg && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3 bg-white dark:bg-gray-900">
+        <form
+          className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3 bg-white dark:bg-gray-900"
+          autoComplete="off"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const payload = loginFromForm(e.currentTarget);
+            const problem = loginError(payload);
+            if (problem) {
+              toast.error(problem);
+              return;
+            }
+            setAdmin(payload);
+            adminMut.mutate({ id: adminOrg._id, payload });
+          }}
+        >
           <h3 className="font-semibold">Provide login for {adminOrg.name}</h3>
+          <p className="text-xs text-gray-500">
+            Name is the person&apos;s display name. They sign in with the email and password, not the name.
+          </p>
           <div className="grid md:grid-cols-2 gap-3">
-            {['name', 'email', 'password', 'phone'].map((key) => (
+            {[
+              ['name', 'Full name', 'text', true],
+              ['email', 'Email (login username)', 'email', true],
+              ['password', 'Password', 'password', true],
+              ['phone', 'Phone', 'text', false],
+            ].map(([key, label, type, required]) => (
               <label key={key} className="text-xs font-medium text-gray-600">
-                {key}
+                {label}{required ? ' *' : ''}
                 <input
-                  type={key === 'password' ? 'password' : 'text'}
+                  name={key}
+                  type={type}
+                  autoComplete={key === 'password' ? 'new-password' : 'off'}
+                  required={required}
+                  minLength={key === 'password' ? 6 : undefined}
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
                   value={admin[key]}
                   onChange={(e) => setAdmin((f) => ({ ...f, [key]: e.target.value }))}
+                  onInput={(e) => setAdmin((f) => ({ ...f, [key]: e.target.value }))}
                 />
               </label>
             ))}
           </div>
           <div className="flex gap-2">
             <button
-              type="button"
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
-              onClick={() => adminMut.mutate({ id: adminOrg._id, payload: admin })}
-              disabled={!admin.name || !admin.email || !admin.password || adminMut.isPending}
+              type="submit"
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60"
+              disabled={adminMut.isPending}
             >
-              Create login
+              {adminMut.isPending ? 'Creating login…' : 'Create login'}
             </button>
             <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={() => setAdminOrg(null)}>
               Cancel
             </button>
           </div>
-        </div>
+        </form>
       )}
     </div>
   );

@@ -154,6 +154,23 @@ exports.createOrganization = asyncHandler(async (req, res, next) => {
   const exists = await Organization.findOne({ code });
   if (exists) return next(new ErrorResponse('Organization code already exists', 400));
 
+  const adminBody = req.body.admin || null;
+  const adminName = String(adminBody?.name || '').trim();
+  const adminEmail = String(adminBody?.email || '').trim().toLowerCase();
+  const adminPassword = String(adminBody?.password || '');
+  const wantsAdmin = !!(adminBody && (adminName || adminEmail || adminPassword || String(adminBody.phone || '').trim()));
+  if (wantsAdmin) {
+    if (!adminName || !adminEmail || !adminPassword) {
+      return next(new ErrorResponse('Hospital login needs a name, email and password. Email is the username used to sign in.', 400));
+    }
+    if (!/^\S+@\S+\.\S+$/.test(adminEmail)) {
+      return next(new ErrorResponse('Enter a valid email address for the hospital login.', 400));
+    }
+    if (adminPassword.length < 6) {
+      return next(new ErrorResponse('Hospital login password must be at least 6 characters', 400));
+    }
+  }
+
   const org = await Organization.create({
     name,
     code,
@@ -174,22 +191,21 @@ exports.createOrganization = asyncHandler(async (req, res, next) => {
   });
 
   let admin = null;
-  const adminBody = req.body.admin;
-  if (adminBody && adminBody.name && adminBody.email && adminBody.password) {
-    const adminEmail = String(adminBody.email).toLowerCase().trim();
-    const taken = await User.findOne({ email: adminEmail, organizationId: org._id });
-    if (taken) {
-      return next(new ErrorResponse('This email is already used by staff in this hospital. Use a different email.', 400));
+  if (wantsAdmin) {
+    try {
+      admin = await User.create({
+        name: adminName,
+        email: adminEmail,
+        password: adminPassword,
+        phone: String(adminBody.phone || '').trim(),
+        role: 'Admin',
+        organizationId: org._id,
+        isActive: true,
+      });
+    } catch (err) {
+      await Organization.deleteOne({ _id: org._id });
+      throw err;
     }
-    admin = await User.create({
-      name: String(adminBody.name).trim(),
-      email: adminEmail,
-      password: adminBody.password,
-      phone: adminBody.phone || '',
-      role: 'Admin',
-      organizationId: org._id,
-      isActive: true,
-    });
   }
 
   await logGmsAction(req, 'Hospital Created', `Created client hospital ${org.name} (${org.code})`, {
@@ -278,22 +294,30 @@ exports.createHospitalAdmin = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Create hospital logins on a client hospital, not on GMS', 400));
   }
 
-  const { name, email, password, phone } = req.body;
-  if (!name || !email || !password) {
-    return next(new ErrorResponse('Name, email and password are required', 400));
+  const name = String(req.body.name || '').trim();
+  const adminEmail = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+  const phone = String(req.body.phone || '').trim();
+  if (!name || !adminEmail || !password) {
+    return next(new ErrorResponse('Name, email and password are required. Email is the username used to sign in.', 400));
+  }
+  if (!/^\S+@\S+\.\S+$/.test(adminEmail)) {
+    return next(new ErrorResponse('Enter a valid email address. That email is used to sign in.', 400));
+  }
+  if (password.length < 6) {
+    return next(new ErrorResponse('Password must be at least 6 characters', 400));
   }
 
-  const adminEmail = String(email).toLowerCase().trim();
   const taken = await User.findOne({ email: adminEmail, organizationId: org._id });
   if (taken) {
     return next(new ErrorResponse('This email is already used by staff in this hospital. Use a different email.', 400));
   }
 
   const admin = await User.create({
-    name: String(name).trim(),
+    name,
     email: adminEmail,
     password,
-    phone: phone || '',
+    phone,
     role: 'Admin',
     organizationId: org._id,
     isActive: true,
