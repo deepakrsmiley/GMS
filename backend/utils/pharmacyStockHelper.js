@@ -113,6 +113,7 @@ const upsertBatchStock = (medicine, {
  * Physical stock = paid quantity + free quantity.
  * Does not change the medicine master selling price or purchase price.
  * An existing batch keeps its original purchase rate.
+ * MRP from this invoice is stored on the batch (per piece) for billing.
  */
 const receivePurchaseBatch = (medicine, {
   batchNumber,
@@ -120,6 +121,7 @@ const receivePurchaseBatch = (medicine, {
   freeQuantity = 0,
   expiryDate,
   purchaseRate,
+  mrp,
   supplierInvoice,
   receivedDate,
 } = {}) => {
@@ -152,6 +154,7 @@ const receivePurchaseBatch = (medicine, {
     if ((existing.purchasePrice == null || existing.purchasePrice === '') && purchaseRate != null && purchaseRate !== '') {
       existing.purchasePrice = Number(purchaseRate);
     }
+    if (mrp != null && mrp !== '') existing.mrp = Number(mrp);
     if (supplierInvoice) existing.supplierInvoice = supplierInvoice;
     if (!existing.expiryDate && expiry && !Number.isNaN(expiry.getTime())) existing.expiryDate = expiry;
     return {
@@ -181,7 +184,7 @@ const receivePurchaseBatch = (medicine, {
     expiryDate: expiry,
     purchasePrice: purchaseRate != null && purchaseRate !== '' ? Number(purchaseRate) : medicine.purchasePrice,
     sellingPrice: medicine.sellingPrice,
-    mrp: medicine.mrp,
+    mrp: mrp != null && mrp !== '' ? Number(mrp) : medicine.mrp,
     manufacturer: medicine.manufacturer,
     supplierInvoice,
     receivedDate: receivedDate ? new Date(receivedDate) : new Date(),

@@ -124,12 +124,12 @@ const fillFromMedicine = (next, medicine, { assignMissingBatch = true } = {}) =>
   if (!next.unitPrice) next.unitPrice = medicine.sellingPrice;
   if (next.gstPercent == null) next.gstPercent = medicine.gstPercent;
   if (!next.genericName) next.genericName = medicine.genericName || '';
-  if (!next.mrp) next.mrp = medicine.mrp || medicine.sellingPrice;
   if (!next.hsnCode) next.hsnCode = medicine.hsnCode || '';
   if (!next.unitOfMeasure) next.unitOfMeasure = medicine.unitOfMeasure || 'Nos';
   const batchKey = next.batchNumber || next.batch;
+  let batchData;
   if (batchKey && medicine.batches?.length) {
-    const batchData = medicine.batches.find((b) => b.batchNumber === batchKey);
+    batchData = medicine.batches.find((b) => b.batchNumber === batchKey);
     if (batchData) {
       next.batchNumber = batchData.batchNumber;
       next.batch = batchData.batchNumber;
@@ -137,13 +137,18 @@ const fillFromMedicine = (next, medicine, { assignMissingBatch = true } = {}) =>
       if (!next.mfgDate) next.mfgDate = batchData.receivedDate;
     }
   } else if (assignMissingBatch && !batchKey && medicine.batches?.length) {
-    const validBatch = medicine.batches.find((b) => !b.isDisposed && b.quantity > 0);
-    if (validBatch) {
-      next.batchNumber = validBatch.batchNumber;
-      next.batch = validBatch.batchNumber;
-      if (!next.expiryDate) next.expiryDate = validBatch.expiryDate;
-      if (!next.mfgDate) next.mfgDate = validBatch.receivedDate;
+    batchData = medicine.batches.find((b) => !b.isDisposed && b.quantity > 0);
+    if (batchData) {
+      next.batchNumber = batchData.batchNumber;
+      next.batch = batchData.batchNumber;
+      if (!next.expiryDate) next.expiryDate = batchData.expiryDate;
+      if (!next.mfgDate) next.mfgDate = batchData.receivedDate;
     }
+  }
+  if (!next.mrp) {
+    next.mrp = (batchData && batchData.mrp != null)
+      ? batchData.mrp
+      : (medicine.mrp || medicine.sellingPrice);
   }
   return next;
 };

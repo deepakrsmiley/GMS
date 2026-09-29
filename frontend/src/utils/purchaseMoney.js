@@ -110,6 +110,7 @@ export const printPurchase = (purchase) => {
     <td>${item.expiryDate ? new Date(item.expiryDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : ''}</td>
     <td class="right">${esc(purchaseUnitText(item))}${item.freeQuantity ? ` + ${esc(purchaseUnitText(item, item.freeQuantity))} free` : ''}</td>
     <td class="right">${inr(item.purchaseRate)}${item.quantityUnit === 'strip' ? ' / strip' : ' / pc'}</td>
+    <td class="right">${item.mrp != null ? inr(item.mrp) : '—'}${item.mrp != null ? (item.quantityUnit === 'strip' ? ' / strip' : ' / pc') : ''}</td>
     <td class="right">${inr(item.discountAmount)}</td>
     <td class="right">${item.gstPercent || 0}%</td>
     <td class="right">${inr(item.lineTotal)}</td>
@@ -119,7 +120,7 @@ export const printPurchase = (purchase) => {
     <p>${esc(purchase.supplier?.name || purchase.supplierName)} · ${esc(purchase.supplierInvoiceNumber)}</p>
     <p>${purchase.purchaseDate ? new Date(purchase.purchaseDate).toLocaleDateString('en-IN') : ''} · ${esc(purchase.purchaseNumber || '')}</p>
     <table>
-      <thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Discount</th><th class="right">GST</th><th class="right">Total</th></tr></thead>
+      <thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">MRP</th><th class="right">Discount</th><th class="right">GST</th><th class="right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="totals">

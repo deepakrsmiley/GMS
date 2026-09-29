@@ -155,10 +155,10 @@ export function StockValuationPanel() {
       <div className="pur-table-wrap">
         <table className="pur-table">
           <thead>
-            <tr>{['Medicine', 'Batch', 'Expiry', 'Quantity', 'Purchase rate', 'Stock value'].map((h) => <th key={h}>{h}</th>)}</tr>
+            <tr>{['Medicine', 'Batch', 'Expiry', 'Quantity', 'Purchase rate', 'MRP', 'Stock value'].map((h) => <th key={h}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {isLoading && <tr><td colSpan={6} className="pur-empty">Calculating stock value…</td></tr>}
+            {isLoading && <tr><td colSpan={7} className="pur-empty">Calculating stock value…</td></tr>}
             {rows.map((row) => (
               <tr key={`${row.medicineId}-${row.batchNumber}`}>
                 <td className="font-semibold">{row.medicineName}</td>
@@ -166,6 +166,7 @@ export function StockValuationPanel() {
                 <td>{fmtDate(row.expiryDate)}</td>
                 <td className="tabular-nums">{row.quantity}</td>
                 <td className="tabular-nums">{inr(row.purchaseRate)}</td>
+                <td className="tabular-nums">{row.mrp != null ? inr(row.mrp) : '—'}</td>
                 <td className="tabular-nums font-semibold">{inr(row.stockValue)}</td>
               </tr>
             ))}

@@ -2077,6 +2077,20 @@ export default function PharmacyPage({ masterMode = false, forcedTab = null }) {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
+                MRP
+              </label>
+              <input
+                {...register("mrp", {
+                  setValueAs: (v) => (v === '' || v == null ? undefined : Number(v)),
+                })}
+                type="number"
+                step="0.01"
+                className="input-field"
+                placeholder="Printed pack MRP"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
                 Purchase Price
               </label>
               <input

@@ -153,7 +153,7 @@ export default function PurchaseReturnPanel({ purchaseId }) {
         <div className="pur-card pur-table-wrap">
           <table className="pur-table">
             <thead>
-              <tr>{['Medicine', 'Batch', 'Available', 'Return qty', 'Purchase rate', 'Return value'].map((h) => <th key={h}>{h}</th>)}</tr>
+              <tr>{['Medicine', 'Batch', 'Available', 'Return qty', 'Purchase rate', 'MRP', 'Return value'].map((h) => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {lines.map((item) => {
@@ -176,6 +176,7 @@ export default function PurchaseReturnPanel({ purchaseId }) {
                       {bad && <p className="text-red-600 mt-1">Return quantity cannot exceed available quantity.</p>}
                     </td>
                     <td className="tabular-nums">{inr(item.purchaseRate)}{item.quantityUnit === 'strip' ? ' / strip' : ''}</td>
+                    <td className="tabular-nums">{item.mrp != null ? `${inr(item.mrp)}${item.quantityUnit === 'strip' ? ' / strip' : ''}` : '—'}</td>
                     <td className="tabular-nums font-semibold">{inr(entered * (item.purchaseRate || 0))}</td>
                   </tr>
                 );

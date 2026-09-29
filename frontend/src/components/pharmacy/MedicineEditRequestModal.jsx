@@ -10,6 +10,7 @@ import '../../styles/medicineEditRequest.css';
 const MEDICINE_FIELDS = [
   { field: 'gstPercent', label: 'GST %' },
   { field: 'sellingPrice', label: 'Default selling price' },
+  { field: 'mrp', label: 'Default MRP' },
   { field: 'purchasePrice', label: 'Default purchase price' },
   { field: 'name', label: 'Medicine name' },
   { field: 'genericName', label: 'Generic name' },

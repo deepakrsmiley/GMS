@@ -149,4 +149,44 @@ describe('purchase receipt does not overwrite selling price', () => {
     assert.equal(medicine.batches[1].purchasePrice, 5.5);
     assert.equal(medicine.batches[1].quantity, 200);
   });
+
+  it('stores purchase MRP on the batch without changing selling price', () => {
+    const medicine = {
+      name: 'Dolo 650',
+      sellingPrice: 8,
+      purchasePrice: 3,
+      mrp: 10,
+      batches: [],
+    };
+
+    const first = receivePurchaseBatch(medicine, {
+      batchNumber: 'D650A123',
+      paidQuantity: 100,
+      expiryDate: '2028-12-31',
+      purchaseRate: 5,
+      mrp: 12,
+    });
+    assert.equal(medicine.sellingPrice, 8);
+    assert.equal(medicine.mrp, 10);
+    assert.equal(first.batch.mrp, 12);
+    assert.equal(first.batch.sellingPrice, 8);
+
+    receivePurchaseBatch(medicine, {
+      batchNumber: 'D650A123',
+      paidQuantity: 20,
+      expiryDate: '2028-12-31',
+      purchaseRate: 5,
+      mrp: 14,
+    });
+    assert.equal(first.batch.mrp, 14);
+    assert.equal(first.batch.purchasePrice, 5);
+
+    receivePurchaseBatch(medicine, {
+      batchNumber: 'B2',
+      paidQuantity: 50,
+      expiryDate: '2027-06-30',
+      purchaseRate: 5.5,
+    });
+    assert.equal(medicine.batches[1].mrp, 10);
+  });
 });

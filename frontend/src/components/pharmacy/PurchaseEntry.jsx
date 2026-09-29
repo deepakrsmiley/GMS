@@ -11,6 +11,7 @@ const blankLine = () => ({
   medicineId: '',
   medicineName: '',
   sellingPrice: '',
+  mrp: '',
   batchNumber: '',
   expiry: '',
   quantityUnit: 'pcs',
@@ -67,16 +68,25 @@ export default function PurchaseEntry({ onSaved }) {
   };
 
   const pickMedicine = (key, medicine) => {
-    setLine(key, {
-      medicineId: medicine._id,
-      medicineName: medicine.name,
-      sellingPrice: medicine.sellingPrice,
-      gstPercent: medicine.gstPercent ?? 0,
-      packSize: medicine.unitsPerStrip || '',
-      search: medicine.name,
-      open: false,
-      results: [],
-    });
+    setLines((rows) => rows.map((row) => {
+      if (row.key !== key) return row;
+      const pack = row.packSize || medicine.unitsPerStrip || '';
+      const pieceMrp = medicine.mrp != null && medicine.mrp !== '' ? Number(medicine.mrp) : '';
+      const stripQty = row.quantityUnit === 'strip' && Number(pack) >= 1;
+      const mrp = pieceMrp === '' ? '' : (stripQty ? Number((pieceMrp * Number(pack)).toFixed(2)) : pieceMrp);
+      return {
+        ...row,
+        medicineId: medicine._id,
+        medicineName: medicine.name,
+        sellingPrice: medicine.sellingPrice,
+        mrp,
+        gstPercent: medicine.gstPercent ?? 0,
+        packSize: pack,
+        search: medicine.name,
+        open: false,
+        results: [],
+      };
+    }));
   };
 
   const payload = () => ({
@@ -91,6 +101,7 @@ export default function PurchaseEntry({ onSaved }) {
       quantity: Number(line.quantity),
       freeQuantity: Number(line.freeQuantity) || 0,
       purchaseRate: Number(line.purchaseRate),
+      mrp: line.mrp === '' || line.mrp == null ? undefined : Number(line.mrp),
       discountAmount: Number(line.discount) || 0,
       gstPercent: Number(line.gstPercent) || 0,
     })),
@@ -277,6 +288,9 @@ export default function PurchaseEntry({ onSaved }) {
                     </Field>
                     <Field label={line.quantityUnit === 'strip' ? 'Rate per strip' : 'Rate per pc'}>
                       <input type="number" min="0" step="0.01" className="input-field text-sm" value={line.purchaseRate} onChange={(e) => setLine(line.key, { purchaseRate: e.target.value })} />
+                    </Field>
+                    <Field label={line.quantityUnit === 'strip' ? 'MRP per strip' : 'MRP per pc'}>
+                      <input type="number" min="0" step="0.01" className="input-field text-sm" value={line.mrp} onChange={(e) => setLine(line.key, { mrp: e.target.value })} placeholder="Pack MRP" />
                     </Field>
                     <Field label="Discount">
                       <input type="number" min="0" step="0.01" className="input-field text-sm" value={line.discount} onChange={(e) => setLine(line.key, { discount: e.target.value })} />

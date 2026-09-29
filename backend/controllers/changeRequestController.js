@@ -23,7 +23,7 @@ const CATEGORY_LABELS = {
 /** Medicine-master fields that Approve & Apply can write */
 const MEDICINE_APPLY_FIELDS = [
   'name', 'genericName', 'category', 'barcode',
-  'sellingPrice', 'purchasePrice', 'gstPercent',
+  'sellingPrice', 'purchasePrice', 'mrp', 'gstPercent',
   'minimumStock', 'manufacturer', 'supplier',
 ];
 
@@ -47,7 +47,7 @@ const generateRequestNo = async () => {
 const populateRequest = (q) => q
   .populate('requestedBy', 'name email role')
   .populate('reviewedBy', 'name email role')
-  .populate('medicine', 'name gstPercent sellingPrice purchasePrice genericName category batches');
+  .populate('medicine', 'name gstPercent sellingPrice purchasePrice mrp genericName category batches');
 
 const fmtBatchDate = (d) => {
   if (!d) return '';
@@ -89,7 +89,7 @@ exports.createChangeRequest = asyncHandler(async (req, res, next) => {
   let resolvedBatchNumber = batchNumber || undefined;
 
   if (cat === 'medicine_edit' && medId) {
-    const med = await Medicine.findById(medId).select('name gstPercent sellingPrice purchasePrice batches');
+    const med = await Medicine.findById(medId).select('name gstPercent sellingPrice purchasePrice mrp batches');
     if (!med) return next(new ErrorResponse('Medicine not found', 404));
     resolvedMedicineName = resolvedMedicineName || med.name;
 
@@ -351,7 +351,7 @@ exports.reviewChangeRequest = asyncHandler(async (req, res, next) => {
         for (const fc of doc.fieldChanges) {
           if (!MEDICINE_APPLY_FIELDS.includes(fc.field)) continue;
           let val = fc.requestedValue;
-          if (['sellingPrice', 'purchasePrice', 'gstPercent', 'minimumStock'].includes(fc.field)) {
+          if (['sellingPrice', 'purchasePrice', 'mrp', 'gstPercent', 'minimumStock'].includes(fc.field)) {
             val = Number(val);
             if (Number.isNaN(val)) continue;
           }

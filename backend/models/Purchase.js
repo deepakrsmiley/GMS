@@ -11,6 +11,7 @@ const purchaseItemSchema = new mongoose.Schema({
   quantityUnit: { type: String, enum: ['pcs', 'strip'], default: 'pcs' },
   packSize: { type: Number, default: 1, min: 1 },
   purchaseRate: { type: Number, required: true, min: 0 },
+  mrp: { type: Number, min: 0 },
   sellingPrice: { type: Number, min: 0 },
   discountAmount: { type: Number, default: 0 },
   overallDiscountShare: { type: Number, default: 0 },

@@ -159,6 +159,12 @@ const prepareLines = async (rawItems, gstMode) => {
     const unit = resolvePurchaseUnit(raw);
     const expiryDate = parseExpiry(raw.expiryDate);
     const sellingPrice = Number(medicine.sellingPrice) || 0;
+    let mrp = null;
+    if (raw.mrp != null && raw.mrp !== '') {
+      const n = Number(raw.mrp);
+      if (!Number.isFinite(n) || n < 0) fail(`MRP cannot be negative for ${medicine.name}`);
+      mrp = round2(n);
+    }
     drafts.push({
       medicine,
       batchNumber,
@@ -168,6 +174,8 @@ const prepareLines = async (rawItems, gstMode) => {
       quantityUnit: unit.quantityUnit,
       packSize: unit.packSize,
       purchaseRate: raw.purchaseRate,
+      mrp,
+      pieceMrp: mrp == null ? null : pieceRate(mrp, unit.packSize),
       discount: raw.discountAmount != null ? raw.discountAmount : raw.discount,
       gstPercent: raw.gstPercent != null && raw.gstPercent !== '' ? raw.gstPercent : (medicine.gstPercent || 0),
       sellingPrice,
@@ -212,6 +220,7 @@ const applyReceipts = async (lines, { supplierInvoice, receivedDate }) => {
         freeQuantity: stockPieces(line.freeQuantity, line.packSize),
         expiryDate: line.expiryDate,
         purchaseRate: line.pieceRate,
+        mrp: line.pieceMrp,
         supplierInvoice,
         receivedDate,
       });
@@ -219,6 +228,7 @@ const applyReceipts = async (lines, { supplierInvoice, receivedDate }) => {
         medicine.sellingPrice = masterSelling;
         medicine.purchasePrice = masterPurchase;
       }
+      if (line.pieceMrp != null) medicine.mrp = line.pieceMrp;
       syncCurrentStock(medicine);
       medicine.markModified('batches');
       await medicine.save();
@@ -273,6 +283,7 @@ const decoratePurchase = async (doc) => {
       returnedValue: returnValue(item.returnedQuantity, rate),
       remainingInvoiceValue: stockValue(info.remainingOnInvoice, rate),
       batchPurchaseRate: batchRate,
+      batchMrp: batch && batch.mrp != null ? Number(batch.mrp) : undefined,
       batchStockValue: stockValue(batchQty, batchRate),
     };
   });
@@ -371,6 +382,7 @@ exports.createPurchase = async (req) => {
         quantityUnit: line.quantityUnit,
         packSize: line.packSize,
         purchaseRate: line.purchaseRate,
+        mrp: line.mrp,
         sellingPrice: line.sellingPrice,
         discountAmount: line.discountAmount,
         overallDiscountShare: line.overallDiscountShare,
@@ -1004,7 +1016,7 @@ exports.getLedger = async (query = {}) => {
 
 exports.getValuation = async (query = {}) => {
   const meds = await Medicine.find({ isActive: true })
-    .select('name genericName batches purchasePrice sellingPrice')
+    .select('name genericName batches purchasePrice sellingPrice mrp')
     .sort('name')
     .lean();
   const q = String(query.q || '').trim().toLowerCase();
@@ -1023,6 +1035,7 @@ exports.getValuation = async (query = {}) => {
         quantity: batch.quantity,
         freeQuantity: batch.freeQuantity || 0,
         purchaseRate: rate,
+        mrp: batch.mrp != null ? batch.mrp : med.mrp,
         sellingPrice: batch.sellingPrice != null ? batch.sellingPrice : med.sellingPrice,
         stockValue: stockValue(batch.quantity, rate),
       });

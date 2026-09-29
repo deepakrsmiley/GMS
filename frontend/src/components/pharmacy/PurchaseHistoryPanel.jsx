@@ -131,7 +131,7 @@ export default function PurchaseHistoryPanel({ onReturn }) {
             <div className="pur-table-wrap">
               <table className="pur-table">
                 <thead>
-                  <tr>{['Medicine', 'Batch', 'Expiry', 'Qty', 'Rate', 'Discount', 'GST', 'Total', 'Returned', 'Remaining'].map((h) => <th key={h}>{h}</th>)}</tr>
+                  <tr>{['Medicine', 'Batch', 'Expiry', 'Qty', 'Rate', 'MRP', 'Discount', 'GST', 'Total', 'Returned', 'Remaining'].map((h) => <th key={h}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {(detail.data.items || []).map((item) => (
@@ -141,6 +141,7 @@ export default function PurchaseHistoryPanel({ onReturn }) {
                       <td>{fmtDate(item.expiryDate)}</td>
                       <td className="tabular-nums">{purchaseUnitText(item)}{item.freeQuantity ? ` + ${purchaseUnitText(item, item.freeQuantity)} free` : ''}</td>
                       <td className="tabular-nums">{inr(item.purchaseRate)}{item.quantityUnit === 'strip' ? ' / strip' : ''}</td>
+                      <td className="tabular-nums">{item.mrp != null ? `${inr(item.mrp)}${item.quantityUnit === 'strip' ? ' / strip' : ''}` : '—'}</td>
                       <td className="tabular-nums">{inr(item.discountAmount)}</td>
                       <td>{item.gstPercent}%</td>
                       <td className="tabular-nums">{inr(item.lineTotal)}</td>

@@ -831,6 +831,10 @@ exports.createDirectSale = asyncHandler(async (req, res, next) => {
     const taxableAmt = lineSubtotal - discAmt;
     const gstAmt = (taxableAmt * gstPercent) / 100;
     const lineTotal = taxableAmt + gstAmt;
+    const soldBatch = primaryBatch ? findActiveBatch(medicine, primaryBatch) : null;
+    const mrp = item.mrp != null && item.mrp !== ''
+      ? Number(item.mrp)
+      : (soldBatch?.mrp != null ? soldBatch.mrp : medicine.mrp);
 
     subtotal += lineSubtotal;
     totalGst += gstAmt;
@@ -841,7 +845,7 @@ exports.createDirectSale = asyncHandler(async (req, res, next) => {
       batchNumber: primaryBatch,
       quantity: item.quantity,
       unitPrice,
-      mrp: medicine.mrp,
+      mrp,
       gstPercent,
       gstAmount: gstAmt,
       discountPercent: item.discountPercent || 0,
