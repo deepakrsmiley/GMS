@@ -4,8 +4,7 @@ import toast from 'react-hot-toast';
 import { Wallet } from 'lucide-react';
 import api from '../../services/api';
 import Modal from '../common/Modal';
-
-const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
+import SplitPaymentBox, { emptySplitParts, splitPartsPayload, splitPartsTotal } from '../billing/SplitPaymentBox';
 
 const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -23,17 +22,37 @@ export default function LabCollectPaymentModal({ isOpen, lab, onClose, onBilled 
   const total = useMemo(() => orderTotal(lab), [lab]);
   const [paidAmount, setPaidAmount] = useState(total);
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [splitPay, setSplitPay] = useState(false);
+  const [paymentParts, setPaymentParts] = useState(emptySplitParts);
 
   useEffect(() => {
     setPaidAmount(total);
     setPaymentMode('cash');
+    setSplitPay(false);
+    setPaymentParts(emptySplitParts());
   }, [lab?._id, total]);
 
+  useEffect(() => {
+    if (!splitPay) return;
+    setPaidAmount(splitPartsTotal(paymentParts));
+  }, [splitPay, paymentParts]);
+
   const billMut = useMutation({
-    mutationFn: () => api.post(`/lab/${lab._id}/bill`, {
-      paidAmount: Number(paidAmount) || 0,
-      paymentMode,
-    }, { skipErrorToast: true }),
+    mutationFn: () => {
+      const parts = splitPay ? splitPartsPayload(paymentParts) : [];
+      const paidNow = splitPay ? splitPartsTotal(paymentParts) : (Number(paidAmount) || 0);
+      if (paidNow - total > 0.05) {
+        throw new Error('Paid amount cannot be more than the bill total');
+      }
+      const modes = [...new Set(parts.map((row) => row.mode))];
+      return api.post(`/lab/${lab._id}/bill`, {
+        paidAmount: paidNow,
+        paymentMode: splitPay
+          ? (modes.length > 1 ? 'multiple' : (modes[0] || 'cash'))
+          : paymentMode,
+        ...(parts.length ? { payments: parts } : {}),
+      }, { skipErrorToast: true });
+    },
     onSuccess: async (res) => {
       toast.success(res.data.message || 'Lab bill created');
       qc.invalidateQueries({ queryKey: ['labTests'] });
@@ -56,7 +75,7 @@ export default function LabCollectPaymentModal({ isOpen, lab, onClose, onBilled 
         }
       }
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Could not create lab bill'),
+    onError: (err) => toast.error(err.response?.data?.message || err.message || 'Could not create lab bill'),
   });
 
   if (!lab) return null;
@@ -77,32 +96,17 @@ export default function LabCollectPaymentModal({ isOpen, lab, onClose, onBilled 
           </p>
           <p className="text-lg font-bold text-slate-900 mt-2">{fmt(total)}</p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Payment mode</label>
-          <select
-            className="input-field text-sm"
-            value={paymentMode}
-            onChange={(e) => setPaymentMode(e.target.value)}
-          >
-            {PAYMENT_MODES.map((m) => (
-              <option key={m} value={m}>{m.toUpperCase()}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Amount paid now</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            className="input-field text-sm"
-            value={paidAmount}
-            onChange={(e) => setPaidAmount(e.target.value)}
-          />
-          <button type="button" className="text-xs text-blue-600 mt-1 hover:underline" onClick={() => setPaidAmount(total)}>
-            Pay full amount
-          </button>
-        </div>
+        <SplitPaymentBox
+          split={splitPay}
+          onSplitChange={setSplitPay}
+          mode={paymentMode}
+          onModeChange={setPaymentMode}
+          parts={paymentParts}
+          onPartsChange={setPaymentParts}
+          paidAmount={paidAmount}
+          onPaidAmountChange={setPaidAmount}
+          billTotal={total}
+        />
         <div className="flex gap-2 pt-2">
           <button type="button" className="btn-secondary flex-1" onClick={onClose}>Cancel</button>
           <button

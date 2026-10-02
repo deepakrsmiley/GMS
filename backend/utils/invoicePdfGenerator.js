@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const { fetchImageBuffer } = require('./pdfBranding');
 const brandingService = require('../services/brandingService');
+const { formatPaymentBreakdown } = require('./billItems');
 
 const BLUE = '#4338ca';
 const BLUE_LIGHT = '#eef2ff';
@@ -428,7 +429,7 @@ const generatePremiumInvoicePDF = async (bill, res, branding, options = {}) => {
     ['Invoice Date', fmtDate(bill.createdAt)],
     ['Invoice Time', fmtTime(bill.createdAt)],
     ['Payment Status', getPaymentStatusLabel(bill)],
-    ['Payment Mode', (bill.paymentMode || 'N/A').toUpperCase()],
+    ['Payment Mode', formatPaymentBreakdown(bill)],
     ['Bill Type', (bill.billType || 'unified').toUpperCase()],
   ];
 
@@ -523,7 +524,7 @@ const generatePremiumThermalPrint = async (bill, res, branding) => {
   doc.fontSize(12).font('Times-Bold').fillColor(rgb).text(`TOTAL: ${fmt(bill.totalAmount)}`);
   doc.fontSize(9).font('Times-Roman').fillColor(TEXT_DARK);
   doc.text(`Paid: ${fmt(bill.paidAmount)} | Due: ${fmt(bill.dueAmount)}`);
-  doc.text(`Mode: ${(bill.paymentMode || 'N/A').toUpperCase()}`);
+  doc.text(`Mode: ${formatPaymentBreakdown(bill)}`);
   doc.moveDown(0.4);
   doc.fontSize(8).fillColor(TEXT_MUTED).text(b.footerNote || 'Thank you!', { align: 'center' });
 

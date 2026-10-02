@@ -13,6 +13,7 @@ const { withOrganization } = require('../middleware/tenant');
 const { markSourcesAsBilled } = require('../services/billingService');
 const { labBillableTestLines } = require('../utils/billingChargeRules');
 const { pharmacistBillScopeError } = require('../utils/billingAccess');
+const { normalizePaymentLines, paymentModeFromLines, sumPaymentLines } = require('../utils/billItems');
 const { inclusiveIstRange, istDayBounds, kolkataToday } = require('../utils/istDay');
 const Patient = require('../models/Patient');
 
@@ -766,12 +767,21 @@ exports.createLabBill = asyncHandler(async (req, res, next) => {
   if (scopeError) return next(new ErrorResponse(scopeError, 403));
 
   const total = items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  const paymentLines = normalizePaymentLines(req.body.payments, req.user._id);
+  let paymentMode = PAYMENT_MODES.includes(req.body.paymentMode) ? req.body.paymentMode : 'cash';
   const rawPaid = req.body.paidAmount;
   const paidParsed = Number(rawPaid);
-  const paidAmount = (rawPaid === '' || rawPaid == null || !Number.isFinite(paidParsed))
+  let paidAmount = (rawPaid === '' || rawPaid == null || !Number.isFinite(paidParsed))
     ? total
     : Math.max(0, Math.min(paidParsed, total));
-  const paymentMode = PAYMENT_MODES.includes(req.body.paymentMode) ? req.body.paymentMode : 'cash';
+  if (paymentLines.length) {
+    const splitSum = sumPaymentLines(paymentLines);
+    if (splitSum > total + 0.05) {
+      return next(new ErrorResponse('Paid amount cannot be more than the bill total', 400));
+    }
+    paidAmount = splitSum;
+    paymentMode = paymentModeFromLines(paymentLines, paymentMode);
+  }
 
   const payload = withOrganization(req, {
     billNumber: await allocateBillNumber(),
@@ -782,9 +792,11 @@ exports.createLabBill = asyncHandler(async (req, res, next) => {
     items,
     paidAmount,
     paymentMode,
-    payments: paidAmount > 0
-      ? [{ amount: paidAmount, mode: paymentMode, receivedBy: req.user._id, paidAt: new Date() }]
-      : [],
+    payments: paymentLines.length
+      ? paymentLines.filter((row) => row.amount > 0)
+      : (paidAmount > 0
+        ? [{ amount: paidAmount, mode: paymentMode === 'multiple' ? 'cash' : paymentMode, receivedBy: req.user._id, paidAt: new Date() }]
+        : []),
     notes: `Lab order ${lab.labNumber || lab._id}`,
     createdBy: req.user._id,
   });

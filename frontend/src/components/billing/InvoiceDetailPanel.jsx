@@ -140,7 +140,12 @@ export default function InvoiceDetailPanel({
                 ? [
                     detailData.department?.name,
                     detailData.paymentMode
-                      ? `Paid via ${String(detailData.paymentMode).toUpperCase()}`
+                      ? `Paid via ${(detailData.payments || []).filter((row) => Number(row.amount) > 0).length > 1
+                        ? (detailData.payments || [])
+                          .filter((row) => Number(row.amount) > 0)
+                          .map((row) => `${({ upi: 'GPay', cash: 'Cash', card: 'Card' }[row.mode] || String(row.mode || '').toUpperCase())} ${fmt(row.amount)}`)
+                          .join(' + ')
+                        : String(detailData.paymentMode).toUpperCase()}`
                       : null,
                   ]
                     .filter(Boolean)
@@ -208,6 +213,17 @@ export default function InvoiceDetailPanel({
               <span>Paid</span>
               <span>{fmt(detailData.paidAmount)}</span>
             </div>
+            {(detailData.payments || []).filter((row) => Number(row.amount) > 0).length > 1 && (
+              <div className="inv-detail__tot-line">
+                <span>Split</span>
+                <span>
+                  {(detailData.payments || [])
+                    .filter((row) => Number(row.amount) > 0)
+                    .map((row) => `${({ upi: 'GPay', cash: 'Cash', card: 'Card' }[row.mode] || String(row.mode || '').toUpperCase())} ${fmt(row.amount)}`)
+                    .join(' + ')}
+                </span>
+              </div>
+            )}
             {detailData.dueAmount > 0 && (
               <div className="inv-detail__tot-line is-due">
                 <span>Due</span>

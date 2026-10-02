@@ -38,6 +38,9 @@ const {
   inferBillType,
   pickIpAdmissionId,
   normalizePaymentMode,
+  normalizePaymentLines,
+  paymentModeFromLines,
+  sumPaymentLines,
 } = require("../utils/billItems");
 
 const safeStockRollback = async (fn) => {
@@ -444,8 +447,21 @@ exports.createBill = asyncHandler(async (req, res, next) => {
   const ipAdmission = billType === "ip"
     ? (ipAdmissionFromItems || await resolveIpAdmissionId(req.body.patient, items, null))
     : asObjectId(req.body.ipAdmission);
-  const paymentMode = normalizePaymentMode(req.body.paymentMode);
-  const paidNow = asMoney(req.body.paidAmount);
+  const paymentLines = normalizePaymentLines(req.body.payments, req.user._id);
+  let paymentMode = normalizePaymentMode(req.body.paymentMode);
+  let paidNow = asMoney(req.body.paidAmount);
+  if (paymentLines.length) {
+    paidNow = sumPaymentLines(paymentLines);
+    paymentMode = paymentModeFromLines(paymentLines, paymentMode);
+  }
+  const gross = items.reduce(
+    (sum, item) => sum + asMoney(item.unitPrice) * (Number(item.quantity) || 0) + asMoney(item.gstAmount),
+    0,
+  );
+  const estimatedTotal = Number((gross - gross * (asMoney(req.body.discount) / 100)).toFixed(2));
+  if (paidNow > estimatedTotal + 0.05) {
+    return next(new ErrorResponse("Paid amount cannot be more than the bill total", 400));
+  }
   const payload = {
     billNumber: await allocateBillNumber(),
     createdBy: req.user._id,
@@ -504,10 +520,12 @@ exports.createBill = asyncHandler(async (req, res, next) => {
       notes: payload.notes,
       advanceAmount: payload.advanceAmount,
     });
-    if (paidNow > 0 && !(Array.isArray(req.body.payments) && req.body.payments.length)) {
+    if (paymentLines.length) {
+      payload.payments = paymentLines;
+    } else if (paidNow > 0) {
       payload.payments = [{
         amount: paidNow,
-        mode: paymentMode,
+        mode: paymentMode === "multiple" ? "cash" : paymentMode,
         receivedBy: req.user._id,
         paidAt: new Date(),
       }];
@@ -751,8 +769,26 @@ exports.recordPayment = asyncHandler(async (req, res, next) => {
       new ErrorResponse("Cannot record payment for a cancelled bill", 400),
     );
 
-  const amount = Number(req.body.amount || 0);
+  const paymentLines = normalizePaymentLines(req.body.payments, req.user._id);
+  const singleMode = ["cash", "card", "upi", "cheque", "insurance", "online"].includes(req.body.mode)
+    ? req.body.mode
+    : "cash";
+  const entries = paymentLines.length
+    ? paymentLines
+    : (Number(req.body.amount) > 0
+      ? [{
+        amount: Number(Number(req.body.amount).toFixed(2)),
+        mode: singleMode,
+        reference: req.body.reference ? String(req.body.reference).slice(0, 80) : undefined,
+        receivedBy: req.user._id,
+        paidAt: new Date(),
+      }]
+      : []);
+  if (!entries.length) {
+    return next(new ErrorResponse("Enter a payment amount", 400));
+  }
 
+  const amount = sumPaymentLines(entries);
   const outstanding = bill.totalAmount - (bill.paidAmount + bill.advanceAmount);
 
   if (amount > outstanding + 0.01) {
@@ -764,8 +800,10 @@ exports.recordPayment = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const payment = { ...req.body, amount, receivedBy: req.user._id };
-  bill.payments.push(payment);
+  entries.forEach((payment) => bill.payments.push(payment));
+  const modes = [...new Set(bill.payments.map((row) => row.mode).filter(Boolean))];
+  if (modes.length > 1) bill.paymentMode = "multiple";
+  else if (modes.length === 1) bill.paymentMode = modes[0];
   console.log("Before:", bill.paidAmount, bill.totalAmount);
 
   bill.paidAmount = Number((bill.paidAmount + amount).toFixed(2));
@@ -785,7 +823,7 @@ exports.recordPayment = asyncHandler(async (req, res, next) => {
         },
         {
           paymentAmount: amount,
-          mode: req.body.mode,
+          mode: paymentModeFromLines(entries, singleMode),
           paidAmount: Number(bill.paidAmount),
         },
         req.body.reason || "Balance payment received",

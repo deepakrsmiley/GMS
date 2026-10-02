@@ -210,6 +210,57 @@ const inferBillType = (billType, items = [], ipAdmission = null) => {
 const normalizePaymentMode = (mode) =>
   VALID_PAYMENT_MODES.includes(mode) ? mode : 'cash';
 
+const SPLIT_LINE_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
+
+const PAYMENT_MODE_LABELS = {
+  cash: 'Cash',
+  upi: 'GPay',
+  card: 'Card',
+  cheque: 'Cheque',
+  online: 'Online',
+  insurance: 'Insurance',
+};
+
+/** One bill can be paid in more than one mode (GPay 1800 + cash 200). */
+const normalizePaymentLines = (payments, userId) => {
+  if (!Array.isArray(payments)) return [];
+  return payments
+    .map((row) => ({
+      amount: Number(asMoney(row?.amount).toFixed(2)),
+      mode: SPLIT_LINE_MODES.includes(row?.mode) ? row.mode : 'cash',
+      reference: row?.reference ? String(row.reference).slice(0, 80) : undefined,
+      receivedBy: userId,
+      paidAt: new Date(),
+    }))
+    .filter((row) => row.amount > 0);
+};
+
+const paymentModeFromLines = (lines, fallback = 'cash') => {
+  const modes = [...new Set((lines || []).map((row) => row.mode))];
+  if (modes.length > 1) return 'multiple';
+  if (modes.length === 1) return modes[0];
+  return normalizePaymentMode(fallback);
+};
+
+const sumPaymentLines = (lines) =>
+  Number((lines || []).reduce((sum, row) => sum + (Number(row.amount) || 0), 0).toFixed(2));
+
+const formatPaymentBreakdown = (bill) => {
+  const lines = (Array.isArray(bill?.payments) ? bill.payments : [])
+    .filter((row) => Number(row.amount) > 0);
+  if (lines.length > 1) {
+    return lines
+      .map((row) => `${PAYMENT_MODE_LABELS[row.mode] || String(row.mode || '').toUpperCase()} ₹${Number(row.amount).toFixed(2)}`)
+      .join(' + ');
+  }
+  if (lines.length === 1) {
+    const row = lines[0];
+    return `${PAYMENT_MODE_LABELS[row.mode] || String(row.mode || '').toUpperCase()} ₹${Number(row.amount).toFixed(2)}`;
+  }
+  const mode = String(bill?.paymentMode || '').toLowerCase();
+  return PAYMENT_MODE_LABELS[mode] || (bill?.paymentMode ? String(bill.paymentMode).toUpperCase() : 'N/A');
+};
+
 module.exports = {
   CATEGORY_TYPE_MAP,
   VALID_CATEGORIES,
@@ -225,4 +276,8 @@ module.exports = {
   pickIpAdmissionId,
   calculateItemAmounts,
   normalizePaymentMode,
+  normalizePaymentLines,
+  paymentModeFromLines,
+  sumPaymentLines,
+  formatPaymentBreakdown,
 };

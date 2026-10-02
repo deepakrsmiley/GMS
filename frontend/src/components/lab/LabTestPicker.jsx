@@ -163,10 +163,10 @@ export default function LabTestPicker({
                 className="ltp-children-toggle"
                 onClick={() => setOpenGroup((cur) => (cur === row.name ? '' : row.name))}
               >
-                {openGroup === row.name ? 'Hide tests' : 'Show tests (as in lab software)'}
+                {openGroup === row.name ? 'Show tests' : 'Hide tests'}
               </button>
             )}
-            {openGroup === row.name && (
+            {row.kind === 'group' && row.tests?.length > 0 && openGroup !== row.name && (
               <ul className="ltp-children">
                 {row.tests.map((t, idx) => (
                   <li key={`${t.testName}-${idx}`} className={t.isSection ? 'is-section' : ''}>

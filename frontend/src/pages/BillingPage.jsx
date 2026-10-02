@@ -14,6 +14,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import Modal from '../components/common/Modal';
   import InvoicePrint from '../components/billing/InvoicePrint';
   import InvoiceDetailPanel from '../components/billing/InvoiceDetailPanel';
+  import SplitPaymentBox, {
+    emptySplitParts,
+    RecordPaymentForm,
+    splitPartsPayload,
+    splitPartsTotal,
+  } from '../components/billing/SplitPaymentBox';
   import {
     flattenMedicineBatchOptions,
     formatBatchExpiry,
@@ -23,7 +29,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import WorkflowStrip from '../components/workflow/WorkflowStrip';
   import '../styles/billing.css';
 
-  const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'insurance', 'online'];
   const STATUS_CLASS = {
     paid: 'bl-status--paid',
     partial: 'bl-status--partial',
@@ -229,6 +234,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     const [discount, setDiscount] = useState(0);
     const [paidAmount, setPaidAmount] = useState(0);
     const [paymentMode, setPaymentMode] = useState('cash');
+    const [splitPay, setSplitPay] = useState(false);
+    const [paymentParts, setPaymentParts] = useState(emptySplitParts);
+
+    useEffect(() => {
+      if (!splitPay) return;
+      setPaidAmount(splitPartsTotal(paymentParts));
+    }, [splitPay, paymentParts]);
     const [collapsedCats, setCollapsedCats] = useState({});
     const [showDischarge, setShowDischarge] = useState(false);
     const [dischargeDetail, setDischargeDetail] = useState(null); // selected IP admission row
@@ -466,6 +478,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setDiscount(0);
       setPaidAmount(0);
       setPaymentMode('cash');
+      setSplitPay(false);
+      setPaymentParts(emptySplitParts());
       setChargeMeta({ doctor: null, department: null, patientType: null });
       setShowConsultForm(false);
       setConsultForm({ description: 'Consultation Fee', doctorName: '', fee: '', gstPercent: 0 });
@@ -494,7 +508,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     });
 
     const paymentMut = useMutation({
-      mutationFn: ({ id, amount, mode }) => api.post(`/billing/${id}/payment`, { amount, mode }),
+      mutationFn: ({ id, amount, mode, payments }) => api.post(`/billing/${id}/payment`, { amount, mode, payments }),
       onSuccess: () => {
         toast.success('Payment recorded');
         qc.invalidateQueries({ queryKey: ['bills'] });
@@ -884,6 +898,14 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         return;
       }
 
+      const parts = splitPay ? splitPartsPayload(paymentParts) : [];
+      const paidNow = splitPay ? splitPartsTotal(paymentParts) : (Number(paidAmount) || 0);
+      if (paidNow - totals.total > 0.05) {
+        toast.error('Paid amount cannot be more than the bill total');
+        return;
+      }
+      const splitModes = [...new Set(parts.map((row) => row.mode))];
+
       const allLab = included.every((c) => c.category === 'Laboratory' || c.type === 'lab');
       const billType = (mainTab === 'ip' || mainTab === 'discharge')
         ? 'ip'
@@ -922,8 +944,11 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         discount,
         discountAmount: totals.discountAmount,
         totalAmount: totals.total,
-        paidAmount: Number(paidAmount) || 0,
-        paymentMode,
+        paidAmount: paidNow,
+        paymentMode: splitPay
+          ? (splitModes.length > 1 ? 'multiple' : (splitModes[0] || 'cash'))
+          : paymentMode,
+        ...(parts.length ? { payments: parts } : {}),
       };
       if (!payload.items.length) {
         toast.error('Select at least one charge with a quantity greater than zero');
@@ -1982,17 +2007,17 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                   <label className="block text-xs font-medium text-gray-500 mb-1">Discount %</label>
                   <input type="number" min="0" max="100" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} className="input-field text-sm" />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Payment Mode</label>
-                  <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className="input-field text-sm">
-                    {PAYMENT_MODES.map((m) => <option key={m} value={m} className="capitalize">{m}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Amount Paid Now</label>
-                  <input type="number" min="0" step="0.01" value={paidAmount} onChange={(e) => setPaidAmount(Number(e.target.value))} className="input-field text-sm" placeholder="0.00" />
-                  <button type="button" onClick={() => setPaidAmount(totals.total)} className="text-xs text-blue-600 mt-1 hover:underline">Pay full amount</button>
-                </div>
+                <SplitPaymentBox
+                  split={splitPay}
+                  onSplitChange={setSplitPay}
+                  mode={paymentMode}
+                  onModeChange={setPaymentMode}
+                  parts={paymentParts}
+                  onPartsChange={setPaymentParts}
+                  paidAmount={paidAmount}
+                  onPaidAmountChange={setPaidAmount}
+                  billTotal={totals.total}
+                />
               </div>
 
               <div className="flex flex-col gap-2 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -2397,32 +2422,22 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         {/* PAYMENT MODAL */}
         <Modal isOpen={!!showPayment} onClose={() => setShowPayment(null)} title="Record Payment" size="sm">
           {showPayment && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const fd = new FormData(e.target);
-                paymentMut.mutate({ id: showPayment._id, amount: Number(fd.get('amount')), mode: fd.get('mode') });
+            <RecordPaymentForm
+              key={showPayment._id}
+              dueAmount={showPayment.dueAmount}
+              pending={paymentMut.isPending}
+              onSubmit={(body) => {
+                if (!body.amount) {
+                  toast.error('Enter the amount received');
+                  return;
+                }
+                if (body.amount - Number(showPayment.dueAmount) > 0.05) {
+                  toast.error('Payment cannot be more than the amount due');
+                  return;
+                }
+                paymentMut.mutate({ id: showPayment._id, ...body });
               }}
-              className="p-6 space-y-4"
-            >
-              <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl text-sm">
-                <p className="text-gray-400">Outstanding</p>
-                <p className="text-2xl font-bold text-red-600">{fmt(showPayment.dueAmount)}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Amount</label>
-                <input name="amount" type="number" min="0.01" step="0.01" defaultValue={showPayment.dueAmount} className="input-field" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Mode</label>
-                <select name="mode" className="input-field" defaultValue="cash">
-                  {PAYMENT_MODES.map((m) => <option key={m} value={m} className="capitalize">{m}</option>)}
-                </select>
-              </div>
-              <button type="submit" disabled={paymentMut.isPending} className="btn-primary w-full justify-center">
-                {paymentMut.isPending ? 'Saving...' : 'Confirm Payment'}
-              </button>
-            </form>
+            />
           )}
         </Modal>
       </div>

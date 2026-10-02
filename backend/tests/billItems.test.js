@@ -94,3 +94,19 @@ describe('pickIpAdmissionId', () => {
     assert.equal(String(picked), String(admissionId));
   });
 });
+
+describe('split payments', () => {
+  const { normalizePaymentLines, paymentModeFromLines, sumPaymentLines, formatPaymentBreakdown } = require('../utils/billItems');
+
+  it('keeps GPay and cash as separate lines on one bill', () => {
+    const lines = normalizePaymentLines([
+      { mode: 'upi', amount: 1800 },
+      { mode: 'cash', amount: 200 },
+      { mode: 'card', amount: 0 },
+    ], 'user-1');
+    assert.equal(lines.length, 2);
+    assert.equal(sumPaymentLines(lines), 2000);
+    assert.equal(paymentModeFromLines(lines), 'multiple');
+    assert.equal(formatPaymentBreakdown({ payments: lines, paymentMode: 'multiple' }), 'GPay ₹1800.00 + Cash ₹200.00');
+  });
+});
