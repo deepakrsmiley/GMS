@@ -13,6 +13,9 @@ import ServiceUsageModal from '../components/ip/ServiceUsageModal';
 import MedicationLogModal from '../components/ip/MedicationLogModal';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
 import { useBranding } from '../hooks/useBranding';
+import { isThangamHospital } from '../utils/hospitalA';
+import ThangamDobFields from '../components/patients/ThangamDobFields';
+import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
 import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 
@@ -59,6 +62,7 @@ export default function IPAdmissionsPage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
+  const thangam = isThangamHospital(user?.organization, branding);
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canSeeDischargeTab = hasPermission(user, 'CREATE_DISCHARGE_SUMMARY') || hasPermission(user, 'PROCESS_DISCHARGE');
   const viewOnly = hasPermission(user, 'VIEW_IP_ADMISSION') && !canAdmit;
@@ -255,6 +259,7 @@ export default function IPAdmissionsPage() {
     address: { street: '', city: '', state: '', pincode: '' },
   };
   const [quickForm, setQuickForm] = useState(EMPTY_QUICK_PATIENT);
+  const [ipDob, setIpDob] = useState(emptyDobParts);
   const quickAddMut = useMutation({
     mutationFn: (d) => {
       const allergies = String(d.allergies || '')
@@ -265,6 +270,7 @@ export default function IPAdmissionsPage() {
         name: d.name,
         phone: d.phone,
         age: Number(d.age),
+        dob: d.dob || undefined,
         gender: d.gender,
         email: d.email || undefined,
         bloodGroup: d.bloodGroup || undefined,
@@ -284,6 +290,7 @@ export default function IPAdmissionsPage() {
       pickPatient(p);
       setShowQuickAdd(false);
       setQuickForm(EMPTY_QUICK_PATIENT);
+      setIpDob(emptyDobParts());
     },
     onError: (err) => toast.error(err?.response?.data?.message || 'Failed to add patient'),
   });
@@ -782,7 +789,16 @@ export default function IPAdmissionsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            quickAddMut.mutate(quickForm);
+            if (!thangam) {
+              quickAddMut.mutate(quickForm);
+              return;
+            }
+            const born = dobPayloadFromParts(ipDob);
+            if (!born) {
+              toast.error('Enter date of birth as day / month / year');
+              return;
+            }
+            quickAddMut.mutate({ ...quickForm, age: born.age, dob: born.dob });
           }}
           className="p-6 space-y-4 max-h-[75vh] overflow-y-auto"
         >
@@ -798,10 +814,21 @@ export default function IPAdmissionsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
               <input required value={quickForm.phone} onChange={(e) => setQuickForm({ ...quickForm, phone: e.target.value })} className="input-field" placeholder="Mobile number" />
             </div>
+            {thangam ? (
+              <div className="col-span-2">
+                <ThangamDobFields
+                  day={ipDob.day}
+                  month={ipDob.month}
+                  year={ipDob.year}
+                  onChange={setIpDob}
+                />
+              </div>
+            ) : (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Age *</label>
               <input required value={quickForm.age} onChange={(e) => setQuickForm({ ...quickForm, age: e.target.value })} type="number" min="0" className="input-field" placeholder="Age in years" />
             </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
               <select required value={quickForm.gender} onChange={(e) => setQuickForm({ ...quickForm, gender: e.target.value })} className="input-field">

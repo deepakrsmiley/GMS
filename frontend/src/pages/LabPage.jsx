@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { hasPermission } from '../constants/permissions';
-import { Plus, Printer, CheckCircle, Eye, Wallet, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Printer, CheckCircle, Eye, Wallet, Pencil, Trash2, Search } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -23,6 +23,7 @@ import {
 } from '../constants/labProfiles';
 import { analyzeResult, FLAG_STYLES } from '../utils/labResultAnalyzer';
 import { istCalendarDate } from '../utils/istDate';
+import { isThangamHospital } from '../utils/hospitalA';
 import '../styles/labOrder.css';
 
 const shortProfileName = (name = '') => {
@@ -243,6 +244,8 @@ export default function LabPage() {
   const [reportTo, setReportTo] = useState(todayIso);
   const [reportSearch, setReportSearch] = useState('');
   const [reportQ, setReportQ] = useState('');
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderQ, setOrderQ] = useState('');
   const qc = useQueryClient();
 
   const { register: resReg, handleSubmit: resSubmit, reset: resReset, getValues: getResValues } = useForm();
@@ -283,7 +286,7 @@ export default function LabPage() {
   const reportRange = labRangeFromPreset(reportPreset, reportFrom, reportTo);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['labTests', page, tab, desk, reportRange.from, reportRange.to, reportQ],
+    queryKey: ['labTests', page, tab, desk, reportRange.from, reportRange.to, reportQ, orderQ],
     enabled: tab !== 'bills' && tab !== 'daily',
     queryFn: () => {
       const params = new URLSearchParams({
@@ -296,7 +299,10 @@ export default function LabPage() {
         params.set('from', reportRange.from);
         params.set('to', reportRange.to);
         if (reportQ) params.set('q', reportQ);
-      } else if (desk) params.set('orderSource', desk);
+      } else if (desk) {
+        params.set('orderSource', desk);
+        if (orderQ) params.set('q', orderQ);
+      }
       return api.get(`/lab?${params}`).then((r) => r.data);
     },
   });
@@ -846,6 +852,36 @@ export default function LabPage() {
             {' '}<strong>Lab status</strong> column updates on this desk in real time.
             {' '}Collect lab payment as soon as the order is created — do not wait for the report.
           </p>
+          {isThangamHospital(user?.organization, brandingData) && (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setOrderQ(orderSearch.trim());
+                setPage(1);
+              }}
+            >
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="input-field py-1.5 pl-8 text-sm w-64"
+                  placeholder="Name, UHID, phone, or lab no"
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                />
+              </div>
+              <button type="submit" className="btn-secondary text-xs py-1.5">Search</button>
+              {orderQ && (
+                <button
+                  type="button"
+                  className="text-xs text-slate-500 underline"
+                  onClick={() => { setOrderSearch(''); setOrderQ(''); setPage(1); }}
+                >
+                  Clear
+                </button>
+              )}
+            </form>
+          )}
         </>
       )}
 

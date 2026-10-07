@@ -112,6 +112,9 @@ const sanitizeBillItems = (items = []) =>
           referenceModel: VALID_REF_MODELS.includes(raw.referenceModel)
             ? raw.referenceModel
             : undefined,
+          sourceIds: Array.isArray(raw.sourceIds)
+            ? raw.sourceIds.map((id) => asObjectId(id)).filter(Boolean)
+            : undefined,
         });
       })
       .filter((item) => item.quantity > 0),

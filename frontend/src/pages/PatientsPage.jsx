@@ -10,6 +10,10 @@ import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
 import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
+import ThangamDobFields from '../components/patients/ThangamDobFields';
+import { useBranding } from '../hooks/useBranding';
+import { isThangamHospital } from '../utils/hospitalA';
+import { dobPayloadFromParts, emptyDobParts, partsFromDob } from '../utils/dobAge';
 import '../styles/patients.css';
 
 const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -23,6 +27,8 @@ const fmtDate = (v) => {
 export default function PatientsPage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
+  const { branding } = useBranding();
+  const thangam = isThangamHospital(user?.organization, branding);
   // Driven by Users & Access feature-permission checkboxes (Patients group)
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canCreate = hasPermission(user, 'CREATE_PATIENT');
@@ -35,6 +41,7 @@ export default function PatientsPage() {
   const [showDelete, setShowDelete] = useState(null);
   const [dupMatches, setDupMatches] = useState(null);
   const [pendingRegister, setPendingRegister] = useState(null);
+  const [dobParts, setDobParts] = useState(emptyDobParts);
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -47,11 +54,13 @@ export default function PatientsPage() {
   const closeForm = () => {
     setShowAdd(false);
     setEditPatient(null);
+    setDobParts(emptyDobParts());
     reset();
   };
 
   const openEdit = (p) => {
     setEditPatient(p);
+    setDobParts(partsFromDob(p.dob));
     reset({
       name: p.name || '',
       phone: p.phone || '',
@@ -204,7 +213,7 @@ export default function PatientsPage() {
             </button>
           )}
           {canCreate && (
-            <button type="button" onClick={() => { setEditPatient(null); reset(); setShowAdd(true); }} className="pt-btn pt-btn--primary">
+            <button type="button" onClick={() => { setEditPatient(null); setDobParts(emptyDobParts()); reset(); setShowAdd(true); }} className="pt-btn pt-btn--primary">
               <Plus size={14} /> Register Patient
             </button>
           )}
@@ -242,7 +251,22 @@ export default function PatientsPage() {
 
       <Modal isOpen={showAdd} onClose={closeForm} title={editPatient ? `Edit Patient — ${editPatient.patientId || editPatient.name}` : 'Register New Patient'} size="lg">
         <form
-          onSubmit={handleSubmit((d) => createMut.mutate(d))}
+          onSubmit={handleSubmit((d) => {
+            if (!thangam) {
+              createMut.mutate(d);
+              return;
+            }
+            const born = dobPayloadFromParts(dobParts);
+            if (!born) {
+              if (editPatient && editPatient.age != null && !dobParts.day && !dobParts.month && !dobParts.year) {
+                createMut.mutate({ ...d, age: editPatient.age });
+                return;
+              }
+              toast.error('Enter date of birth as day / month / year');
+              return;
+            }
+            createMut.mutate({ ...d, age: born.age, dob: born.dob });
+          })}
           className="p-6 space-y-4 pt-shell"
         >
           <div className="pt-form-grid">
@@ -255,10 +279,19 @@ export default function PatientsPage() {
               <label className="pt-form-label">Phone *</label>
               <input {...register('phone', { required: true })} className="input-field" placeholder="Mobile number" />
             </div>
-            <div>
-              <label className="pt-form-label">Age *</label>
-              <input {...register('age', { required: true, min: 0 })} type="number" className="input-field" placeholder="Years" />
-            </div>
+            {thangam ? (
+              <ThangamDobFields
+                day={dobParts.day}
+                month={dobParts.month}
+                year={dobParts.year}
+                onChange={setDobParts}
+              />
+            ) : (
+              <div>
+                <label className="pt-form-label">Age *</label>
+                <input {...register('age', { required: true, min: 0 })} type="number" className="input-field" placeholder="Years" />
+              </div>
+            )}
             <div>
               <label className="pt-form-label">Gender *</label>
               <select {...register('gender', { required: true })} className="input-field">

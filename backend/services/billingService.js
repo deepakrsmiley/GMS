@@ -8,6 +8,7 @@ const Bill = require('../models/Bill');
 const Bed = require('../models/Bed');
 const { EMERGENCY_SURCHARGE, resolveOpConsultationFee, resolveBilledConsultationFee } = require('../utils/opConsultationFee');
 const { filterChargesForBillType, labBillableTestLines } = require('../utils/billingChargeRules');
+const { mergeSameMedicineLines } = require('../utils/mergeMedicineLines');
 
 const ADMISSION_FEE = 500;
 const NURSING_CHARGE_PER_NOTE = 200;
@@ -21,7 +22,7 @@ const daysBetween = (start, end) => {
 
 const makeCharge = ({
   id, category, type, description, quantity, unitPrice, gstPercent = 0,
-  referenceId, referenceModel, medicine, batch, batchNumber, meta = {},
+  referenceId, referenceModel, medicine, batch, batchNumber, sourceIds, meta = {},
 }) => {
   const qty = Number(quantity) || 1;
   const price = Number(unitPrice) || 0;
@@ -41,6 +42,7 @@ const makeCharge = ({
     amount: lineSubtotal + gstAmount,
     referenceId,
     referenceModel,
+    sourceIds: Array.isArray(sourceIds) ? sourceIds.filter(Boolean) : undefined,
     medicine: medicine || undefined,
     batch: lot || undefined,
     batchNumber: lot || undefined,
@@ -53,12 +55,15 @@ const getBilledReferenceIds = async (patientId) => {
   const bills = await Bill.find({
     patient: patientId,
     status: { $nin: ['cancelled', 'refunded'] },
-  }).select('items.referenceId items.referenceModel');
+  }).select('items.referenceId items.referenceModel items.sourceIds');
 
   const refs = new Set();
   bills.forEach((bill) => {
     bill.items.forEach((item) => {
       if (item.referenceId) refs.add(`${item.referenceModel}:${item.referenceId}`);
+      (item.sourceIds || []).forEach((id) => {
+        if (id) refs.add(`${item.referenceModel}:${id}`);
+      });
     });
   });
   return refs;
@@ -308,18 +313,19 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
 
     // ── Pharmacy medicines given during this IP stay ──
     // Logged via ipController.addMedication (stock already deducted at that point).
-    // Billed individually by subdocument _id so re-generating a bill mid-stay never
-    // double-charges an entry that was already invoiced.
+    // Same medicine at the same rate is combined later (Dolo 250 x 2), while each
+    // day's source id is kept so a later bill does not charge it again.
     for (const med of adm.medications || []) {
       if (isBilled(billedRefs, 'IPAdmission', med._id)) continue;
 
       const medDoc = med.medicine;
       const unitPrice = med.unitPrice || medDoc?.sellingPrice || 0;
+      const medicineName = med.medicineName || medDoc?.name || 'Medicine';
       charges.push(makeCharge({
         id: `ip-medication-${med._id}`,
         category: 'Pharmacy',
         type: 'medicine',
-        description: `${med.medicineName || medDoc?.name || 'Medicine'} ${med.dosage || ''} ${med.frequency || ''}`.trim(),
+        description: medicineName,
         quantity: med.quantity,
         unitPrice,
         gstPercent: med.gstPercent || medDoc?.gstPercent || 5,
@@ -327,6 +333,7 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
         referenceModel: 'IPAdmission',
         medicine: medDoc?._id,
         batchNumber: med.batchNumber,
+        sourceIds: [med._id],
         meta: {
           admissionNumber: adm.admissionNumber,
           administeredAt: med.administeredAt,
@@ -384,17 +391,19 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
       const med = item.medicine;
       const unitPrice = med?.sellingPrice || 0;
       const qty = item.quantity || 1;
+      const medicineName = item.medicineName || med?.name || 'Medicine';
       charges.push(makeCharge({
         id: `rx-${rx._id}-${item._id}`,
         category: 'Pharmacy',
         type: 'medicine',
-        description: `${item.medicineName || med?.name || 'Medicine'} ${item.dosage || ''} ${item.frequency || ''}`.trim(),
+        description: medicineName,
         quantity: qty,
         unitPrice,
         gstPercent: med?.gstPercent || 5,
         referenceId: rx._id,
         referenceModel: 'Prescription',
         medicine: med?._id,
+        sourceIds: [rx._id],
         meta: { prescriptionId: rx._id, dispensedAt: rx.dispensedAt },
       }));
     }
@@ -418,14 +427,14 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
     }));
   }
 
-  const filteredCharges = filterChargesForBillType(
+  const filteredCharges = mergeSameMedicineLines(filterChargesForBillType(
     charges.filter((c) => {
       if (c.amount <= 0) return false;
       if (opOnly && isIpCharge(c)) return false;
       return true;
     }),
     billType,
-  );
+  ));
 
   const summary = filteredCharges.reduce((acc, c) => {
     const key = c.category.toLowerCase();
@@ -523,15 +532,21 @@ exports.markSourcesAsBilled = async (items, billId) => {
   const rxIds = new Set();
 
   items.forEach((item) => {
-    if (!item.referenceId || !item.referenceModel) return;
-    const id = item.referenceId;
-    switch (item.referenceModel) {
-      case 'OPRegistration': opIds.add(String(id)); break;
-      case 'IPAdmission': ipIds.add(String(id)); break;
-      case 'LabTest': labIds.add(String(id)); break;
-      case 'Prescription': rxIds.add(String(id)); break;
-      default: break;
-    }
+    if (!item.referenceModel) return;
+    const ids = new Set();
+    if (item.referenceId) ids.add(String(item.referenceId));
+    (item.sourceIds || []).forEach((id) => {
+      if (id) ids.add(String(id));
+    });
+    ids.forEach((id) => {
+      switch (item.referenceModel) {
+        case 'OPRegistration': opIds.add(id); break;
+        case 'IPAdmission': ipIds.add(id); break;
+        case 'LabTest': labIds.add(id); break;
+        case 'Prescription': rxIds.add(id); break;
+        default: break;
+      }
+    });
   });
 
   const bill = billId ? await Bill.findById(billId).select('billType').lean() : null;

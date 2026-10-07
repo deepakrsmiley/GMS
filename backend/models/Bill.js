@@ -16,6 +16,7 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
     totalAmount: { type: Number, required: true },
     referenceId: { type: mongoose.Schema.Types.ObjectId },
     referenceModel: { type: String, enum: ['OPRegistration', 'IPAdmission', 'LabTest', 'Prescription', 'Patient', 'Medicine'] },
+    sourceIds: [{ type: mongoose.Schema.Types.ObjectId }],
     medicine: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine' },
     batch: String,
     batchNumber: String,

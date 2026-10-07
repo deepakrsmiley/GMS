@@ -10,6 +10,10 @@ import api from '../services/api';
 import Modal from '../components/common/Modal';
 import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
+import { useBranding } from '../hooks/useBranding';
+import { isThangamHospital } from '../utils/hospitalA';
+import ThangamDobFields from '../components/patients/ThangamDobFields';
+import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
 
 const STATUS_STYLES = {
   scheduled: 'badge-blue',
@@ -43,6 +47,8 @@ const EMPTY_FORM = {
 
 export default function AppointmentsPage() {
   const { user } = useSelector((s) => s.auth);
+  const { branding } = useBranding();
+  const thangam = isThangamHospital(user?.organization, branding);
   const canBook = hasPermission(user, 'CREATE_APPOINTMENT');
   const qc = useQueryClient();
 
@@ -59,6 +65,7 @@ export default function AppointmentsPage() {
   const [doctors, setDoctors] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [quickForm, setQuickForm] = useState({ name: '', phone: '', age: '', gender: '' });
+  const [apptDob, setApptDob] = useState(emptyDobParts);
   const [cancelId, setCancelId] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
 
@@ -141,6 +148,7 @@ export default function AppointmentsPage() {
       pickPatient(p);
       setShowQuickAdd(false);
       setQuickForm({ name: '', phone: '', age: '', gender: '' });
+      setApptDob(emptyDobParts());
     },
     onError: (err) => toast.error(err?.response?.data?.message || 'Failed to add patient'),
   });
@@ -495,7 +503,19 @@ export default function AppointmentsPage() {
       {/* Quick add patient */}
       <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Add New Patient" size="md">
         <form
-          onSubmit={(e) => { e.preventDefault(); quickAddMut.mutate(quickForm); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!thangam) {
+              quickAddMut.mutate(quickForm);
+              return;
+            }
+            const born = dobPayloadFromParts(apptDob);
+            if (!born) {
+              toast.error('Enter date of birth as day / month / year');
+              return;
+            }
+            quickAddMut.mutate({ ...quickForm, age: born.age, dob: born.dob });
+          }}
           className="p-6 space-y-4"
         >
           <div className="grid grid-cols-2 gap-4">
@@ -507,10 +527,21 @@ export default function AppointmentsPage() {
               <label className="block text-sm font-medium mb-1">Phone *</label>
               <input required className="input-field" value={quickForm.phone} onChange={(e) => setQuickForm({ ...quickForm, phone: e.target.value })} />
             </div>
+            {thangam ? (
+              <div className="col-span-2">
+                <ThangamDobFields
+                  day={apptDob.day}
+                  month={apptDob.month}
+                  year={apptDob.year}
+                  onChange={setApptDob}
+                />
+              </div>
+            ) : (
             <div>
               <label className="block text-sm font-medium mb-1">Age *</label>
               <input required type="number" min="0" className="input-field" value={quickForm.age} onChange={(e) => setQuickForm({ ...quickForm, age: e.target.value })} />
             </div>
+            )}
             <div className="col-span-2">
               <label className="block text-sm font-medium mb-1">Gender *</label>
               <select required className="input-field" value={quickForm.gender} onChange={(e) => setQuickForm({ ...quickForm, gender: e.target.value })}>

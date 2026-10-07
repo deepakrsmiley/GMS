@@ -17,6 +17,8 @@ import OPPaperTemplate from '../components/op/OPPaperTemplate';
 import OPConsultationReceipt from '../components/op/OPConsultationReceipt';
 import { istCalendarDate } from '../utils/istDate';
 import { isThangamHospital } from '../utils/hospitalA';
+import ThangamDobFields from '../components/patients/ThangamDobFields';
+import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
 import '../styles/opRegistration.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -69,6 +71,7 @@ export default function OPRegistrationPage() {
   const qc = useQueryClient();
   const organization = useSelector((s) => s.auth?.user?.organization);
   const { branding } = useBranding();
+  const thangam = isThangamHospital(organization, branding);
   const patientSearchTimer = useRef(null);
 
   const [patientSearch, setPatientSearch] = useState('');
@@ -78,6 +81,7 @@ export default function OPRegistrationPage() {
   const [departments, setDepartments] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickDob, setQuickDob] = useState(emptyDobParts);
   const [printData, setPrintData] = useState(null);
   const [billPrint, setBillPrint] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
@@ -282,6 +286,7 @@ export default function OPRegistrationPage() {
       qc.invalidateQueries(['patients']);
       pickPatient(r.data.data);
       setShowQuickAdd(false);
+      setQuickDob(emptyDobParts());
       resetQuick();
     },
     onError: (err) => toast.error(err?.response?.data?.message || 'Failed to add patient'),
@@ -672,7 +677,18 @@ export default function OPRegistrationPage() {
       </div>
 
       <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Add New Patient" size="md">
-        <form onSubmit={handleQuickSubmit((d) => quickAddMut.mutate(d))} className="p-6 space-y-4">
+        <form onSubmit={handleQuickSubmit((d) => {
+          if (!thangam) {
+            quickAddMut.mutate(d);
+            return;
+          }
+          const born = dobPayloadFromParts(quickDob);
+          if (!born) {
+            toast.error('Enter date of birth as day / month / year');
+            return;
+          }
+          quickAddMut.mutate({ ...d, age: born.age, dob: born.dob });
+        })} className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
@@ -682,10 +698,21 @@ export default function OPRegistrationPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
               <input {...registerQuick('phone', { required: true })} className="input-field" placeholder="Mobile number" />
             </div>
+            {thangam ? (
+              <div className="col-span-2">
+                <ThangamDobFields
+                  day={quickDob.day}
+                  month={quickDob.month}
+                  year={quickDob.year}
+                  onChange={setQuickDob}
+                />
+              </div>
+            ) : (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Age *</label>
               <input {...registerQuick('age', { required: true, min: 0 })} type="number" className="input-field" />
             </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
               <select {...registerQuick('gender', { required: true })} className="input-field">
@@ -701,7 +728,7 @@ export default function OPRegistrationPage() {
             </div>
           </div>
           <div className="flex gap-3 justify-end pt-4 border-t">
-            <button type="button" onClick={() => setShowQuickAdd(false)} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={() => { setShowQuickAdd(false); setQuickDob(emptyDobParts()); }} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={quickAddMut.isPending} className="btn-primary">
               {quickAddMut.isPending ? 'Adding…' : 'Add Patient'}
             </button>

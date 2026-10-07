@@ -150,9 +150,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     if (
       err?.code === 'ECONNABORTED' ||
       err?.code === 'ETIMEDOUT' ||
-      /timeout of \d+ms exceeded/i.test(raw)
+      /timeout of \d+ms exceeded/i.test(raw) ||
+      err?.response?.status === 502 ||
+      err?.response?.status === 503 ||
+      err?.response?.status === 504
     ) {
-      return 'Could not reach the server. Check your connection and try again.';
+      return 'Billing took too long. Check the bill list before generating again.';
     }
     if (!err?.response) {
       return 'Could not reach the server. Check your connection and try again.';
@@ -489,7 +492,39 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     };
 
     const createMut = useMutation({
-      mutationFn: (payload) => api.post('/billing', payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT }),
+      mutationFn: async (payload) => {
+        const startedAt = Date.now();
+        try {
+          return await api.post('/billing', payload, { skipErrorToast: true, timeout: BILLING_SAVE_TIMEOUT });
+        } catch (err) {
+          const status = err?.response?.status;
+          const gaveUp = status === 502 || status === 503 || status === 504
+            || err?.code === 'ECONNABORTED'
+            || err?.code === 'ETIMEDOUT';
+          if (!gaveUp || !payload?.patient) throw err;
+          const since = startedAt - 5000;
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            if (attempt) await new Promise((resolve) => setTimeout(resolve, 4000));
+            try {
+              const { data } = await api.get('/billing', {
+                params: { patient: payload.patient, limit: 5 },
+                skipErrorToast: true,
+                timeout: 20000,
+              });
+              const saved = (data?.data || []).find((bill) => {
+                const patientId = bill.patient?._id || bill.patient;
+                return String(patientId) === String(payload.patient)
+                  && new Date(bill.createdAt).getTime() >= since
+                  && bill.status !== 'cancelled';
+              });
+              if (saved) {
+                return { data: { success: true, data: saved, message: 'Bill created' } };
+              }
+            } catch { /* the bill may still be saving */ }
+          }
+          throw err;
+        }
+      },
       onSuccess: (res) => {
         const created = res.data?.data;
         toast.success(res.data?.message || 'Bill created!');
@@ -731,6 +766,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         discountAmount: Number(item.discountAmount || 0),
         referenceId: asRefId(item.referenceId),
         referenceModel: item.referenceModel,
+        sourceIds: Array.isArray(item.sourceIds)
+          ? item.sourceIds.map((id) => asRefId(id)).filter(Boolean)
+          : undefined,
       };
     };
 

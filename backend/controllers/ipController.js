@@ -428,8 +428,8 @@ exports.deleteServiceUsage = asyncHandler(async (req, res, next) => {
 // Works just like an OP dispense: stock is deducted from the medicine's usable
 // batches (FEFO) the moment it's logged, and a StockMovement audit entry is made.
 // Every entry stays on the admission record from admit -> discharge, giving a
-// full daily medication history, and is picked up as its own billable line by
-// billingService.getPatientBillableCharges() (category: Pharmacy).
+// full daily medication history, and is combined on the IP bill by medicine
+// (same medicine and rate = one line with the total quantity).
 exports.addMedication = asyncHandler(async (req, res, next) => {
   const { medicine: medicineId, medicineName, dosage, frequency, route, quantity, administeredAt, notes } = req.body;
 

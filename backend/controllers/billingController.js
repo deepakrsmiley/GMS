@@ -42,6 +42,7 @@ const {
   paymentModeFromLines,
   sumPaymentLines,
 } = require("../utils/billItems");
+const { mergeSameMedicineLines } = require("../utils/mergeMedicineLines");
 
 const safeStockRollback = async (fn) => {
   try {
@@ -364,6 +365,9 @@ exports.getBills = asyncHandler(async (req, res) => {
   } else if (req.query.billType && req.query.billType !== "all") {
     extra.billType = req.query.billType;
   }
+  if (req.query.patient && mongoose.Types.ObjectId.isValid(req.query.patient)) {
+    extra.patient = req.query.patient;
+  }
   if (req.query.department) extra.department = req.query.department;
   if (req.query.from || req.query.to) {
     extra.createdAt = {};
@@ -434,7 +438,7 @@ exports.createBill = asyncHandler(async (req, res, next) => {
 
   let items;
   try {
-    items = sanitizeBillItems(await enrichMedicineItems(req.body.items));
+    items = mergeSameMedicineLines(sanitizeBillItems(await enrichMedicineItems(req.body.items)));
   } catch (error) {
     return next(toBillError(error));
   }
@@ -547,13 +551,23 @@ exports.createBill = asyncHandler(async (req, res, next) => {
     logger.warn(`markSourcesAsBilled failed for ${bill.billNumber}: ${error.message}`);
   }
 
-  const populated = (await populateSavedBill(bill._id)) || bill;
   const itemCount = payload.items.length;
+  const message = `${payload.billType === "ip" ? "IP" : payload.billType === "op" ? "OP" : payload.billType === "lab" ? "Lab" : "Unified"} bill created with ${itemCount} item(s).${alreadyIssuedMeds ? ` ${alreadyIssuedMeds} already-issued medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`;
 
-  try {
-    const { notifyRoles } = require('../utils/notify');
-    const due = Number(populated.totalAmount || 0) - Number(populated.paidAmount || 0) - Number(populated.advanceAmount || 0);
-    if (due > 0.01) {
+  // Answer immediately. The public site proxy stops waiting after ~26s, so a
+  // slow notification pass used to return 504 even though the bill was saved.
+  res.status(201).json({
+    success: true,
+    data: bill,
+    message,
+  });
+
+  setImmediate(async () => {
+    try {
+      const populated = (await populateSavedBill(bill._id)) || bill;
+      const due = Number(populated.totalAmount || 0) - Number(populated.paidAmount || 0) - Number(populated.advanceAmount || 0);
+      if (due <= 0.01) return;
+      const { notifyRoles } = require('../utils/notify');
       await notifyRoles(req, {
         roles: ['Admin', 'Super Admin', 'Pharmacist', 'Accountant', 'Receptionist'],
         title: 'Unpaid bill',
@@ -564,13 +578,9 @@ exports.createBill = asyncHandler(async (req, res, next) => {
         relatedModel: 'Bill',
         excludeUserId: req.user._id,
       });
+    } catch (error) {
+      logger.warn(`Bill notification skipped for ${bill.billNumber}: ${error.message}`);
     }
-  } catch (_) { /* ignore */ }
-
-  res.status(201).json({
-    success: true,
-    data: populated,
-    message: `${payload.billType === "ip" ? "IP" : payload.billType === "op" ? "OP" : payload.billType === "lab" ? "Lab" : "Unified"} bill created with ${itemCount} item(s).${alreadyIssuedMeds ? ` ${alreadyIssuedMeds} already-issued medicine charge(s) included.` : ""}${newMeds.length ? ` ${newMeds.length} medicine(s) deducted from inventory.` : ""}`,
   });
 });
 
