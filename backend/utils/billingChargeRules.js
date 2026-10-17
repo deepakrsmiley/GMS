@@ -24,8 +24,8 @@ const labBillableTestLines = (lab) => {
     return active.map((test) => ({
       category: 'Laboratory',
       type: 'lab',
-      description: `Lab: ${test.testName} (${labNumber})`.trim(),
-      name: test.testName,
+      description: `Lab: ${(test.profileName && test.profileName !== test.testName ? test.profileName : test.testName)} (${labNumber})`.trim(),
+      name: (test.profileName && test.profileName !== test.testName) ? test.profileName : test.testName,
       quantity: 1,
       unitPrice: Number(test.price) || 0,
       gstPercent: 0,

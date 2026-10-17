@@ -42,6 +42,29 @@ describe('expandLabOrderTests', () => {
     assert.equal(totalAmount, 400);
   });
 
+  it('keeps client parameter rows when a group has no stored children', () => {
+    const masters = [{
+      name: 'CBC (Complete Blood Count)',
+      kind: 'group',
+      price: 500,
+      items: [],
+    }];
+    const clientTests = [
+      { testName: 'WBC', profileName: 'CBC (Complete Blood Count)', price: 500, unit: '10³/mm³' },
+      { testName: 'RBC', profileName: 'CBC (Complete Blood Count)', price: 0, unit: '10⁶/mm³' },
+    ];
+    const { tests, totalAmount } = expandLabOrderTests(
+      ['CBC (Complete Blood Count)'],
+      masters,
+      { 'CBC (Complete Blood Count)': 500 },
+      clientTests,
+    );
+    assert.equal(tests.length, 2);
+    assert.equal(tests[0].testName, 'WBC');
+    assert.equal(tests[1].testName, 'RBC');
+    assert.equal(totalAmount, 500);
+  });
+
   it('keeps client CBC rows for Sri Sanjeevi price-only masters', () => {
     const masters = [{
       name: 'CBC (Complete Blood Count)',

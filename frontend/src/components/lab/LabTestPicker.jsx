@@ -105,7 +105,7 @@ export default function LabTestPicker({
                   <td>
                     <div className="ltp-name">{row.name}</div>
                     <div className="ltp-meta">
-                      {row.kind === 'group' ? `Group · ${childCount} tests` : 'Single'}
+                      {childCount > 1 ? `${childCount} parameters` : (row.kind === 'group' ? 'Group · 1 test' : 'Single')}
                       {row.category ? ` · ${row.category}` : ''}
                     </div>
                   </td>
@@ -136,7 +136,7 @@ export default function LabTestPicker({
               <div>
                 <div className="ltp-name">{row.name}</div>
                 <div className="ltp-meta">
-                  {row.kind === 'group' ? `Group · ${row.children.length} tests` : 'Single'}
+                  {row.children.length > 1 ? `${row.children.length} parameters` : (row.kind === 'group' ? 'Group' : 'Single')}
                 </div>
               </div>
               {allowPriceEdit ? (
@@ -157,16 +157,16 @@ export default function LabTestPicker({
                 <X size={14} />
               </button>
             </div>
-            {row.kind === 'group' && row.tests?.length > 0 && (
+            {row.children.length > 0 && (row.kind === 'group' || row.children.length > 1) && (
               <button
                 type="button"
                 className="ltp-children-toggle"
                 onClick={() => setOpenGroup((cur) => (cur === row.name ? '' : row.name))}
               >
-                {openGroup === row.name ? 'Show tests' : 'Hide tests'}
+                {openGroup === row.name ? `Show ${row.children.length} parameters` : 'Hide parameters'}
               </button>
             )}
-            {row.kind === 'group' && row.tests?.length > 0 && openGroup !== row.name && (
+            {(row.kind === 'group' || row.children.length > 1) && row.tests?.length > 0 && openGroup !== row.name && (
               <ul className="ltp-children">
                 {row.tests.map((t, idx) => (
                   <li key={`${t.testName}-${idx}`} className={t.isSection ? 'is-section' : ''}>

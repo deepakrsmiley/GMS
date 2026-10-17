@@ -10,6 +10,26 @@ import {
   LAB_PROFILE_OPTIONS,
 } from '../constants/labProfiles';
 
+const mapParameter = (item) => ({
+  testName: item.testName,
+  unit: item.unit || '',
+  normalRange: item.normalRange || '',
+  method: item.method || '',
+  isSection: !!item.isSection,
+});
+
+/** Built-in package rows (CBC = 22 parameters) when Test Master has a price but no child list. */
+const builtinTests = (name) => {
+  const want = String(name || '').trim().toLowerCase();
+  if (!want) return [];
+  const key = Object.keys(LAB_PROFILES).find((n) => n.toLowerCase() === want);
+  const profile = key ? LAB_PROFILES[key] : null;
+  if (!profile || Array.isArray(profile)) return [];
+  return (profile.tests || []).map(mapParameter);
+};
+
+const parameterCount = (tests = []) => tests.filter((row) => row?.testName && !row.isSection).length;
+
 export function catalogMapFromTestMaster(testMaster = []) {
   const imported = (testMaster || []).some(
     (t) => t.kind === 'group' || (Array.isArray(t.items) && t.items.length),
@@ -19,26 +39,27 @@ export function catalogMapFromTestMaster(testMaster = []) {
   (testMaster || []).forEach((t) => {
     if (t.isActive === false) return;
     const isGroup = t.kind === 'group';
-    const tests = isGroup && t.items?.length
+    const stored = isGroup && t.items?.length
       ? [...t.items]
         .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0))
-        .map((item) => ({
-          testName: item.testName,
-          unit: item.unit || '',
-          normalRange: item.normalRange || '',
-          method: item.method || '',
-          isSection: !!item.isSection,
-        }))
-      : [{
-          testName: t.name,
-          unit: t.unit || '',
-          normalRange: t.normalRange || '',
-          method: t.method || '',
-        }];
+        .map(mapParameter)
+        .filter((item) => item.testName)
+      : [];
+    const fallback = stored.length ? [] : builtinTests(t.name);
+    const tests = stored.length
+      ? stored
+      : (fallback.length
+        ? fallback
+        : [{
+            testName: t.name,
+            unit: t.unit || '',
+            normalRange: t.normalRange || '',
+            method: t.method || '',
+          }]);
     map[t.name] = {
       labType: t.category || 'Other',
       sampleType: t.sampleType || 'blood',
-      kind: isGroup ? 'group' : 'single',
+      kind: isGroup || parameterCount(tests) > 1 ? 'group' : 'single',
       tests,
     };
   });
@@ -80,18 +101,23 @@ export function labCatalogFromMaster(testMaster = []) {
       return (testMaster || [])
         .filter((t) => t.isActive !== false)
         .filter((t) => {
-          if (kind === 'group') return t.kind === 'group';
+          const tests = catalog[t.name]?.tests || [];
+          const packaged = t.kind === 'group' || parameterCount(tests) > 1;
+          if (kind === 'group') return packaged;
           return t.kind !== 'group' && Number(t.price) > 0;
         })
-        .map((t) => ({
-          name: t.name,
-          testCode: t.testCode || '',
-          kind: t.kind === 'group' ? 'group' : 'single',
-          price: Number(t.price) || 0,
-          category: t.category || 'Other',
-          sampleType: t.sampleType || 'blood',
-          tests: catalog[t.name]?.tests || [],
-        }))
+        .map((t) => {
+          const tests = catalog[t.name]?.tests || [];
+          return {
+            name: t.name,
+            testCode: t.testCode || '',
+            kind: t.kind === 'group' || parameterCount(tests) > 1 ? 'group' : 'single',
+            price: Number(t.price) || 0,
+            category: t.category || 'Other',
+            sampleType: t.sampleType || 'blood',
+            tests,
+          };
+        })
         .sort((a, b) => String(a.testCode || a.name).localeCompare(String(b.testCode || b.name)));
     }
     if (kind === 'group') {

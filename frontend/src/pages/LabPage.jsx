@@ -131,6 +131,36 @@ const buildResultFields = (labOrder) => {
 
   profileNames.forEach((profileName) => {
     const metaRows = getProfileTests(profileName);
+    const parameterRows = metaRows.filter((meta) => !meta.isSection);
+    const owned = orderTests
+      .map((t, i) => ({ t, i }))
+      .filter(({ t, i }) => !usedIdx.has(i) && (
+        String(t.profileName || '').trim() === profileName
+        || String(t.testName || '').trim() === profileName
+      ));
+    const onlyPackageName = owned.length > 0
+      && owned.every(({ t }) => String(t.testName || '').trim() === profileName);
+    if (parameterRows.length > 1 && (owned.length === 0 || onlyPackageName)) {
+      metaRows.forEach((meta) => {
+        const idx = orderTests.findIndex((t, i) => !usedIdx.has(i) && t.testName === meta.testName);
+        if (idx >= 0) {
+          usedIdx.add(idx);
+          pushRow(orderTests[idx], profileName, meta);
+          return;
+        }
+        pushRow({
+          testName: meta.testName,
+          unit: meta.unit || '',
+          normalRange: meta.normalRange || '',
+          method: meta.method || '',
+          isSection: !!meta.isSection,
+        }, profileName, meta);
+      });
+      owned.forEach(({ i, t }) => {
+        if (String(t.testName || '').trim() === profileName) usedIdx.add(i);
+      });
+      return;
+    }
     if (!metaRows.length) return;
     metaRows.forEach((meta) => {
       const idx = orderTests.findIndex((t, i) => !usedIdx.has(i) && t.testName === meta.testName);
@@ -1059,7 +1089,7 @@ export default function LabPage() {
               <span className="col-span-2">Unit</span>
               <span className="col-span-2">Flag</span>
             </div>
-            <div className="max-h-96 overflow-y-auto">
+            <div className="max-h-[32rem] overflow-y-auto">
               {resultFields.map((r, i) => {
                 const prev = resultFields[i - 1];
                 const showHeading = !prev || prev.profileName !== r.profileName || prev.section !== r.section;

@@ -45,10 +45,26 @@ describe('labBillableTestLines', () => {
     });
     assert.equal(lines.length, 1);
     assert.equal(lines[0].unitPrice, 400);
+    assert.equal(lines[0].name, 'CBC');
     assert.equal(labOrderPayableTotal({
       status: 'pending',
       tests: [{ testName: 'CBC', price: 400, status: 'pending' }],
     }), 400);
+  });
+
+  it('bills the package name when only the first parameter carries the price', () => {
+    const lines = labBillableTestLines({
+      _id: 'lab-cbc',
+      labNumber: 'LAB-22',
+      status: 'pending',
+      tests: [
+        { testName: 'WBC', profileName: 'CBC (Complete Blood Count)', price: 500, status: 'pending' },
+        { testName: 'RBC', profileName: 'CBC (Complete Blood Count)', price: 0, status: 'pending' },
+      ],
+    });
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].name, 'CBC (Complete Blood Count)');
+    assert.equal(lines[0].unitPrice, 500);
   });
 
   it('skips cancelled orders', () => {

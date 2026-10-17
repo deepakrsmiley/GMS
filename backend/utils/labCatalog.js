@@ -77,11 +77,14 @@ const expandLabOrderTests = (profileNames, masters, priceByProfile = {}, clientT
     const price = Number(priceByProfile[name] ?? master?.price) || 0;
     const importedSingle = master && master.kind === 'single' && master.testCode;
     if (masterHasGroupFormat(master) || importedSingle) {
-      const rows = rowsFromMaster(master);
-      const expanded = expandRows(name, rows, price);
-      tests.push(...expanded);
-      totalAmount += price;
-      return;
+      const rows = rowsFromMaster(master).filter((row) => row.testName);
+      // Price-only packages (Sri Sanjeevi CBC) have no stored children.
+      // Keep the parameter rows the client already expanded.
+      if (rows.length) {
+        tests.push(...expandRows(name, rows, price));
+        totalAmount += price;
+        return;
+      }
     }
     const existing = (clientTests || []).filter((t) => {
       const profile = String(t.profileName || '').trim();
