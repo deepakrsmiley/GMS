@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSelector } from "react-redux";
+import { shiftById, shiftIdForInstant, shiftsForOrganization } from "../utils/hospitalShifts";
 
 // ── Config ────────────────────────────────────────────────────
 const API = "/api/billing";
@@ -29,21 +31,19 @@ function calcTotals(items) {
   };
 }
 
-// ── Shift: Morning 7AM-7PM | Night 7PM-7AM ───────────────────
+// ── Two shifts. Srinivasa: 10AM-10PM / 10PM-10AM. Others: 7AM-7PM / 7PM-7AM.
 const SHIFT_COLORS = { morning: "#f59e0b", night: "#4338ca" };
-const SHIFT_LABELS = {
-  morning: "Morning  7AM - 7PM",
-  night: "Night  7PM - 7AM",
-};
 
-function getShiftFromDate(dateStr) {
-  const h = new Date(dateStr).getHours();
-  return h >= 7 && h < 19 ? "morning" : "night";
+function useShiftSchedule() {
+  const org = useSelector((s) => s.auth?.user?.organization);
+  return shiftsForOrganization(org);
 }
 
-function ShiftBadge({ shift }) {
+function ShiftBadge({ shift, schedule }) {
+  const live = useShiftSchedule();
   const bg = SHIFT_COLORS[shift] || "#6b7280";
-  const label = shift === "morning" ? "MORNING  7AM-7PM" : "NIGHT  7PM-7AM";
+  const label = shiftById(schedule || live, shift)?.badge
+    || (shift === "morning" ? "MORNING" : "NIGHT");
   return (
     <span
       style={{
@@ -293,6 +293,7 @@ function StatBox({ label, value, color }) {
 
 // ── Shift Report ──────────────────────────────────────────────
 function ShiftReport() {
+  const schedule = useShiftSchedule();
   const [date, setDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -546,11 +547,9 @@ function ShiftReport() {
                       marginBottom: 14,
                     }}
                   >
-                    <ShiftBadge shift={shiftKey} />
+                    <ShiftBadge shift={shiftKey} schedule={schedule} />
                     <span style={{ fontSize: 12, color: "#64748b" }}>
-                      {shiftKey === "morning"
-                        ? "07:00 AM to 07:00 PM"
-                        : "07:00 PM to 07:00 AM"}
+                      {shiftById(schedule, shiftKey)?.range}
                     </span>
                   </div>
                   <div
@@ -622,7 +621,7 @@ function ShiftReport() {
                     marginBottom: 14,
                   }}
                 >
-                  <ShiftBadge shift={shiftKey} />
+                  <ShiftBadge shift={shiftKey} schedule={schedule} />
                   <span style={{ fontWeight: 700 }}>
                     {s.totalBills} Bills — Collected: {fmt(s.totalPaid)} | Due:{" "}
                     {fmt(s.totalDue)}
@@ -764,7 +763,7 @@ function ShiftReport() {
                       color: "#374151",
                     }}
                   >
-                    Account Settlement Summary — {SHIFT_LABELS[shiftKey]}
+                    Account Settlement Summary — {shiftById(schedule, shiftKey)?.label}
                   </div>
                   <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
                     <SettleStat
@@ -1265,6 +1264,7 @@ function MonthlyReport() {
 
 // ── Staff Report ──────────────────────────────────────────────
 function StaffReport() {
+  const schedule = useShiftSchedule();
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
   const [data, setData] = useState(null);
@@ -1485,12 +1485,10 @@ function StaffReport() {
                     {rows.map((r, i) => (
                       <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
                         <td style={tdS}>
-                          <ShiftBadge shift={r._id?.shift || r.shift} />
+                          <ShiftBadge shift={r._id?.shift || r.shift} schedule={schedule} />
                         </td>
                         <td style={{ ...tdS, fontSize: 11, color: "#64748b" }}>
-                          {(r._id?.shift || r.shift) === "morning"
-                            ? "7AM-7PM"
-                            : "7PM-7AM"}
+                          {shiftById(schedule, r._id?.shift || r.shift)?.short || "—"}
                         </td>
                         <td style={tdS}>{r.totalBills}</td>
                         <td style={{ ...tdS, fontWeight: 700 }}>
@@ -1541,6 +1539,7 @@ function StaffReport() {
 
 // ── All Bills List ────────────────────────────────────────────
 function BillsList({ bills, loading, onEdit, onPay, onRefresh }) {
+  const schedule = useShiftSchedule();
   return (
     <div>
       <div
@@ -1623,7 +1622,7 @@ function BillsList({ bills, loading, onEdit, onPay, onRefresh }) {
                     })}
                   </td>
                   <td style={tdS}>
-                    <ShiftBadge shift={getShiftFromDate(b.createdAt)} />
+                    <ShiftBadge shift={shiftIdForInstant(b.createdAt, schedule)} schedule={schedule} />
                   </td>
                   <td style={{ ...tdS, fontWeight: 700 }}>
                     {fmt(b.totalAmount)}

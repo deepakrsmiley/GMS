@@ -1,5 +1,7 @@
 const HOSPITAL_A_CODE = 'HOSP001';
 const HOSPITAL_A_NAME_RX = /sanjeevi/i;
+const HOSPITAL_B_CODE = 'HOSP002';
+const HOSPITAL_B_NAME_RX = /srinivasa/i;
 const PLATFORM_CODE = 'GMS';
 const KIND_PLATFORM = 'platform';
 const KIND_CLIENT = 'client';
@@ -17,6 +19,12 @@ const isPlatformOrg = (org) => {
 };
 
 const isClientOrg = (org) => !!(org && !isPlatformOrg(org));
+
+const isSrinivasaHospital = (org) => {
+  if (!org || isPlatformOrg(org)) return false;
+  return String(org.code || '').toUpperCase() === HOSPITAL_B_CODE
+    || HOSPITAL_B_NAME_RX.test(String(org.name || ''));
+};
 
 const clientOrgs = (orgs = []) => (Array.isArray(orgs) ? orgs : []).filter(isClientOrg);
 
@@ -59,8 +67,10 @@ module.exports = {
   PLATFORM_CODE,
   KIND_PLATFORM,
   KIND_CLIENT,
+  HOSPITAL_B_CODE,
   isPlatformOrg,
   isClientOrg,
+  isSrinivasaHospital,
   clientOrgs,
   pickHospitalA,
   isHospitalA,

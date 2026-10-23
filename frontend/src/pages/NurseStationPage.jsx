@@ -18,6 +18,8 @@ import {
   STATUS_LABELS,
 } from '../constants/labProfiles';
 import { labCatalogFromMaster } from '../utils/labCatalog';
+import { isSrinivasaHospital } from '../utils/hospitalA';
+import { shiftById, shiftsForOrganization } from '../utils/hospitalShifts';
 import LabTestPicker from '../components/lab/LabTestPicker';
 import '../styles/assetMaster.css';
 import '../styles/nurseStation.css';
@@ -64,6 +66,14 @@ export default function NurseStationPage() {
   const qc = useQueryClient();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
+  const srinivasa = isSrinivasaHospital(user?.organization);
+  const shiftOptions = srinivasa
+    ? shiftsForOrganization(user?.organization)
+    : [
+      { id: 'morning', name: 'Morning', range: '' },
+      { id: 'afternoon', name: 'Afternoon', range: '' },
+      { id: 'night', name: 'Night', range: '' },
+    ];
 
   const [wardFilter, setWardFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -624,9 +634,11 @@ export default function NurseStationPage() {
                               value={handoverForm.shift}
                               onChange={(e) => setHandoverForm({ ...handoverForm, shift: e.target.value })}
                             >
-                              <option value="morning">Morning</option>
-                              <option value="afternoon">Afternoon</option>
-                              <option value="night">Night</option>
+                              {shiftOptions.map((shift) => (
+                                <option key={shift.id} value={shift.id}>
+                                  {shift.range ? `${shift.name} — ${shift.range}` : shift.name}
+                                </option>
+                              ))}
                             </select>
                           </div>
                           <div>
@@ -693,7 +705,11 @@ export default function NurseStationPage() {
                           {handoversSorted.map((h) => (
                             <tr key={h._id}>
                               <td>{fmtDt(h.handedOverAt)}</td>
-                              <td style={{ textTransform: 'capitalize' }}>{h.shift}</td>
+                              <td style={{ textTransform: 'capitalize' }}>
+                                {srinivasa
+                                  ? (shiftById(shiftOptions, h.shift)?.label || h.shift)
+                                  : h.shift}
+                              </td>
                               <td>{h.fromNurse?.name || '—'}</td>
                               <td>{h.toNurse?.name || h.toNurseName || '—'}</td>
                               <td>{h.summary}</td>

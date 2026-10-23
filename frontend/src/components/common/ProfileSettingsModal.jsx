@@ -6,6 +6,8 @@ import toast from 'react-hot-toast';
 import api from '../../services/api';
 import Modal from './Modal';
 import { setUser, logout } from '../../redux/slices/authSlice';
+import { isSrinivasaHospital } from '../../utils/hospitalA';
+import { shiftsForOrganization } from '../../utils/hospitalShifts';
 import '../../styles/assetMaster.css';
 
 const emptyPassword = () => ({
@@ -323,10 +325,23 @@ export default function ProfileSettingsModal({ isOpen, onClose }) {
                 <div>
                   <label className="am-label">Shift</label>
                   <select className="am-field" value={form.shift || 'morning'} onChange={setField('shift')}>
-                    <option value="morning">Morning</option>
-                    <option value="afternoon">Afternoon</option>
-                    <option value="night">Night</option>
-                    <option value="rotating">Rotating</option>
+                    {isSrinivasaHospital(user?.organization) ? (
+                      <>
+                        {shiftsForOrganization(user?.organization).map((shift) => (
+                          <option key={shift.id} value={shift.id}>{shift.name} — {shift.range}</option>
+                        ))}
+                        {(form.shift === 'afternoon' || form.shift === 'rotating') && (
+                          <option value={form.shift}>{form.shift}</option>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <option value="morning">Morning</option>
+                        <option value="afternoon">Afternoon</option>
+                        <option value="night">Night</option>
+                        <option value="rotating">Rotating</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 {isDoctor && (

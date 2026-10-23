@@ -44,6 +44,11 @@ function openPrintWindow(title, html) {
       .pbr-pos{color:#047857;font-weight:700}.pbr-neg{color:#b91c1c;font-weight:700}
       .pbr-badge{display:inline-block;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;border:1px solid #e2e8f0}
       .pbr-summary{display:flex;gap:20px;background:#0b1f3a;color:#fff;padding:12px 16px;margin-bottom:14px}
+      .pbr-shifts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+      .pbr-shift{border:1px solid #e2e8f0;border-top:3px solid #0b1f3a;padding:10px 12px}
+      .pbr-shift--morning{border-top-color:#f59e0b}.pbr-shift--night{border-top-color:#4338ca}
+      .pbr-shift__title{font-weight:700}.pbr-shift__time{color:#64748b;font-size:11px;margin-top:2px}
+      .pbr-shift__metrics{display:flex;gap:16px;margin-top:8px;font-size:12px}
       .pbr-mode{display:inline-block;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;border-radius:10px}
       .pbr-mode--cash{background:#dcfce7;color:#15803d}
       .pbr-mode--card{background:#dbeafe;color:#3730a3}
@@ -159,6 +164,8 @@ function ShiftReport({ onSummary }) {
 
   const bills = data?.bills || data?.data?.bills || [];
   const summary = data?.summary ?? data?.data?.summary ?? {};
+  const shiftSchedule = data?.shiftSchedule || [];
+  const shiftBuckets = (data?.shifts || []).filter((row) => row._id === 'morning' || row._id === 'night');
 
   useEffect(() => {
     if (onSummary && data?.summary) onSummary(data.summary);
@@ -294,10 +301,30 @@ function ShiftReport({ onSummary }) {
                 <strong>
                   {new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
                 </strong>
-                {' · '}Paid collections 12:00 AM – 11:59 PM
+                {' · '}
+                {shiftSchedule.length
+                  ? shiftSchedule.map((shift) => shift.range).join('  ·  ')
+                  : 'Paid collections 12:00 AM – 11:59 PM'}
                 {' · '}Generated: <strong>{new Date().toLocaleTimeString('en-IN')}</strong>
               </p>
             </div>
+
+            {shiftBuckets.length > 0 && (
+              <div className="pbr-shifts">
+                {shiftBuckets.map((shift) => (
+                  <div key={shift._id} className={`pbr-shift pbr-shift--${shift._id}`}>
+                    <div className="pbr-shift__title">{shift.name || shift._id} shift</div>
+                    <div className="pbr-shift__time">{shift.range}</div>
+                    <div className="pbr-shift__metrics">
+                      <span><strong>{shift.totalBills ?? 0}</strong>Bills</span>
+                      <span><strong>{fmt(shift.totalPaid ?? 0)}</strong>Collected</span>
+                      <span><strong>{fmt(shift.cashAmount ?? 0)}</strong>Cash</span>
+                      <span><strong>{fmt(shift.upiAmount ?? 0)}</strong>UPI</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="pbr-summary print-only">
               <div className="pbr-summary__item"><div className="pbr-summary__value">{summary.totalBills ?? 0}</div><div className="pbr-summary__label">Bills</div></div>
@@ -313,14 +340,14 @@ function ShiftReport({ onSummary }) {
                   <table className="pbr-table">
                     <thead>
                       <tr>
-                        {['#', 'Bill No.', 'Patient Name', 'Mobile', 'Bill Time', 'Items', 'Amount', 'Discount', 'Paid', 'Payment Mode', 'Created By'].map((h) => (
+                        {['#', 'Bill No.', 'Patient Name', 'Mobile', 'Bill Time', 'Shift', 'Items', 'Amount', 'Discount', 'Paid', 'Payment Mode', 'Created By'].map((h) => (
                           <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="no-print">
                       {paged.length === 0 ? (
-                        <tr><td colSpan={11} className="pbr-empty">No paid pharmacy collections for this date</td></tr>
+                        <tr><td colSpan={12} className="pbr-empty">No paid pharmacy collections for this date</td></tr>
                       ) : paged.map((b, i) => (
                         <tr key={b.id || i} className={b.cancelled ? 'is-cancelled' : ''}>
                           <td>{(pageSafe - 1) * pageSize + i + 1}</td>
@@ -332,6 +359,7 @@ function ShiftReport({ onSummary }) {
                               ? new Date(b.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
                               : '—'}
                           </td>
+                          <td>{shiftSchedule.find((s) => s.id === b.shift)?.short || '—'}</td>
                           <td>{b.items ?? 0}</td>
                           <td className="pbr-strong">{fmt(b.totalAmount)}</td>
                           <td>{fmt(b.discount)}</td>
@@ -353,6 +381,7 @@ function ShiftReport({ onSummary }) {
                               ? new Date(b.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
                               : '—'}
                           </td>
+                          <td>{shiftSchedule.find((s) => s.id === b.shift)?.short || '—'}</td>
                           <td>{b.items ?? 0}</td>
                           <td className="pbr-strong">{fmt(b.totalAmount)}</td>
                           <td>{fmt(b.discount)}</td>
@@ -364,7 +393,7 @@ function ShiftReport({ onSummary }) {
                     </tbody>
                     <tfoot>
                       <tr>
-                        <td colSpan={5}>Grand total ({filtered.length} bills)</td>
+                        <td colSpan={6}>Grand total ({filtered.length} bills)</td>
                         <td>{filtered.reduce((s, b) => s + (b.cancelled ? 0 : (b.items || 0)), 0)}</td>
                         <td>{fmt(summary.totalAmount)}</td>
                         <td>{fmt(summary.totalDiscount)}</td>

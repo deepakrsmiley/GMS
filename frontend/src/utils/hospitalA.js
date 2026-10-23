@@ -1,4 +1,5 @@
 export const HOSPITAL_A_CODE = 'HOSP001';
+export const HOSPITAL_B_CODE = 'HOSP002';
 export const PLATFORM_CODE = 'GMS';
 
 export const isPlatformOrg = (org) => {
@@ -13,6 +14,12 @@ export const isSriSanjeeviHospital = (org) => {
   if (!org || isPlatformOrg(org)) return false;
   return String(org.code || '').toUpperCase() === HOSPITAL_A_CODE
     || /sanjeevi/i.test(String(org.name || ''));
+};
+
+export const isSrinivasaHospital = (org) => {
+  if (!org || isPlatformOrg(org)) return false;
+  return String(org.code || '').toUpperCase() === HOSPITAL_B_CODE
+    || /srinivasa/i.test(String(org.name || ''));
 };
 
 const THANGAM_NAME_RX = /thangam/i;

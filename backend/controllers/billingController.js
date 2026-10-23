@@ -43,6 +43,7 @@ const {
   sumPaymentLines,
 } = require("../utils/billItems");
 const { mergeSameMedicineLines } = require("../utils/mergeMedicineLines");
+const { shiftsForOrganization, shiftIdForInstant } = require("../utils/hospitalShifts");
 
 const safeStockRollback = async (fn) => {
   try {
@@ -1317,19 +1318,30 @@ exports.getShiftReport = asyncHandler(async (req, res) => {
 
   const bills = await loadPharmacySaleRows(from, to);
   const summary = summarisePharmacyRows(bills);
+  const shiftSchedule = shiftsForOrganization(req.organization);
+  const tagged = bills.map((row) => ({
+    ...row,
+    shift: shiftIdForInstant(row.createdAt, shiftSchedule),
+  }));
+  const shifts = shiftSchedule.map((def) => {
+    const rows = tagged.filter((row) => row.shift === def.id);
+    return {
+      _id: def.id,
+      ...def,
+      window: { from, to },
+      ...summarisePharmacyRows(rows),
+      bills: rows,
+    };
+  });
 
   res.status(200).json({
     success: true,
     date: start.iso,
     dateRange: { from, to },
     summary,
-    bills,
-    shifts: [{
-      _id: "day",
-      window: { from, to },
-      ...summary,
-      bills,
-    }],
+    bills: tagged,
+    shiftSchedule,
+    shifts,
   });
 });
 
