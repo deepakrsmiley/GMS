@@ -18,7 +18,7 @@ const mapParameter = (item) => ({
   isSection: !!item.isSection,
 });
 
-/** Built-in package rows (CBC = 22 parameters) when Test Master has a price but no child list. */
+/** Built-in package rows when Test Master has a price but no child list. */
 const builtinTests = (name) => {
   const want = String(name || '').trim().toLowerCase();
   if (!want) return [];

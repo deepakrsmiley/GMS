@@ -11,7 +11,7 @@ import Modal from '../components/common/Modal';
 import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import { useBranding } from '../hooks/useBranding';
-import { isThangamHospital } from '../utils/hospitalA';
+import { usesStructuredDob } from '../utils/hospitalA';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
 import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
 
@@ -48,7 +48,7 @@ const EMPTY_FORM = {
 export default function AppointmentsPage() {
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
-  const thangam = isThangamHospital(user?.organization, branding);
+  const structuredDob = usesStructuredDob(user?.organization, branding);
   const canBook = hasPermission(user, 'CREATE_APPOINTMENT');
   const qc = useQueryClient();
 
@@ -505,7 +505,7 @@ export default function AppointmentsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!thangam) {
+            if (!structuredDob) {
               quickAddMut.mutate(quickForm);
               return;
             }
@@ -527,7 +527,7 @@ export default function AppointmentsPage() {
               <label className="block text-sm font-medium mb-1">Phone *</label>
               <input required className="input-field" value={quickForm.phone} onChange={(e) => setQuickForm({ ...quickForm, phone: e.target.value })} />
             </div>
-            {thangam ? (
+            {structuredDob ? (
               <div className="col-span-2">
                 <ThangamDobFields
                   day={apptDob.day}

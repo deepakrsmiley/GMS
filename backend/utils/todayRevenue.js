@@ -58,7 +58,9 @@ const todayCollectedAddFields = (from, to) => ({
 });
 
 const aggregateTodayRevenue = async (BillModel, extraMatch = {}, options = {}) => {
-  const { from, to } = istToday();
+  const today = istToday();
+  const from = options.from || today.from;
+  const to = options.to || today.to;
   const pipeline = [
     {
       $match: {

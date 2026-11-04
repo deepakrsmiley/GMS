@@ -13,6 +13,7 @@ const {
   stockPieces,
   invoiceUnitsOnHand,
   pieceRate,
+  invoiceNetPayable,
 } = require('../utils/purchaseCalc');
 const { receivePurchaseBatch } = require('../utils/pharmacyStockHelper');
 
@@ -66,6 +67,12 @@ describe('purchase calculations', () => {
     assert.equal(line.grossAmount, 500);
     assert.equal(effectiveUnitCost(500, 110), 4.5455);
     assert.equal(line.purchaseRate, 5);
+  });
+
+  it('subtracts a sales return from the purchase to get the net payable', () => {
+    assert.equal(invoiceNetPayable(4697, 111.26), 4585.74);
+    assert.equal(invoiceNetPayable(500, 0), 500);
+    assert.equal(invoiceNetPayable(100, 40.5), 59.5);
   });
 
   it('returns stock at the purchase rate, not the selling price', () => {

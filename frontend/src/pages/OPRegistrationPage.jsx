@@ -16,9 +16,9 @@ import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
 import OPConsultationReceipt from '../components/op/OPConsultationReceipt';
 import { istCalendarDate } from '../utils/istDate';
-import { isThangamHospital } from '../utils/hospitalA';
+import { isThangamHospital, usesStructuredDob } from '../utils/hospitalA';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
-import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
+import { dobPayloadFromParts, emptyDobParts, formatAgeLabel } from '../utils/dobAge';
 import '../styles/opRegistration.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -71,7 +71,7 @@ export default function OPRegistrationPage() {
   const qc = useQueryClient();
   const organization = useSelector((s) => s.auth?.user?.organization);
   const { branding } = useBranding();
-  const thangam = isThangamHospital(organization, branding);
+  const structuredDob = usesStructuredDob(organization, branding);
   const patientSearchTimer = useRef(null);
 
   const [patientSearch, setPatientSearch] = useState('');
@@ -429,7 +429,7 @@ export default function OPRegistrationPage() {
               <input type="hidden" {...register('patient', { required: true })} />
               {selectedPatient && (
                 <div className="opr-patient-chip">
-                  Selected: <strong>{selectedPatient.name}</strong> · {selectedPatient.patientId} · {selectedPatient.age}Y / {selectedPatient.gender}
+                  Selected: <strong>{selectedPatient.name}</strong> · {selectedPatient.patientId} · {formatAgeLabel(selectedPatient.dob, selectedPatient.age) || `${selectedPatient.age}Y`} / {selectedPatient.gender}
                 </div>
               )}
             </div>
@@ -678,7 +678,7 @@ export default function OPRegistrationPage() {
 
       <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Add New Patient" size="md">
         <form onSubmit={handleQuickSubmit((d) => {
-          if (!thangam) {
+          if (!structuredDob) {
             quickAddMut.mutate(d);
             return;
           }
@@ -698,7 +698,7 @@ export default function OPRegistrationPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
               <input {...registerQuick('phone', { required: true })} className="input-field" placeholder="Mobile number" />
             </div>
-            {thangam ? (
+            {structuredDob ? (
               <div className="col-span-2">
                 <ThangamDobFields
                   day={quickDob.day}

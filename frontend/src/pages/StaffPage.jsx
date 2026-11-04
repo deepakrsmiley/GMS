@@ -9,6 +9,7 @@ import { checkAuth } from '../redux/slices/authSlice';
 import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
 import { STAFF_ROLES } from '../utils/roles';
+import { shiftsForOrganization } from '../utils/hospitalShifts';
 import { PERMISSION_GROUPS, ALL_PERMISSIONS, getDefaultPermissionsForRole, PHARMACY_FULL_CONTROL_PERMISSIONS, NURSE_STATION_BUNDLE, looksLikeFullChecklist } from '../constants/permissions';
 import '../styles/staffManagement.css';
 
@@ -86,6 +87,8 @@ export default function StaffPage() {
   });
   const selectedRole = watch('role');
   const isDoctor = selectedRole === 'Doctor';
+  const isPharmacist = selectedRole === 'Pharmacist';
+  const pharmacyShifts = shiftsForOrganization(currentUser?.organization);
 
   useEffect(() => {
     if (!selectedRole) return;
@@ -416,6 +419,20 @@ export default function StaffPage() {
                   </select>
                   {errors.role && <p className="staff-error">Role is required</p>}
                 </div>
+                {isPharmacist && (
+                  <div>
+                    <label className="staff-label">Shift *</label>
+                    <select {...register('shift', { required: 'Choose morning or night' })} className="staff-field" defaultValue="morning">
+                      {pharmacyShifts.map((shift) => (
+                        <option key={shift.id} value={shift.id}>{shift.name} — {shift.range}</option>
+                      ))}
+                    </select>
+                    {errors.shift && <p className="staff-error">{errors.shift.message}</p>}
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      This login shows only this shift, and the total starts at ₹0 when the shift opens. Admin still sees the full day.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="staff-label">Phone</label>
                   <input {...register('phone')} className="staff-field" />

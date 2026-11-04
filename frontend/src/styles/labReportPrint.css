@@ -225,6 +225,13 @@
 .lab-report-results col.c-result { width: 15%; }
 .lab-report-results col.c-unit { width: 13%; }
 .lab-report-results col.c-range { width: 24%; }
+.lab-report-results.has-mfc col.c-range { width: 9%; }
+.lab-report-disclaimer {
+  margin: 4px 0 10px;
+  font-size: 8.5pt;
+  line-height: 1.35;
+  color: #334155;
+}
 .lab-report-results col.c-flag { width: 14%; }
 .lab-report-results col.c-remarks { width: 16%; }
 

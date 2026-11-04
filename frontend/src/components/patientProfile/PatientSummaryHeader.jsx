@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatAgeLabel } from '../../utils/dobAge';
 import { Phone, Mail, MapPin, ShieldAlert } from 'lucide-react';
 
 const fmtMoney = (v) => `₹${(v || 0).toLocaleString('en-IN')}`;
@@ -43,7 +44,7 @@ export default function PatientSummaryHeader({ data }) {
           </div>
           <p className="p360-hero__meta">
             {[
-              patient.age != null ? `${patient.age} yrs` : null,
+              formatAgeLabel(patient.dob, patient.age) || null,
               patient.gender,
               patient.bloodGroup ? `Blood ${patient.bloodGroup}` : 'Blood group unknown',
             ].filter(Boolean).join(' · ')}

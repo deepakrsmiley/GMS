@@ -1,6 +1,13 @@
 import React, { useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { analyzeResult } from '../../utils/labResultAnalyzer';
+import {
+  analyzeResult,
+  demographicParts,
+  labSectionRank,
+  SGPT_DISCLAIMER,
+  tidyRangeText,
+  tidyTestName,
+} from '../../utils/labResultAnalyzer';
 import { generateBarcodeSVG } from '../../utils/barcodeGenerator';
 import '../../styles/labReportPrint.css';
 
@@ -60,7 +67,7 @@ function FlagMark({ flag, cfg }) {
   );
 }
 
-function ResultRow({ row, patient, cfg, showMethod, showRemarks }) {
+function ResultRow({ row, patient, cfg, showMethod, showRemarks, showMfc }) {
   const analysis = useMemo(
     () =>
       analyzeResult({
@@ -74,7 +81,8 @@ function ResultRow({ row, patient, cfg, showMethod, showRemarks }) {
   );
 
   const flag = row.flag && row.flag !== 'NA' ? row.flag : analysis.flag;
-  const displayRange = analysis.displayRange || row.normalRange || '-';
+  const bands = demographicParts(row.referenceRange || row.normalRange);
+  const displayRange = tidyRangeText(analysis.displayRange || row.normalRange || '-');
   const isCritical = flag === 'CRITICAL_LOW' || flag === 'CRITICAL_HIGH' || flag === 'Critical';
   const isAbnormal = isCritical || flag === 'HIGH' || flag === 'LOW' || flag === 'ABNORMAL' || flag === 'High' || flag === 'Low';
   const resultColor = isCritical ? cfg.criticalColor : isAbnormal ? cfg.accentColor : cfg.bodyTextColor;
@@ -82,13 +90,23 @@ function ResultRow({ row, patient, cfg, showMethod, showRemarks }) {
 
   return (
     <tr>
-      <td className="td-test">{row.testName}</td>
+      <td className="td-test">{tidyTestName(row.testName)}</td>
       {showMethod && <td className="td-method">{row.method || '-'}</td>}
       <td className="td-result" style={{ color: resultColor }}>
         {row.value ?? '-'}{isAbnormal ? mark : ''}
       </td>
       <td className="td-unit">{row.unit || ''}</td>
-      <td className="td-range">{displayRange}</td>
+      {showMfc && bands ? (
+        <>
+          <td className="td-range">{bands.male || '—'}</td>
+          <td className="td-range">{bands.female || '—'}</td>
+          <td className="td-range">{bands.child || '—'}</td>
+        </>
+      ) : showMfc ? (
+        <td className="td-range" colSpan={3}>{displayRange}</td>
+      ) : (
+        <td className="td-range">{displayRange}</td>
+      )}
       <td className="td-flag"><FlagMark flag={flag} cfg={cfg} /></td>
       {showRemarks && <td className="td-remarks">{row.remarks || ''}</td>}
     </tr>
@@ -123,7 +141,7 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
     const source = labTest?.results?.length
       ? labTest.results
       : (labTest?.tests || []).map((t) => ({
-        testName: t.testName,
+        testName: tidyTestName(t.testName),
         section: t.profileName || labTest?.labType || 'RESULTS',
         value: t.result ?? t.value ?? '',
         unit: t.unit || '',
@@ -141,7 +159,9 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(row);
     });
-    return Array.from(map.entries()).map(([title, rows]) => ({ title, rows }));
+    return Array.from(map.entries())
+      .map(([title, rows]) => ({ title: tidyTestName(title), rows }))
+      .sort((a, b) => labSectionRank(a.title) - labSectionRank(b.title));
   }, [results, labTest]);
 
   const showMethod = results.some((r) => r.method);
@@ -323,7 +343,14 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
         <tbody>
           <tr>
             <td>
-              {sections.map((section) => (
+              {sections.map((section) => {
+                const showMfc = section.rows.some((row) => demographicParts(row.referenceRange || row.normalRange));
+                const showSgpt = section.rows.some((row) => /sgpt/i.test(row.testName || ''));
+                const tableClass = [
+                  resultTableClass,
+                  showMfc ? 'has-mfc' : '',
+                ].filter(Boolean).join(' ');
+                return (
                 <div key={section.title} className="lab-report-block lab-report-section">
                   <div
                     className="lab-report-dept"
@@ -335,13 +362,21 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
                   >
                     {section.title}
                   </div>
-                  <table className={resultTableClass}>
+                  <table className={tableClass}>
                     <colgroup>
                       <col className="c-test" />
                       {showMethod && <col className="c-method" />}
                       <col className="c-result" />
                       <col className="c-unit" />
-                      <col className="c-range" />
+                      {showMfc ? (
+                        <>
+                          <col className="c-range" />
+                          <col className="c-range" />
+                          <col className="c-range" />
+                        </>
+                      ) : (
+                        <col className="c-range" />
+                      )}
                       <col className="c-flag" />
                       {showRemarks && <col className="c-remarks" />}
                     </colgroup>
@@ -351,7 +386,15 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
                         {showMethod && <th>Method</th>}
                         <th className="th-result">Result</th>
                         <th className="th-unit">Unit</th>
-                        <th className="th-range">Biological Ref. Interval</th>
+                        {showMfc ? (
+                          <>
+                            <th className="th-range">M</th>
+                            <th className="th-range">F</th>
+                            <th className="th-range">C</th>
+                          </>
+                        ) : (
+                          <th className="th-range">Biological Ref. Interval</th>
+                        )}
                         <th className="th-flag">Flag</th>
                         {showRemarks && <th>Remarks</th>}
                       </tr>
@@ -365,12 +408,17 @@ export default function LabReportTemplate({ branding, labTest, verificationBaseU
                           cfg={cfg}
                           showMethod={showMethod}
                           showRemarks={showRemarks}
+                          showMfc={showMfc}
                         />
                       ))}
                     </tbody>
                   </table>
+                  {showSgpt && (
+                    <p className="lab-report-disclaimer">{SGPT_DISCLAIMER}</p>
+                  )}
                 </div>
-              ))}
+                );
+              })}
 
               {(labTest?.interpretation || labTest?.impression || labTest?.conclusion || labTest?.doctorComments || labTest?.labComments || labTest?.recommendation || labTest?.remarks) && (
                 <div className="lab-report-notes lab-report-section" style={{ borderColor: border }}>

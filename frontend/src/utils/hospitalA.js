@@ -22,6 +22,10 @@ export const isSrinivasaHospital = (org) => {
     || /srinivasa/i.test(String(org.name || ''));
 };
 
+/** Day / month / year of birth, with age in years, months, and days. */
+export const usesStructuredDob = (org, branding) =>
+  isThangamHospital(org, branding) || isSrinivasaHospital(org);
+
 const THANGAM_NAME_RX = /thangam/i;
 
 /** Thangam prints OP pads onto pre-printed letterhead paper. */

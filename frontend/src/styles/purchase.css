@@ -165,7 +165,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: 22px;
+  margin-top: 4px;
 }
 
 .pur-line__search {
@@ -266,6 +266,46 @@
   font-size: 11px;
   color: #64748b;
   font-weight: 500;
+}
+
+.pur-hint--warn {
+  color: #b91c1c;
+}
+
+.pur-line__kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pur-kind {
+  width: 180px;
+}
+
+.pur-return-tag {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #b91c1c;
+}
+
+.pur-line--return {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.pur-line__foot--return strong {
+  color: #b91c1c;
+}
+
+.pur-stat--return strong {
+  color: #b91c1c;
+}
+
+.pur-stats--bill {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .pur-line__foot {
@@ -457,6 +497,18 @@
 .dark .pur-icon-btn {
   background: #1f2937;
   color: #e5e7eb;
+}
+
+.dark .pur-line--return {
+  background: #3f1d1d;
+  border-color: #7f1d1d;
+}
+
+.dark .pur-line__foot--return strong,
+.dark .pur-stat--return strong,
+.dark .pur-return-tag,
+.dark .pur-hint--warn {
+  color: #fecaca;
 }
 
 .dark .pur-card__head h2,

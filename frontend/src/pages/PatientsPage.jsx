@@ -12,8 +12,8 @@ import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
 import { useBranding } from '../hooks/useBranding';
-import { isThangamHospital } from '../utils/hospitalA';
-import { dobPayloadFromParts, emptyDobParts, partsFromDob } from '../utils/dobAge';
+import { usesStructuredDob } from '../utils/hospitalA';
+import { dobPayloadFromParts, emptyDobParts, formatAgeLabel, partsFromDob } from '../utils/dobAge';
 import '../styles/patients.css';
 
 const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -28,7 +28,7 @@ export default function PatientsPage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
-  const thangam = isThangamHospital(user?.organization, branding);
+  const structuredDob = usesStructuredDob(user?.organization, branding);
   // Driven by Users & Access feature-permission checkboxes (Patients group)
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canCreate = hasPermission(user, 'CREATE_PATIENT');
@@ -122,7 +122,7 @@ export default function PatientsPage() {
           <div className="pt-name__text">
             <p className="pt-name__primary">{r.name}</p>
             <p className="pt-name__meta">
-              {[r.age != null ? `${r.age} yrs` : null, r.gender].filter(Boolean).join(' · ') || '—'}
+              {[formatAgeLabel(r.dob, r.age), r.gender].filter(Boolean).join(' · ') || '—'}
             </p>
           </div>
         </div>
@@ -252,7 +252,7 @@ export default function PatientsPage() {
       <Modal isOpen={showAdd} onClose={closeForm} title={editPatient ? `Edit Patient — ${editPatient.patientId || editPatient.name}` : 'Register New Patient'} size="lg">
         <form
           onSubmit={handleSubmit((d) => {
-            if (!thangam) {
+            if (!structuredDob) {
               createMut.mutate(d);
               return;
             }
@@ -279,7 +279,7 @@ export default function PatientsPage() {
               <label className="pt-form-label">Phone *</label>
               <input {...register('phone', { required: true })} className="input-field" placeholder="Mobile number" />
             </div>
-            {thangam ? (
+            {structuredDob ? (
               <ThangamDobFields
                 day={dobParts.day}
                 month={dobParts.month}
@@ -366,7 +366,7 @@ export default function PatientsPage() {
                   }}
                 >
                   <strong>{m.patientId}</strong> · {m.name} · {m.phone}
-                  {m.age != null ? ` · ${m.age} yrs` : ''}
+                  {formatAgeLabel(m.dob, m.age) ? ` · ${formatAgeLabel(m.dob, m.age)}` : ''}
                 </button>
               </li>
             ))}

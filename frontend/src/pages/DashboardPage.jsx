@@ -215,14 +215,14 @@ export default function DashboardPage() {
         {hasMod('op') && <KpiCard title="OP Consultations" value={d.todayOP || 0} icon={Stethoscope} color="teal" subtitle="Today" />}
         {hasMod('ip') && <KpiCard title="IP Admissions" value={d.todayIP || 0} icon={UserPlus} color="purple" subtitle="New admissions today" />}
         {hasMod('ip') && <KpiCard title="Active IP Patients" value={d.totalIP || 0} icon={Bed} color="indigo" subtitle="Currently admitted" />}
-        {hasMod('billing') && <KpiCard title="Total Revenue (Today)" value={`₹${((d.todayRevenue || 0) / 1000).toFixed(1)}K`} icon={IndianRupee} color="green" subtitle="Resets 12:00 AM IST" />}
+        {hasMod('billing') && <KpiCard title={d.shiftAccount ? `${d.shiftAccount.name} collection` : 'Total Revenue (Today)'} value={`₹${((d.todayRevenue || 0) / 1000).toFixed(1)}K`} icon={IndianRupee} color="green" subtitle={d.shiftAccount ? `${d.shiftAccount.range} · starts at ₹0` : 'Resets 12:00 AM IST'} />}
       </div>
 
       {/* Secondary KPI Cards */}
       <div className="space-y-3">
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Pharmacy & Infrastructure</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-          {hasMod('pharmacy') && <KpiCard title="Pharmacy Sales" value={`₹${(d.todayPharmacySales?.total || 0).toLocaleString()}`} icon={Pill} color="green" subtitle={`${d.todayPharmacySales?.count || 0} sales today`} />}
+          {hasMod('pharmacy') && <KpiCard title={d.shiftAccount ? `${d.shiftAccount.name} pharmacy` : 'Pharmacy Sales'} value={`₹${(d.todayPharmacySales?.total || 0).toLocaleString()}`} icon={Pill} color="green" subtitle={d.shiftAccount ? d.shiftAccount.range : `${d.todayPharmacySales?.count || 0} sales today`} />}
           <KpiCard title="Total Doctors" value={d.totalDoctors || 0} icon={Stethoscope} color="blue" subtitle="Active doctors" />
           <KpiCard title="Departments" value={d.totalDepartments || 0} icon={Building2} color="purple" subtitle="Configured dept" />
           {hasMod('biomedical') && <KpiCard title="Total Assets" value={d.totalAssets || 0} icon={Package} color="indigo" subtitle="Hospital assets" />}

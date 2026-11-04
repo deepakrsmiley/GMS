@@ -19,6 +19,7 @@ const {
   PAYMENT_STATUSES,
   GST_MODES,
   parseExpiry,
+  calcLine,
   summarizePurchase,
   physicalQty,
   resolvePurchaseUnit,
@@ -30,6 +31,7 @@ const {
   returnValue,
   returnableQuantity,
   assertReturnQuantity,
+  invoiceNetPayable,
   creditPortion,
   returnStatusOf,
 } = require('../utils/purchaseCalc');
@@ -287,6 +289,21 @@ const decoratePurchase = async (doc) => {
       batchStockValue: stockValue(batchQty, batchRate),
     };
   });
+
+  const linked = await PurchaseReturn.find({
+    purchase: purchase._id,
+    status: 'active',
+    settledOnInvoice: true,
+  }).select('items totalReturnValue returnNumber').lean();
+  purchase.invoiceReturnItems = linked.flatMap((row) => (row.items || []).map((item) => ({
+    ...item,
+    returnNumber: row.returnNumber,
+  })));
+  const returnCredit = round2(linked.reduce((sum, row) => sum + (Number(row.totalReturnValue) || 0), 0));
+  if (returnCredit || purchase.invoiceReturnValue) {
+    purchase.invoiceReturnValue = returnCredit || purchase.invoiceReturnValue || 0;
+  }
+  purchase.netPayable = invoiceNetPayable(purchase.grandTotal, purchase.invoiceReturnValue || 0);
   return purchase;
 };
 
@@ -312,6 +329,150 @@ const compactPurchase = (row) => ({
   createdByRole: row.createdByRole,
 });
 
+const quoteInvoiceReturns = async (rawReturns, gstMode) => {
+  const list = (Array.isArray(rawReturns) ? rawReturns : []).filter((row) => Number(row?.quantity) > 0);
+  const reserved = new Map();
+  const quoted = [];
+
+  for (const raw of list) {
+    const label = String(raw.medicineName || '').trim();
+    const medicine = await Medicine.findById(raw.medicineId);
+    if (!medicine) {
+      fail(`${label || 'This medicine'} is not in stock, so it cannot be returned on this bill.`);
+    }
+    const batchNumber = normalizeBatchNumber(raw.batchNumber);
+    const batch = batchNumber ? findActiveBatch(medicine, batchNumber) : null;
+    if (!batch) {
+      fail(`${medicine.name}${batchNumber ? ` batch ${batchNumber}` : ''} is not in stock, so it cannot be returned on this bill.`);
+    }
+    const unit = resolvePurchaseUnit(raw);
+    const qty = Number(raw.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) fail(`Enter a return quantity for ${medicine.name}`);
+    const pieces = stockPieces(qty, unit.packSize);
+    const onHand = Number(batch.quantity) || 0;
+    const key = `${medicine._id}|${batch.batchNumber}`;
+    const already = reserved.get(key) || 0;
+    if (already + pieces > onHand + 1e-9) {
+      const left = Math.max(0, onHand - already);
+      const leftLabel = unit.quantityUnit === 'strip'
+        ? `${invoiceUnitsOnHand(left, unit.packSize)} strips`
+        : `${round2(left)}`;
+      fail(`${medicine.name} batch ${batch.batchNumber} has only ${leftLabel} in stock. You cannot return more than that.`);
+    }
+    reserved.set(key, already + pieces);
+    let priced;
+    try {
+      priced = calcLine({
+        quantity: qty,
+        purchaseRate: raw.purchaseRate,
+        discount: raw.discount,
+        gstPercent: raw.gstPercent,
+        gstMode,
+      });
+    } catch (err) {
+      fail(`${medicine.name}: ${err.message}`);
+    }
+    quoted.push({
+      medicineId: medicine._id,
+      medicineName: medicine.name,
+      batchNumber: batch.batchNumber,
+      expiryDate: batch.expiryDate,
+      quantity: qty,
+      quantityUnit: unit.quantityUnit,
+      packSize: unit.packSize,
+      stockQuantity: pieces,
+      purchaseRate: priced.purchaseRate,
+      sellingPrice: Number(medicine.sellingPrice) || 0,
+      gstPercent: priced.gstPercent,
+      lineTotal: priced.lineTotal,
+      grossAmount: priced.grossAmount,
+    });
+  }
+
+  return quoted;
+};
+
+const restoreReturnStock = async (applied) => {
+  for (const line of [...applied].reverse()) {
+    const medicine = await Medicine.findById(line.medicineId);
+    if (!medicine) continue;
+    const batch = findActiveBatch(medicine, line.batchNumber);
+    if (batch) batch.quantity = round2((Number(batch.quantity) || 0) + line.stockQuantity);
+    syncCurrentStock(medicine);
+    medicine.markModified('batches');
+    await medicine.save();
+  }
+};
+
+const commitInvoiceReturns = async (purchase, quoted, req) => {
+  if (!quoted.length) return null;
+  const applied = [];
+  try {
+    for (const line of quoted) {
+      const medicine = await Medicine.findById(line.medicineId);
+      const batch = medicine ? findActiveBatch(medicine, line.batchNumber) : null;
+      if (!medicine || !batch || Number(batch.quantity) < line.stockQuantity) {
+        fail(`${line.medicineName} batch ${line.batchNumber} does not have enough stock to return.`);
+      }
+      const qtyBefore = medicine.currentStock;
+      const batchBefore = Number(batch.quantity);
+      batch.quantity = round2(batchBefore - line.stockQuantity);
+      syncCurrentStock(medicine);
+      medicine.markModified('batches');
+      await medicine.save();
+      applied.push({
+        ...line,
+        qtyBefore,
+        qtyAfter: medicine.currentStock,
+        batchQtyBefore: batchBefore,
+        batchQtyAfter: batch.quantity,
+        savedMedicine: medicine,
+      });
+    }
+
+    const totalReturnQuantity = round2(applied.reduce((sum, line) => sum + line.quantity, 0));
+    const totalReturnValue = round2(applied.reduce((sum, line) => sum + line.lineTotal, 0));
+    const doc = await PurchaseReturn.create({
+      returnNumber: await nextNumber('purchaseReturn', 'PR'),
+      supplier: purchase.supplier,
+      supplierName: purchase.supplierName,
+      purchase: purchase._id,
+      originalInvoice: purchase.supplierInvoiceNumber,
+      purchaseNumber: purchase.purchaseNumber,
+      returnDate: purchase.purchaseDate,
+      reason: 'Sales return on invoice',
+      notes: 'Sales return deducted on this purchase bill',
+      settledOnInvoice: true,
+      items: applied.map((line) => ({
+        medicine: line.medicineId,
+        medicineName: line.medicineName,
+        batchNumber: line.batchNumber,
+        expiryDate: line.expiryDate,
+        originalQuantity: line.quantity,
+        availableQuantity: line.quantity,
+        returnQuantity: line.quantity,
+        quantityUnit: line.quantityUnit,
+        packSize: line.packSize,
+        stockQuantity: line.stockQuantity,
+        purchaseRate: line.purchaseRate,
+        sellingPrice: line.sellingPrice,
+        returnValue: line.lineTotal,
+        remainingQuantity: 0,
+        remainingStockValue: 0,
+      })),
+      totalReturnQuantity,
+      totalReturnValue,
+      status: 'active',
+      ...actor(req),
+      audit: [auditFrom(req, 'Created', 'Sales return deducted on the purchase bill')],
+    });
+    return { doc, applied };
+  } catch (err) {
+    await restoreReturnStock(applied);
+    throw err;
+  }
+};
+
 exports.createPurchase = async (req) => {
   const body = req.body || {};
   if (!body.supplier) fail('Supplier is required');
@@ -335,6 +496,9 @@ exports.createPurchase = async (req) => {
     paymentStatus = paymentType === 'credit' ? 'unpaid' : 'paid';
   }
 
+  const quotedReturns = await quoteInvoiceReturns(body.returns, gstMode);
+  const returnCredit = round2(quotedReturns.reduce((sum, line) => sum + line.lineTotal, 0));
+
   let lines = await prepareLines(body.items, gstMode);
   const summary = summarizePurchase(lines.map((line) => ({
     quantity: line.quantity,
@@ -354,9 +518,15 @@ exports.createPurchase = async (req) => {
   const purchaseDate = parseIstDateTime(body.purchaseDate) || new Date();
   const receipts = await applyReceipts(lines, { supplierInvoice: invoice, receivedDate: purchaseDate });
 
-  const pay = creditPortion(summary.grandTotal, paymentStatus, body.amountPaid);
+  const netPayable = invoiceNetPayable(summary.grandTotal, returnCredit);
+  const pay = creditPortion(Math.max(netPayable, 0), paymentStatus, body.amountPaid);
+  if (netPayable < 0) {
+    pay.amountPaid = 0;
+    pay.credit = netPayable;
+  }
   const who = actor(req);
   let purchase;
+  let invoiceReturn = null;
   try {
     purchase = await Purchase.create({
       purchaseNumber: await nextNumber('purchase', 'PUR'),
@@ -407,14 +577,20 @@ exports.createPurchase = async (req) => {
       igstTotal: summary.igstTotal,
       netPurchaseValue: summary.netPurchaseValue,
       grandTotal: summary.grandTotal,
+      invoiceReturnValue: returnCredit,
+      netPayable,
       totalQuantity: round2(lines.reduce((s, line) => s + line.stockUnits, 0)),
       returnStatus: 'none',
       status: 'active',
       ...who,
-      audit: [auditFrom(req, 'Created', 'Purchase saved and stock increased')],
+      audit: [auditFrom(req, 'Created', quotedReturns.length
+        ? 'Purchase saved. Sales return deducted on this bill.'
+        : 'Purchase saved and stock increased')],
     });
+    invoiceReturn = await commitInvoiceReturns(purchase, quotedReturns, req);
   } catch (err) {
     await rollbackReceipts(receipts);
+    if (purchase?._id) await Purchase.deleteOne({ _id: purchase._id });
     throw err;
   }
 
@@ -438,7 +614,29 @@ exports.createPurchase = async (req) => {
     });
   }
 
-  if (pay.credit) await adjustSupplierCredit(supplier._id, pay.credit);
+  if (invoiceReturn) {
+    for (const line of invoiceReturn.applied) {
+      await logStockMovement({
+        medicine: line.savedMedicine,
+        batchNumber: line.batchNumber,
+        type: 'purchase_return',
+        quantityBefore: line.qtyBefore,
+        quantityAfter: line.qtyAfter,
+        quantityChanged: -line.stockQuantity,
+        batchQuantityBefore: line.batchQtyBefore,
+        batchQuantityAfter: line.batchQtyAfter,
+        unitPrice: pieceRate(line.purchaseRate, line.packSize),
+        totalValue: -line.lineTotal,
+        supplier: supplier._id,
+        referenceId: invoiceReturn.doc._id,
+        referenceModel: 'PurchaseReturn',
+        userId: req.user._id,
+        remarks: `Sales return on ${invoice} (${invoiceReturn.doc.returnNumber})`,
+      });
+    }
+  }
+
+  if (pay.credit > 0) await adjustSupplierCredit(supplier._id, pay.credit);
 
   await logActivity(req, {
     action: 'Purchase Created',
@@ -587,8 +785,54 @@ exports.cancelPurchase = async (req) => {
   const reason = String(req.body?.reason || req.body?.cancelReason || '').trim();
   if (!reason) fail('A cancellation reason is required');
 
+  const invoiceReturns = await PurchaseReturn.find({
+    purchase: purchase._id,
+    status: 'active',
+    settledOnInvoice: true,
+  });
+  for (const doc of invoiceReturns) {
+    for (const item of doc.items) {
+      const medicine = await Medicine.findById(item.medicine);
+      if (!medicine) fail(`${item.medicineName} is no longer available`, 409);
+      const batch = findActiveBatch(medicine, item.batchNumber);
+      if (!batch) fail(`Batch ${item.batchNumber} of ${item.medicineName} no longer exists, so this bill cannot be cancelled`);
+      const qtyBefore = medicine.currentStock;
+      const batchBefore = Number(batch.quantity) || 0;
+      const pieces = Number(item.stockQuantity) > 0
+        ? Number(item.stockQuantity)
+        : stockPieces(item.returnQuantity, item.packSize || 1);
+      batch.quantity = round2(batchBefore + pieces);
+      syncCurrentStock(medicine);
+      medicine.markModified('batches');
+      await medicine.save();
+      await logStockMovement({
+        medicine,
+        batchNumber: batch.batchNumber,
+        type: 'purchase_return',
+        quantityBefore: qtyBefore,
+        quantityAfter: medicine.currentStock,
+        quantityChanged: pieces,
+        batchQuantityBefore: batchBefore,
+        batchQuantityAfter: batch.quantity,
+        unitPrice: pieceRate(item.purchaseRate, item.packSize || 1),
+        totalValue: item.returnValue,
+        supplier: purchase.supplier,
+        referenceId: doc._id,
+        referenceModel: 'PurchaseReturn',
+        userId: req.user._id,
+        remarks: `Reversed sales return ${doc.returnNumber} because the purchase was cancelled`,
+      });
+    }
+    doc.status = 'cancelled';
+    doc.cancelReason = reason;
+    doc.cancelledAt = new Date();
+    doc.cancelledBy = req.user._id;
+    doc.audit.push(auditFrom(req, 'Cancelled', reason));
+    await doc.save();
+  }
+
   await releasePurchaseStock(purchase, req, `Cancelled purchase ${purchase.supplierInvoiceNumber}`);
-  if (purchase.appliedCredit) await adjustSupplierCredit(purchase.supplier, -purchase.appliedCredit);
+  if (purchase.appliedCredit > 0) await adjustSupplierCredit(purchase.supplier, -purchase.appliedCredit);
 
   purchase.status = 'cancelled';
   purchase.cancelReason = reason;
@@ -931,6 +1175,20 @@ exports.cancelReturn = async (req) => {
     });
   }
 
+  if (doc.settledOnInvoice) {
+    purchase.invoiceReturnValue = round2(Math.max(0, (Number(purchase.invoiceReturnValue) || 0) - (Number(doc.totalReturnValue) || 0)));
+    purchase.netPayable = invoiceNetPayable(purchase.grandTotal, purchase.invoiceReturnValue);
+    const next = creditPortion(Math.max(purchase.netPayable, 0), purchase.paymentStatus, purchase.amountPaid);
+    if (purchase.netPayable < 0) {
+      next.amountPaid = 0;
+      next.credit = purchase.netPayable;
+    }
+    const delta = round2(next.credit - (purchase.appliedCredit || 0));
+    purchase.amountPaid = next.amountPaid;
+    purchase.appliedCredit = next.credit;
+    if (delta > 0) await adjustSupplierCredit(purchase.supplier, delta);
+  }
+
   purchase.returnStatus = returnStatusOf(purchase.items);
   purchase.audit.push(auditFrom(req, 'Return Reversed', reason));
   await purchase.save();
@@ -942,7 +1200,7 @@ exports.cancelReturn = async (req) => {
   doc.audit.push(auditFrom(req, 'Cancelled', reason));
   await doc.save();
 
-  if (doc.totalReturnValue) await adjustSupplierCredit(doc.supplier, doc.totalReturnValue);
+  if (!doc.settledOnInvoice && doc.totalReturnValue) await adjustSupplierCredit(doc.supplier, doc.totalReturnValue);
 
   await logActivity(req, {
     action: 'Purchase Return Cancelled',

@@ -71,6 +71,8 @@ const purchaseSchema = new mongoose.Schema({
   igstTotal: { type: Number, default: 0 },
   netPurchaseValue: { type: Number, default: 0 },
   grandTotal: { type: Number, default: 0 },
+  invoiceReturnValue: { type: Number, default: 0 },
+  netPayable: { type: Number, default: 0 },
   totalQuantity: { type: Number, default: 0 },
   returnStatus: { type: String, enum: ['none', 'partial', 'full'], default: 'none', index: true },
   status: { type: String, enum: ['active', 'cancelled'], default: 'active', index: true },

@@ -10,9 +10,16 @@ const Department = require('../models/Department');
 const Asset = require('../models/Asset');
 const DirectSale = require('../models/DirectSale');
 const { aggregateTodayRevenue, istToday } = require('../utils/todayRevenue');
+const { shiftsForOrganization, currentOrNextSession } = require('../utils/hospitalShifts');
 
 exports.getDashboardStats = asyncHandler(async (req, res) => {
   const day = istToday();
+  const pharmacist = req.user?.role === 'Pharmacist';
+  const shiftAccount = pharmacist
+    ? currentOrNextSession(req.user?.shift, shiftsForOrganization(req.organization))
+    : null;
+  const moneyFrom = shiftAccount?.from || day.from;
+  const moneyTo = shiftAccount?.to || day.to;
 
   const [
     todayOP, todayIP, totalPatients, totalIP,
@@ -24,7 +31,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     Patient.countDocuments(),
     IPAdmission.countDocuments({ status: 'admitted' }),
     Bed.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
-    aggregateTodayRevenue(Bill),
+    aggregateTodayRevenue(Bill, {}, { from: moneyFrom, to: moneyTo }),
     Bill.countDocuments({ status: { $in: ['pending', 'partial'] } }),
     LabTest.countDocuments({ createdAt: { $gte: day.from, $lt: day.to } }),
     Patient.find().sort('-createdAt').limit(5).select('patientId name age gender phone createdAt'),
@@ -53,7 +60,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     Asset.countDocuments({ isActive: true }),
     Asset.countDocuments({ isActive: true, status: { $in: ['Under Maintenance', 'Breakdown', 'Repair In Progress'] } }),
     DirectSale.aggregate([
-      { $match: { saleDate: { $gte: day.from, $lt: day.to } } },
+      { $match: { saleDate: { $gte: moneyFrom, $lt: moneyTo } } },
       { $group: { _id: null, total: { $sum: '$grandTotal' }, count: { $sum: 1 } } },
     ]),
   ]);
@@ -76,6 +83,9 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       totalAssets,
       assetsUnderRepair,
       todayPharmacySales: { total: pharmacySalesToday[0]?.total || 0, count: pharmacySalesToday[0]?.count || 0 },
+      shiftAccount: shiftAccount
+        ? { id: shiftAccount.id, name: shiftAccount.name, range: shiftAccount.range }
+        : null,
     },
   });
 });

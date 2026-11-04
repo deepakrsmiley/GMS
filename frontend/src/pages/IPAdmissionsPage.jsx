@@ -13,7 +13,7 @@ import ServiceUsageModal from '../components/ip/ServiceUsageModal';
 import MedicationLogModal from '../components/ip/MedicationLogModal';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
 import { useBranding } from '../hooks/useBranding';
-import { isThangamHospital } from '../utils/hospitalA';
+import { usesStructuredDob } from '../utils/hospitalA';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
 import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
 import { hasPermission } from '../constants/permissions';
@@ -62,7 +62,7 @@ export default function IPAdmissionsPage() {
   const navigate = useNavigate();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
-  const thangam = isThangamHospital(user?.organization, branding);
+  const structuredDob = usesStructuredDob(user?.organization, branding);
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canSeeDischargeTab = hasPermission(user, 'CREATE_DISCHARGE_SUMMARY') || hasPermission(user, 'PROCESS_DISCHARGE');
   const viewOnly = hasPermission(user, 'VIEW_IP_ADMISSION') && !canAdmit;
@@ -789,7 +789,7 @@ export default function IPAdmissionsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!thangam) {
+            if (!structuredDob) {
               quickAddMut.mutate(quickForm);
               return;
             }
@@ -814,7 +814,7 @@ export default function IPAdmissionsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
               <input required value={quickForm.phone} onChange={(e) => setQuickForm({ ...quickForm, phone: e.target.value })} className="input-field" placeholder="Mobile number" />
             </div>
-            {thangam ? (
+            {structuredDob ? (
               <div className="col-span-2">
                 <ThangamDobFields
                   day={ipDob.day}

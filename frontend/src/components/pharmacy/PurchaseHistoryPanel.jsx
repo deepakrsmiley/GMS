@@ -152,6 +152,31 @@ export default function PurchaseHistoryPanel({ onReturn }) {
                 </tbody>
               </table>
             </div>
+            {(detail.data.invoiceReturnItems || []).length > 0 && (
+              <div className="pur-table-wrap">
+                <table className="pur-table">
+                  <thead>
+                    <tr>{['Sales return', 'Batch', 'Qty', 'Rate', 'Amount'].map((h) => <th key={h}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {detail.data.invoiceReturnItems.map((item) => (
+                      <tr key={`${item.returnNumber}-${item.batchNumber}-${item.medicineName}`} className="border-t border-slate-100">
+                        <td className="py-2">{item.medicineName}</td>
+                        <td>{item.batchNumber}</td>
+                        <td className="tabular-nums">{purchaseUnitText(item, item.returnQuantity)}</td>
+                        <td className="tabular-nums">{inr(item.purchaseRate)}</td>
+                        <td className="tabular-nums">{inr(item.returnValue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="grid sm:grid-cols-3 gap-2 text-xs">
+              <Info label="Purchase" value={inr(detail.data.grandTotal)} />
+              <Info label="Return" value={inr(detail.data.invoiceReturnValue || 0)} />
+              <Info label="Net payable" value={inr(detail.data.netPayable != null ? detail.data.netPayable : detail.data.grandTotal)} />
+            </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-secondary text-xs" onClick={() => printPurchase(detail.data)}>Print</button>
               {detail.data.status === 'active' && (

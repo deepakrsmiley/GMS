@@ -9,6 +9,7 @@ export const RETURN_REASONS = [
   'Supplier Replacement',
   'Quality Issue',
   'Near Expiry',
+  'Sales return on invoice',
   'Other',
 ];
 
@@ -70,6 +71,27 @@ export const previewInvoice = (lines, overallDiscount = 0, gstMode = 'intra') =>
   };
 };
 
+export const previewBill = (lines, overallDiscount = 0, gstMode = 'intra') => {
+  const buys = [];
+  const returns = [];
+  lines.forEach((line, index) => {
+    if (line.kind === 'return') returns.push({ line, index });
+    else buys.push({ line, index });
+  });
+  const buy = previewInvoice(buys.map((row) => row.line), overallDiscount, gstMode);
+  const returnPriced = returns.map((row) => previewLine(row.line, gstMode));
+  const returnTotal = round2(returnPriced.reduce((sum, line) => sum + line.total, 0));
+  const lineTotals = lines.map(() => 0);
+  buys.forEach((row, i) => { lineTotals[row.index] = buy.lines[i].total; });
+  returns.forEach((row, i) => { lineTotals[row.index] = returnPriced[i].total; });
+  return {
+    ...buy,
+    returnTotal,
+    netPayable: round2(buy.grand - returnTotal),
+    lineTotals,
+  };
+};
+
 export const purchaseUnitText = (item, qty) => {
   const n = qty == null ? Number(item?.quantity) || 0 : Number(qty) || 0;
   if (item?.quantityUnit === 'strip') {
@@ -123,11 +145,20 @@ export const printPurchase = (purchase) => {
       <thead><tr><th>Medicine</th><th>Batch</th><th>Expiry</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">MRP</th><th class="right">Discount</th><th class="right">GST</th><th class="right">Total</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${(purchase.invoiceReturnItems || []).length ? `<table>
+      <thead><tr><th>Sales return</th><th>Batch</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Amount</th></tr></thead>
+      <tbody>${(purchase.invoiceReturnItems || []).map((item) => `<tr>
+        <td>${esc(item.medicineName)}</td>
+        <td>${esc(item.batchNumber)}</td>
+        <td class="right">${esc(purchaseUnitText(item, item.returnQuantity))}</td>
+        <td class="right">${inr(item.purchaseRate)}</td>
+        <td class="right">${inr(item.returnValue)}</td>
+      </tr>`).join('')}</tbody>
+    </table>` : ''}
     <div class="totals">
-      <div><span>Gross</span><strong>${inr(purchase.grossPurchaseValue)}</strong></div>
-      <div><span>Taxable</span><strong>${inr(purchase.taxableAmount)}</strong></div>
-      <div><span>Tax</span><strong>${inr(purchase.taxAmount)}</strong></div>
-      <div><span>Grand total</span><strong>${inr(purchase.grandTotal)}</strong></div>
+      <div><span>Purchase</span><strong>${inr(purchase.grandTotal)}</strong></div>
+      <div><span>Return</span><strong>${inr(purchase.invoiceReturnValue || 0)}</strong></div>
+      <div><span>Net payable</span><strong>${inr(purchase.netPayable != null ? purchase.netPayable : purchase.grandTotal)}</strong></div>
     </div>
   `);
 };

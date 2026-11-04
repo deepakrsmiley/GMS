@@ -21,7 +21,7 @@ import {
   STATUS_LABELS,
   ORDER_SOURCE_LABELS,
 } from '../constants/labProfiles';
-import { analyzeResult, FLAG_STYLES } from '../utils/labResultAnalyzer';
+import { analyzeResult, FLAG_STYLES, labSectionRank, tidyTestName } from '../utils/labResultAnalyzer';
 import { istCalendarDate } from '../utils/istDate';
 import { isThangamHospital } from '../utils/hospitalA';
 import '../styles/labOrder.css';
@@ -29,6 +29,17 @@ import '../styles/labOrder.css';
 const shortProfileName = (name = '') => {
   const m = String(name).match(/^([^(]+)/);
   return (m ? m[1] : name).trim() || 'Other';
+};
+
+const rowsWithSections = (rows, profileName) => {
+  let section = shortProfileName(profileName);
+  return (rows || []).flatMap((meta) => {
+    if (meta.isSection) {
+      section = meta.testName || section;
+      return [];
+    }
+    return [{ ...meta, section }];
+  });
 };
 
 const flagLabel = (flag) => {
@@ -113,9 +124,9 @@ const buildResultFields = (labOrder) => {
 
   const pushRow = (t, profileName, meta = {}) => {
     fields.push({
-      testName: t.testName,
+      testName: tidyTestName(t.testName),
       profileName: profileName || t.profileName || '',
-      section: t.isSection ? t.testName : shortProfileName(profileName || t.profileName || 'Other'),
+      section: meta.section || shortProfileName(profileName || t.profileName || 'Other'),
       value: '',
       unit: meta.unit || t.unit || '',
       normalRange: meta.normalRange || t.normalRange || '',
@@ -130,7 +141,7 @@ const buildResultFields = (labOrder) => {
   };
 
   profileNames.forEach((profileName) => {
-    const metaRows = getProfileTests(profileName);
+    const metaRows = rowsWithSections(getProfileTests(profileName), profileName);
     const parameterRows = metaRows.filter((meta) => !meta.isSection);
     const owned = orderTests
       .map((t, i) => ({ t, i }))
@@ -172,7 +183,7 @@ const buildResultFields = (labOrder) => {
 
   orderTests.forEach((t, idx) => {
     if (usedIdx.has(idx)) return;
-    const profileName = t.profileName || profileNames.find((p) => getProfileTests(p).some((m) => m.testName === t.testName)) || profileNames[0] || 'Other';
+    const profileName = t.profileName || profileNames.find((p) => getProfileTests(p).some((m) => m.testName === t.testName && !m.isSection)) || profileNames[0] || 'Other';
     const meta = getTestMeta(t.testName, getProfileTests(profileName));
     pushRow(t, profileName, {
       unit: t.unit || meta.unit,
@@ -219,6 +230,7 @@ const buildResultFields = (labOrder) => {
     });
   });
 
+  merged.sort((a, b) => labSectionRank(a.section) - labSectionRank(b.section));
   return merged;
 };
 

@@ -4,6 +4,7 @@ const brandingService = require('../services/brandingService');
 const { generatePremiumInvoicePDF, generatePremiumThermalPrint } = require('./invoicePdfGenerator');
 const { formatIstDate, formatIstDateTime } = require('./istDay');
 const { attachDischargeFonts, pdfSafe, setDsFont, dsText, fitPdfText, dischargeSectionOn, pairDischargeInfoRows, pickDischargeHeader, formatDischargePhone } = require('./dischargePrint');
+const { demographicParts, labSectionRank, tidyRangeText, tidyTestName, SGPT_DISCLAIMER } = require('./labResultAnalyzer');
 
 const PAGE = { width: 595.28, height: 841.89 };
 const MARGIN = 45;
@@ -66,9 +67,20 @@ const splitNormalRange = (normalRange) => {
 };
 
 const getLabFlag = (result) => {
-  if (result.flag === 'High' || result.flag === 'Critical') return 'H';
-  if (result.flag === 'Low') return 'L';
+  const flag = result.flag;
+  if (flag === 'High' || flag === 'HIGH' || flag === 'Critical' || flag === 'CRITICAL_HIGH') return 'H';
+  if (flag === 'Low' || flag === 'LOW' || flag === 'CRITICAL_LOW') return 'L';
+  if (flag === 'ABNORMAL') return 'A';
   return '';
+};
+
+const rangeLabel = (normalRange) => {
+  const text = tidyRangeText(normalRange);
+  const parts = demographicParts(text);
+  if (parts) return `M ${parts.male || '-'}   F ${parts.female || '-'}   C ${parts.child || '-'}`;
+  if (/^(<|>|<=|>=)/.test(text)) return text;
+  const [rangeLow, rangeHigh] = splitNormalRange(text);
+  return rangeLow && rangeHigh ? `${rangeLow} - ${rangeHigh}` : (text || '-');
 };
 
 const cleanLabUnit = (unit) => String(unit || '').replace(/^(H|L)\s+/, '');
@@ -76,6 +88,17 @@ const cleanLabUnit = (unit) => String(unit || '').replace(/^(H|L)\s+/, '');
 const normalizeLabName = (name) => String(name || '').trim().toUpperCase();
 
 const buildResultGroups = (results = []) => {
+  if (results.some((row) => row.section)) {
+    const map = new Map();
+    results.forEach((row) => {
+      const title = tidyTestName(row.section || 'Results');
+      if (!map.has(title)) map.set(title, []);
+      map.get(title).push({ ...row, testName: tidyTestName(row.testName) });
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => labSectionRank(a[0]) - labSectionRank(b[0]))
+      .map(([title, rows]) => ({ title, tests: [], rows }));
+  }
   const resultMap = new Map(results.map((result) => [normalizeLabName(result.testName), result]));
   const groupDefinitions = [
     { title: 'WBC', tests: ['WBC', 'LYM%', 'MON%', 'GRA%', 'LYM#', 'MON#', 'GRA#', 'GLR'] },
@@ -225,22 +248,26 @@ const generateLabReportPDF = async (labTest, res, branding) => {
     doc.y = groupY + rowHeight;
     group.rows.forEach((result) => {
       const rowY = doc.y;
-      const [rangeLow, rangeHigh] = splitNormalRange(result.normalRange);
       const flag = getLabFlag(result);
-      const abnormal = flag === 'H' || flag === 'L';
+      const abnormal = flag === 'H' || flag === 'L' || flag === 'A';
       if (visualIndex % 2 === 0) doc.rect(tableLeft, rowY, tableWidth, rowHeight).fill('#f8fafc');
       doc.moveTo(tableLeft, rowY + rowHeight).lineTo(tableLeft + tableWidth, rowY + rowHeight).lineWidth(0.25).strokeColor('#e2e8f0').stroke();
       doc.font('Helvetica-Bold').fontSize(7.25).fillColor('#111827').text(result.testName || '', tableLeft + 7, rowY + 3.2, { width: col.test });
       doc.font(abnormal ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.25).fillColor(abnormal ? '#b91c1c' : '#111827')
         .text(result.value || '', tableLeft + 176, rowY + 3.2, { width: col.result, align: 'right' });
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(flag === 'H' ? '#b91c1c' : flag === 'L' ? '#2563eb' : '#16a34a')
+      doc.font('Helvetica-Bold').fontSize(7).fillColor(flag === 'H' || flag === 'A' ? '#b91c1c' : flag === 'L' ? '#2563eb' : '#16a34a')
         .text(flag || '-', tableLeft + 260, rowY + 3.2, { width: col.flag, align: 'center' });
       doc.font('Helvetica').fontSize(7).fillColor('#334155').text(cleanLabUnit(result.unit), tableLeft + 302, rowY + 3.2, { width: col.unit });
-      doc.text(rangeLow && rangeHigh ? `${rangeLow} - ${rangeHigh}` : result.normalRange || '-', tableLeft + 402, rowY + 3.2, { width: col.range, align: 'center' });
+      doc.text(rangeLabel(result.normalRange || result.referenceRange), tableLeft + 402, rowY + 3.2, { width: col.range, align: 'center' });
       doc.y = rowY + rowHeight;
       visualIndex += 1;
     });
   });
+
+  if ((labTest.results || []).some((row) => /sgpt/i.test(row.testName || '')) && doc.y < pageHeight - 140) {
+    doc.y += 6;
+    doc.font('Helvetica').fontSize(7).fillColor('#334155').text(SGPT_DISCLAIMER, margin, doc.y, { width: contentWidth });
+  }
 
   if (labTest.remarks && doc.y < pageHeight - 116) {
     doc.y += 7;

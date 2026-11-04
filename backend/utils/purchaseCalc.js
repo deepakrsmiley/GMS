@@ -9,6 +9,7 @@ const RETURN_REASONS = [
   'Supplier Replacement',
   'Quality Issue',
   'Near Expiry',
+  'Sales return on invoice',
   'Other',
 ];
 
@@ -221,6 +222,9 @@ const assertReturnQuantity = (requested, available, { remainingOnInvoice = avail
   return qty;
 };
 
+const invoiceNetPayable = (purchaseTotal, returnTotal) =>
+  round2((Number(purchaseTotal) || 0) - (Number(returnTotal) || 0));
+
 const creditPortion = (grandTotal, paymentStatus, amountPaid = 0) => {
   const total = round2(grandTotal);
   if (paymentStatus === 'paid') return { amountPaid: total, credit: 0 };
@@ -257,6 +261,7 @@ module.exports = {
   returnValue,
   returnableQuantity,
   assertReturnQuantity,
+  invoiceNetPayable,
   creditPortion,
   returnStatusOf,
 };

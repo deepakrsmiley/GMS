@@ -19,16 +19,90 @@
 
 const QUALITATIVE_NORMAL = new Set([
   'negative', 'non reactive', 'nonreactive', 'not detected', 'absent', 'nil', 'normal',
+  'clear', 'pale yellow',
 ]);
 const QUALITATIVE_ABNORMAL = new Set([
-  'positive', 'reactive', 'detected', 'present',
+  'positive', 'reactive', 'detected', 'present', 'trace',
 ]);
+
+const SGPT_DISCLAIMER = 'SGPT (ALT) can rise with liver cell injury, some medicines, and muscle strain. Read it with the other liver tests and the clinical findings.';
+
+/** "Less than 140" and "upto 200" print as <140 and <200. */
+function tidyRangeText(value) {
+  let text = String(value ?? '').trim();
+  if (!text || text === '-' || text === '—') return text;
+  text = text.replace(/\b(less than|upto|up to)\s*/gi, '<');
+  text = text.replace(/<\s+/g, '<');
+  text = text.replace(/(<=|>=|<|>)\s*(\d+(?:\.\d+)?)\s*(?:mg\s*\/\s*dl)?/gi, '$1$2');
+  return text;
+}
+
+/** "M:13–17; F:12–15; C:11–16" → { male, female, child } */
+function demographicParts(value) {
+  const text = String(value ?? '');
+  if (!/\b[MFC]\s*:/i.test(text)) return null;
+  const parts = {};
+  const re = /([MFC])\s*:\s*([^;]+)/gi;
+  let match = re.exec(text);
+  while (match) {
+    const key = match[1].toUpperCase();
+    const band = tidyRangeText(match[2]);
+    if (key === 'M') parts.male = band;
+    if (key === 'F') parts.female = band;
+    if (key === 'C') parts.child = band;
+    match = re.exec(text);
+  }
+  if (!parts.male && !parts.female && !parts.child) return null;
+  return parts;
+}
+
+function pickDemographic(parts, patient = {}) {
+  const age = Number(patient.age);
+  const gender = String(patient.gender || '').toLowerCase();
+  if (!Number.isNaN(age) && age <= 12 && parts.child) return parts.child;
+  if (gender.startsWith('f') && parts.female) return parts.female;
+  if (gender.startsWith('m') && parts.male) return parts.male;
+  return parts.male || parts.female || parts.child || '';
+}
+
+function tidyTestName(name) {
+  return String(name || '').replace(/post\s+pra[nr]di[ae]n/gi, 'Post Prandial');
+}
+
+/** Printed report block order: CBC, sugar, lipid, RFT, LFT, bilirubin, urine. */
+function labSectionRank(title) {
+  const text = String(title || '').toLowerCase();
+  if (/hemogram|complete blood|\bcbc\b|haemogram/.test(text)) return 10;
+  if (/esr|sedimentation/.test(text)) return 20;
+  if (/sugar|glucose|fasting|\bfbs\b|hba1c|ppbs|prand/.test(text)) return 30;
+  if (/lipid|\bflp\b|cholesterol/.test(text)) return 40;
+  if (/\brft\b|renal|kidney/.test(text)) return 50;
+  if (/\blft\b|liver|sgpt|sgot/.test(text)) return 60;
+  if (/bilirubin|\bblbi\b/.test(text)) return 70;
+  if (/urine|u\.r/.test(text)) return 80;
+  return 500;
+}
+
+function qualitativeFlag(rawValue) {
+  const value = String(rawValue || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!value) return null;
+  if (QUALITATIVE_NORMAL.has(value)) return 'normal';
+  if (QUALITATIVE_ABNORMAL.has(value)) return 'abnormal';
+  if (/^(trace|present|positive)(\s*\(\+{1,4}\))?$/.test(value)) return 'abnormal';
+  if (/^present\s*\+{1,4}$/.test(value)) return 'abnormal';
+  if (/^\+{1,4}$/.test(value) || /^[1-4]\+$/.test(value)) return 'abnormal';
+  if (/\(\+{1,4}\)/.test(value)) return 'abnormal';
+  return null;
+}
 
 // Pick the correct reference range when it is stored per demographic group.
 function resolveReferenceRange(referenceRange, patient = {}) {
   if (referenceRange == null) return '';
   if (typeof referenceRange === 'string' || typeof referenceRange === 'number') {
-    return String(referenceRange);
+    const text = tidyRangeText(referenceRange);
+    const parts = demographicParts(text);
+    if (!parts) return text;
+    return tidyRangeText(pickDemographic(parts, patient));
   }
   if (typeof referenceRange === 'object') {
     const age = Number(patient.age);
@@ -59,8 +133,8 @@ function parseNumericRange(rangeStr) {
   if (opMatch) {
     const [, op, numStr] = opMatch;
     const num = parseFloat(numStr);
-    if (op === '<' || op === '<=') return { min: -Infinity, max: num, maxInclusive: op === '<=' };
-    if (op === '>' || op === '>=') return { min: num, max: Infinity, minInclusive: op === '>=' };
+    if (op === '<' || op === '<=') return { min: -Infinity, max: num, maxInclusive: op === '<=', minInclusive: false };
+    if (op === '>' || op === '>=') return { min: num, max: Infinity, minInclusive: op === '>=', maxInclusive: false };
   }
 
   // "13 - 18", "13-18", "13 – 18", "13 to 18"
@@ -109,11 +183,11 @@ function analyzeResult({ value, referenceRange, criticalLow, criticalHigh, patie
   }
 
   // Qualitative interpretation first
-  const lowerValue = rawValue.toLowerCase();
-  if (QUALITATIVE_NORMAL.has(lowerValue)) {
+  const qualitative = qualitativeFlag(rawValue);
+  if (qualitative === 'normal') {
     return { displayRange: displayRange || rawValue, flag: 'NORMAL', status: 'Normal', arrow: '', isCritical: false, isAbnormal: false };
   }
-  if (QUALITATIVE_ABNORMAL.has(lowerValue)) {
+  if (qualitative === 'abnormal') {
     return { displayRange: displayRange || rawValue, flag: 'ABNORMAL', status: 'Abnormal', arrow: '', isCritical: false, isAbnormal: true };
   }
 
@@ -135,8 +209,12 @@ function analyzeResult({ value, referenceRange, criticalLow, criticalHigh, patie
       return { displayRange, flag: 'NA', status: 'N/A', arrow: '', isCritical: false, isAbnormal: false };
     }
 
-    const belowMin = numValue < parsedRange.min;
-    const aboveMax = numValue > parsedRange.max;
+    const belowMin = parsedRange.minInclusive === false
+      ? numValue <= parsedRange.min
+      : numValue < parsedRange.min;
+    const aboveMax = parsedRange.maxInclusive === false
+      ? numValue >= parsedRange.max
+      : numValue > parsedRange.max;
 
     if (Number.isFinite(parsedRange.min) && Number.isFinite(parsedRange.max)) {
       const span = Math.abs(parsedRange.max - parsedRange.min) || Math.abs(parsedRange.max) || 1;
@@ -158,4 +236,13 @@ function analyzeResult({ value, referenceRange, criticalLow, criticalHigh, patie
   return { displayRange: displayRange || rawValue, flag: 'NA', status: 'N/A', arrow: '', isCritical: false, isAbnormal: false };
 }
 
-module.exports = { analyzeResult, resolveReferenceRange, parseNumericRange };
+module.exports = {
+  analyzeResult,
+  resolveReferenceRange,
+  parseNumericRange,
+  tidyRangeText,
+  tidyTestName,
+  demographicParts,
+  labSectionRank,
+  SGPT_DISCLAIMER,
+};

@@ -296,6 +296,12 @@ function ShiftReport({ onSummary }) {
           <div ref={printRef}>
             <div className="pbr-report-title">
               <h1>Pharmacy Sales Report</h1>
+              {data.accountShift && (
+                <p>
+                  {data.accountShift.name} account only · {data.accountShift.range}.
+                  This shift starts at ₹0 when it opens. The admin dashboard still shows the full day.
+                </p>
+              )}
               <p>
                 Date:{' '}
                 <strong>

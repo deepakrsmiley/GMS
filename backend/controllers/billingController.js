@@ -43,7 +43,7 @@ const {
   sumPaymentLines,
 } = require("../utils/billItems");
 const { mergeSameMedicineLines } = require("../utils/mergeMedicineLines");
-const { shiftsForOrganization, shiftIdForInstant } = require("../utils/hospitalShifts");
+const { shiftsForOrganization, shiftIdForInstant, sessionBounds, accountShiftId } = require("../utils/hospitalShifts");
 
 const safeStockRollback = async (fn) => {
   try {
@@ -1308,38 +1308,67 @@ const loadPharmacySaleRows = async (from, to) => {
   return rows;
 };
 
+const shiftBucket = async (def, dateIso, schedule) => {
+  const window = sessionBounds(dateIso, def.id, schedule);
+  const rows = (await loadPharmacySaleRows(window.from, new Date(window.to.getTime() - 1))).map((row) => ({
+    ...row,
+    shift: def.id,
+  }));
+  return {
+    _id: def.id,
+    ...def,
+    window: { from: window.from, to: window.to },
+    ...summarisePharmacyRows(rows),
+    bills: rows,
+  };
+};
+
 exports.getShiftReport = asyncHandler(async (req, res) => {
   const fromParam = req.query.from || req.query.date || kolkataToday();
-  const toParam = req.query.to || fromParam;
   const start = istDayBounds(fromParam);
-  const end = istDayBounds(toParam);
-  const from = start.from;
-  const to = end.to;
-
-  const bills = await loadPharmacySaleRows(from, to);
-  const summary = summarisePharmacyRows(bills);
   const shiftSchedule = shiftsForOrganization(req.organization);
-  const tagged = bills.map((row) => ({
+  const pharmacist = req.user?.role === "Pharmacist";
+
+  if (pharmacist) {
+    const shiftId = accountShiftId(req.user?.shift);
+    const def = shiftSchedule.find((row) => row.id === shiftId) || shiftSchedule[0];
+    const bucket = await shiftBucket(def, start.iso, shiftSchedule);
+    res.status(200).json({
+      success: true,
+      date: start.iso,
+      dateRange: bucket.window,
+      scope: "shift",
+      accountShift: {
+        id: def.id,
+        name: def.name,
+        range: def.range,
+      },
+      summary: summarisePharmacyRows(bucket.bills),
+      bills: bucket.bills,
+      shiftSchedule: [def],
+      shifts: [bucket],
+    });
+    return;
+  }
+
+  const dayRows = await loadPharmacySaleRows(start.from, start.to);
+  const summary = summarisePharmacyRows(dayRows);
+  const shifts = [];
+  for (const def of shiftSchedule) {
+    shifts.push(await shiftBucket(def, start.iso, shiftSchedule));
+  }
+  const bills = dayRows.map((row) => ({
     ...row,
     shift: shiftIdForInstant(row.createdAt, shiftSchedule),
   }));
-  const shifts = shiftSchedule.map((def) => {
-    const rows = tagged.filter((row) => row.shift === def.id);
-    return {
-      _id: def.id,
-      ...def,
-      window: { from, to },
-      ...summarisePharmacyRows(rows),
-      bills: rows,
-    };
-  });
 
   res.status(200).json({
     success: true,
     date: start.iso,
-    dateRange: { from, to },
+    dateRange: { from: start.from, to: start.to },
+    scope: "day",
     summary,
-    bills: tagged,
+    bills,
     shiftSchedule,
     shifts,
   });

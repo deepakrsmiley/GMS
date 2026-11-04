@@ -431,7 +431,7 @@ exports.searchMedicines = asyncHandler(async (req, res) => {
   }
 
   const medicines = await query
-    .select('name genericName category currentStock sellingPrice gstPercent unitOfMeasure mrp hsnCode batches');
+      .select('name genericName category currentStock sellingPrice purchasePrice gstPercent unitOfMeasure unitsPerStrip mrp hsnCode batches');
 
   const data = medicines
     .map((m) => {

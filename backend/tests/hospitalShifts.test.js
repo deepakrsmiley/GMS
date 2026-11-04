@@ -4,6 +4,8 @@ const {
   shiftsForOrganization,
   shiftIdForInstant,
   istHour,
+  sessionBounds,
+  currentOrNextSession,
 } = require('../utils/hospitalShifts');
 
 describe('hospital shift windows', () => {
@@ -34,6 +36,26 @@ describe('hospital shift windows', () => {
     assert.equal(shiftIdForInstant(new Date('2026-10-23T16:29:00.000Z'), schedule), 'morning');
     assert.equal(shiftIdForInstant(new Date('2026-10-23T16:30:00.000Z'), schedule), 'night');
     assert.equal(shiftIdForInstant(new Date('2026-10-23T18:30:00.000Z'), schedule), 'night');
+  });
+
+  it('opens Srinivasa night at 10 PM and keeps that account separate from the morning', () => {
+    const schedule = shiftsForOrganization({ code: 'HOSP002', name: 'Srinivasa hospital', kind: 'client' });
+    const morning = sessionBounds('2026-11-04', 'morning', schedule);
+    const night = sessionBounds('2026-11-04', 'night', schedule);
+    assert.equal(morning.from.toISOString(), '2026-11-04T04:30:00.000Z');
+    assert.equal(morning.to.toISOString(), '2026-11-04T16:30:00.000Z');
+    assert.equal(night.from.toISOString(), '2026-11-04T16:30:00.000Z');
+    assert.equal(night.to.toISOString(), '2026-11-05T04:30:00.000Z');
+
+    const atNightOpen = new Date('2026-11-04T16:30:00.000Z');
+    const nightNow = currentOrNextSession('night', schedule, atNightOpen);
+    assert.equal(nightNow.from.toISOString(), night.from.toISOString());
+
+    const afternoon = new Date('2026-11-04T09:30:00.000Z');
+    const upcomingNight = currentOrNextSession('night', schedule, afternoon);
+    assert.equal(upcomingNight.from.toISOString(), night.from.toISOString());
+    const morningNow = currentOrNextSession('morning', schedule, afternoon);
+    assert.equal(morningNow.from.toISOString(), morning.from.toISOString());
   });
 
   it('classifies the default 7 AM boundary in India time', () => {

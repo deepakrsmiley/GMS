@@ -1,8 +1,8 @@
 import React from 'react';
-import { ageFromDobParts } from '../../utils/dobAge';
+import { ageDetailFromDobParts, formatAgeDetail } from '../../utils/dobAge';
 
 export default function ThangamDobFields({ day, month, year, onChange }) {
-  const age = ageFromDobParts(day, month, year);
+  const age = ageDetailFromDobParts(day, month, year);
   const setPart = (key, raw) => {
     const max = key === 'year' ? 4 : 2;
     onChange({
@@ -44,7 +44,7 @@ export default function ThangamDobFields({ day, month, year, onChange }) {
           aria-label="Year"
         />
         <span className="text-sm font-semibold text-slate-700">
-          {age == null ? 'Years —' : `${age} years`}
+          {age == null ? 'Age —' : `${formatAgeDetail(age)} · ${age.totalDays} days`}
         </span>
       </div>
     </div>

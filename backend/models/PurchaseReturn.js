@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { applyOrganizationScope } = require('../plugins/organizationScope');
 
 const returnItemSchema = new mongoose.Schema({
-  purchaseItemId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  purchaseItemId: { type: mongoose.Schema.Types.ObjectId },
   medicine: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine', required: true },
   medicineName: { type: String, required: true },
   batchNumber: { type: String, required: true },
@@ -43,6 +43,7 @@ const purchaseReturnSchema = new mongoose.Schema({
   items: [returnItemSchema],
   totalReturnQuantity: { type: Number, default: 0 },
   totalReturnValue: { type: Number, default: 0 },
+  settledOnInvoice: { type: Boolean, default: false },
   status: { type: String, enum: ['active', 'cancelled'], default: 'active', index: true },
   cancelReason: String,
   cancelledAt: Date,
