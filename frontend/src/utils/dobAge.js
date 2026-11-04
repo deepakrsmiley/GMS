@@ -57,12 +57,6 @@ export const formatAgeDetail = (detail) => {
   return `${unit(detail.years, 'year', 'years')}, ${unit(detail.months, 'month', 'months')}, ${unit(detail.days, 'day', 'days')}`;
 };
 
-/** Years and months only, for a birth year and month with no day. */
-export const formatYearMonthAge = (detail) => {
-  if (!detail) return '';
-  return `${unit(detail.years, 'year', 'years')}, ${unit(detail.months, 'month', 'months')}`;
-};
-
 /** Age label from a saved date of birth, or a plain year count when no date is stored. */
 export const formatAgeLabel = (dob, fallbackYears) => {
   const parts = partsFromDob(dob);
@@ -85,21 +79,4 @@ export const dobPayloadFromParts = (parts = {}) => {
   const m = String(parts.month).padStart(2, '0');
   const d = String(parts.day).padStart(2, '0');
   return { age, dob: `${y}-${m}-${d}` };
-};
-
-/** Age from birth year and month. The day is not collected, so the date is stored as the 1st. */
-export const yearMonthPayloadFromParts = (parts = {}) => {
-  const detail = ageDetailFromDobParts(1, parts.month, parts.year);
-  if (!detail) return null;
-  const y = String(parts.year);
-  const m = String(parts.month).padStart(2, '0');
-  return { age: detail.years, dob: `${y}-${m}-01`, detail };
-};
-
-export const formatYearMonthAgeLabel = (dob, fallbackYears) => {
-  const parts = partsFromDob(dob);
-  const detail = ageDetailFromDobParts(parts.day || 1, parts.month, parts.year);
-  if (detail) return formatYearMonthAge(detail);
-  if (fallbackYears != null && fallbackYears !== '') return `${fallbackYears} yrs`;
-  return '';
 };

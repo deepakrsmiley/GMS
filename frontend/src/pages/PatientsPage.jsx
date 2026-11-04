@@ -11,10 +11,9 @@ import DataTable from '../components/common/DataTable';
 import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
-import YearMonthFields from '../components/patients/YearMonthFields';
 import { useBranding } from '../hooks/useBranding';
-import { usesStructuredDob, usesYearMonthBirth } from '../utils/hospitalA';
-import { dobPayloadFromParts, emptyDobParts, formatAgeLabel, formatYearMonthAgeLabel, partsFromDob, yearMonthPayloadFromParts } from '../utils/dobAge';
+import { isSrinivasaHospital, usesStructuredDob } from '../utils/hospitalA';
+import { dobPayloadFromParts, emptyDobParts, formatAgeLabel, partsFromDob } from '../utils/dobAge';
 import '../styles/patients.css';
 
 const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -30,8 +29,12 @@ export default function PatientsPage() {
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
   const structuredDob = usesStructuredDob(user?.organization, branding);
-  const yearMonthBirth = usesYearMonthBirth(user?.organization);
-  const ageLabel = yearMonthBirth ? formatYearMonthAgeLabel : formatAgeLabel;
+  const srinivasa = isSrinivasaHospital(user?.organization);
+  const ageLabel = (dob, age) => (
+    srinivasa
+      ? (age != null && age !== '' ? `${age} yrs` : '')
+      : formatAgeLabel(dob, age)
+  );
   // Driven by Users & Access feature-permission checkboxes (Patients group)
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canCreate = hasPermission(user, 'CREATE_PATIENT');
@@ -255,19 +258,6 @@ export default function PatientsPage() {
       <Modal isOpen={showAdd} onClose={closeForm} title={editPatient ? `Edit Patient — ${editPatient.patientId || editPatient.name}` : 'Register New Patient'} size="lg">
         <form
           onSubmit={handleSubmit((d) => {
-            if (yearMonthBirth) {
-              const born = yearMonthPayloadFromParts(dobParts);
-              if (!born) {
-                if (editPatient && editPatient.age != null && !dobParts.month && !dobParts.year) {
-                  createMut.mutate({ ...d, age: editPatient.age });
-                  return;
-                }
-                toast.error('Enter birth year and month');
-                return;
-              }
-              createMut.mutate({ ...d, age: born.age, dob: born.dob });
-              return;
-            }
             if (!structuredDob) {
               createMut.mutate(d);
               return;
@@ -298,12 +288,6 @@ export default function PatientsPage() {
             {structuredDob ? (
               <ThangamDobFields
                 day={dobParts.day}
-                month={dobParts.month}
-                year={dobParts.year}
-                onChange={setDobParts}
-              />
-            ) : yearMonthBirth ? (
-              <YearMonthFields
                 month={dobParts.month}
                 year={dobParts.year}
                 onChange={setDobParts}

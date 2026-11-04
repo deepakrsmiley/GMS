@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
-import { formatAgeLabel, formatYearMonthAgeLabel } from '../../utils/dobAge';
-import { usesYearMonthBirth } from '../../utils/hospitalA';
+import { formatAgeLabel } from '../../utils/dobAge';
+import { isSrinivasaHospital } from '../../utils/hospitalA';
 import { Phone, Mail, MapPin, ShieldAlert } from 'lucide-react';
 
 const fmtMoney = (v) => `₹${(v || 0).toLocaleString('en-IN')}`;
@@ -9,7 +9,7 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-IN', { day: '2-di
 
 export default function PatientSummaryHeader({ data }) {
   const organization = useSelector((s) => s.auth?.user?.organization);
-  const ageLabel = usesYearMonthBirth(organization) ? formatYearMonthAgeLabel : formatAgeLabel;
+  const srinivasa = isSrinivasaHospital(organization);
   if (!data) return null;
   const { patient, stats = {}, currentStatus, lastVisit } = data;
   const admitted = currentStatus === 'Admitted';
@@ -48,7 +48,9 @@ export default function PatientSummaryHeader({ data }) {
           </div>
           <p className="p360-hero__meta">
             {[
-              ageLabel(patient.dob, patient.age) || null,
+              (srinivasa
+                ? (patient.age != null && patient.age !== '' ? `${patient.age} yrs` : '')
+                : formatAgeLabel(patient.dob, patient.age)) || null,
               patient.gender,
               patient.bloodGroup ? `Blood ${patient.bloodGroup}` : 'Blood group unknown',
             ].filter(Boolean).join(' · ')}

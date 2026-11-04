@@ -25,9 +25,6 @@ export const isSrinivasaHospital = (org) => {
 /** Day / month / year of birth, with age in years, months, and days. */
 export const usesStructuredDob = (org, branding) => isThangamHospital(org, branding);
 
-/** Birth year and month only, in the age column. No day of birth. */
-export const usesYearMonthBirth = (org) => isSrinivasaHospital(org);
-
 const THANGAM_NAME_RX = /thangam/i;
 
 /** Thangam prints OP pads onto pre-printed letterhead paper. */
