@@ -17,6 +17,7 @@ import { hasPermission } from '../constants/permissions';
 import { isSuperAdmin, normalizeRole } from '../utils/roles';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
+import DailyMedicineBilling, { formatMedicineDay, unbilledMedicineDays } from '../components/ip/DailyMedicineBilling';
 import {
   formatIstDate,
   formatIstDateTime,
@@ -745,6 +746,7 @@ export default function IPAdmissionDetailPage() {
     serviceUsages: admission.serviceUsages?.length || 0,
     labTests: admission.labTests?.length || 0,
   };
+  const unbilledMedicineDayList = unbilledMedicineDays(admission.medications || []);
 
   const topTabs = SECTIONS.filter((s) => s.tabLabel);
 
@@ -899,8 +901,14 @@ export default function IPAdmissionDetailPage() {
                   { key: 'route', header: 'Route' },
                   { key: 'administeredAt', header: 'Given At', render: (r) => fmtDateTime(r.administeredAt) },
                   { key: 'administeredBy', header: 'By', render: (r) => r.administeredBy?.name },
+                  {
+                    key: 'dailyBill',
+                    header: 'Bill',
+                    render: (r) => (r.dailyBill ? 'Billed' : ((Number(r.quantity) || 0) * (Number(r.unitPrice) || 0) > 0 ? 'Not billed' : '—')),
+                  },
                 ]}
               />
+              <DailyMedicineBilling admission={admission} showEmpty />
             </div>
           )}
 
@@ -1459,6 +1467,11 @@ export default function IPAdmissionDetailPage() {
           ) : (
             <p className="text-sm text-gray-600 dark:text-gray-300">
               This will discharge <strong>{patient.name}</strong> and free the bed. Regular discharge is allowed only after the IP bill is paid.
+            </p>
+          )}
+          {unbilledMedicineDayList.length > 0 && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              Medicines given on {unbilledMedicineDayList.map(formatMedicineDay).join(', ')} have no daily medicine bill yet. Those charges stay off the IP bill.
             </p>
           )}
           {canForceDischarge && dischargeGate && dischargeGate.allowed === false && (

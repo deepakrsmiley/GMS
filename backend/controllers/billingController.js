@@ -44,6 +44,7 @@ const {
 } = require("../utils/billItems");
 const { mergeSameMedicineLines } = require("../utils/mergeMedicineLines");
 const { shiftsForOrganization, shiftIdForInstant, sessionBounds, accountShiftId } = require("../utils/hospitalShifts");
+const { releaseIpDailyMedicineBill } = require("../services/ipDailyMedicineBill");
 
 const safeStockRollback = async (fn) => {
   try {
@@ -757,6 +758,14 @@ exports.cancelBill = asyncHandler(async (req, res, next) => {
     reason,
   });
   await bill.save();
+
+  if (bill.ipDailyMedicine) {
+    try {
+      await releaseIpDailyMedicineBill(bill);
+    } catch (error) {
+      logger.warn(`releaseIpDailyMedicineBill failed for ${bill.billNumber}: ${error.message}`);
+    }
+  }
 
   const populated = await Bill.findById(bill._id)
     .populate("patient", "patientId name phone")

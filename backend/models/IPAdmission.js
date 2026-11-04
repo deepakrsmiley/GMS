@@ -26,8 +26,8 @@ const MED_ROUTES = ['oral', 'IV', 'IM', 'SC', 'topical', 'inhalation', 'sublingu
 
 // One entry = one medicine administered/dispensed to this IP patient during their stay.
 // Stock is deducted from pharmacy inventory the moment it's logged here (see
-// ipController.addMedication), so this doubles as the ward's medicine-administration
-// record AND the source pharmacy pulls into the final IP bill (see billingService.js).
+// ipController.addMedication). Each day is charged on its own pharmacy bill.
+// The final IP bill does not include these medicines.
 const ipMedicationSchema = new mongoose.Schema({
   medicine: { type: mongoose.Schema.Types.ObjectId, ref: 'Medicine' },
   medicineName: { type: String, required: true },
@@ -41,6 +41,8 @@ const ipMedicationSchema = new mongoose.Schema({
   administeredAt: { type: Date, default: Date.now },
   administeredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   notes: String,
+  // Set when this dose is included on a daily pharmacy bill. Cleared if that bill is cancelled.
+  dailyBill: { type: mongoose.Schema.Types.ObjectId, ref: 'Bill' },
 }, { timestamps: true });
 
 const doctorRoundSchema = new mongoose.Schema({
@@ -198,7 +200,7 @@ const ipAdmissionSchema = new mongoose.Schema({
   shiftHandovers: [shiftHandoverSchema],
   doctorOrders: [doctorOrderSchema],
   serviceUsages: [serviceUsageSchema], // nebulizer, ventilator, O2, injections, other bedside services/procedures
-  medications: [ipMedicationSchema], // pharmacy medicines given to this IP patient during the stay (admit → discharge)
+  medications: [ipMedicationSchema], // medicines given during the stay; billed day by day, not on the final IP bill
   labTests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'LabTest' }],
   prescriptions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Prescription' }],
   bills: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Bill' }],

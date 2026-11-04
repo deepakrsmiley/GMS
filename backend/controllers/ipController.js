@@ -44,6 +44,7 @@ const Patient = require('../models/Patient');
 const OPRegistration = require('../models/OPRegistration');
 const Medicine = require('../models/Medicine');
 const { allocateAdmissionNumber } = require('../utils/generateId');
+const { createIpDailyMedicineBill } = require('../services/ipDailyMedicineBill');
 const { occupyBedAndRoom, releaseBedAndRoom } = require('../utils/roomBedSync');
 const {
   syncCurrentStock,
@@ -74,18 +75,27 @@ exports.getAdmission = asyncHandler(async (req, res, next) => {
     .populate('serviceUsages.administeredBy', 'name')
     .populate('medications.medicine', 'name genericName category unitOfMeasure')
     .populate('medications.administeredBy', 'name')
+    .populate({
+      path: 'bills',
+      match: { ipDailyMedicine: true, status: { $nin: ['cancelled', 'refunded'] } },
+      select: 'billNumber billType totalAmount paidAmount dueAmount paymentMode status createdAt dailyMedicineDate ipDailyMedicine advanceAmount',
+    })
     .populate('labTests');
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
+  const data = admission.toObject();
+  data.bills = (data.bills || [])
+    .filter((bill) => bill && bill.ipDailyMedicine && !['cancelled', 'refunded'].includes(bill.status))
+    .sort((a, b) => new Date(b.dailyMedicineDate || b.createdAt) - new Date(a.dailyMedicineDate || a.createdAt));
   let dischargeGate = null;
   if (admission.status === 'admitted') {
     try {
-      const billState = await loadAdmissionBillState(admission);
+      const billState = await loadAdmissionBillState(data);
       dischargeGate = evaluateDischargeSettlement(billState);
     } catch (_) {
       dischargeGate = null;
     }
   }
-  res.status(200).json({ success: true, data: admission, dischargeGate });
+  res.status(200).json({ success: true, data, dischargeGate });
 });
 
 /** Ward/bed board for Nurse Station — admitted patients with summary badges */
@@ -428,8 +438,8 @@ exports.deleteServiceUsage = asyncHandler(async (req, res, next) => {
 // Works just like an OP dispense: stock is deducted from the medicine's usable
 // batches (FEFO) the moment it's logged, and a StockMovement audit entry is made.
 // Every entry stays on the admission record from admit -> discharge, giving a
-// full daily medication history, and is combined on the IP bill by medicine
-// (same medicine and rate = one line with the total quantity).
+// full daily medication history. Each day is billed on its own pharmacy bill
+// (createDailyMedicineBill). Those medicines stay off the final IP bill.
 exports.addMedication = asyncHandler(async (req, res, next) => {
   const { medicine: medicineId, medicineName, dosage, frequency, route, quantity, administeredAt, notes } = req.body;
 
@@ -505,12 +515,37 @@ exports.addMedication = asyncHandler(async (req, res, next) => {
   res.status(201).json({ success: true, data: populated.medications, message: 'Medicine logged' });
 });
 
+exports.createDailyMedicineBill = asyncHandler(async (req, res, next) => {
+  const admission = await IPAdmission.findById(req.params.id);
+  if (!admission) return next(new ErrorResponse('Admission not found', 404));
+
+  try {
+    const bill = await createIpDailyMedicineBill({
+      admission,
+      day: req.body.day || req.body.date,
+      paymentMode: req.body.paymentMode,
+      user: req.user,
+    });
+    res.status(201).json({
+      success: true,
+      data: bill,
+      message: 'Daily medicine bill created',
+    });
+  } catch (error) {
+    if (error instanceof ErrorResponse) return next(error);
+    return next(new ErrorResponse(error.message || 'Could not create the daily medicine bill', 400));
+  }
+});
+
 exports.deleteMedication = asyncHandler(async (req, res, next) => {
   const admission = await IPAdmission.findById(req.params.id);
   if (!admission) return next(new ErrorResponse('Admission not found', 404));
 
   const entry = admission.medications.id(req.params.medId);
   if (!entry) return next(new ErrorResponse('Medication entry not found', 404));
+  if (entry.dailyBill) {
+    return next(new ErrorResponse('This medicine is already on a daily bill. Cancel that bill before removing it.', 400));
+  }
 
   // Return the deducted quantity back to stock, if it was tied to a real medicine.
   if (entry.medicine) {

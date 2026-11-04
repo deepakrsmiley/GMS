@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pill, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSelector } from 'react-redux';
 import api from '../../services/api';
 import Modal from '../common/Modal';
 import { hasPermission } from '../../constants/permissions';
+import DailyMedicineBilling, {
+  formatMedicineDay,
+  groupMedicationsByIstDay,
+} from './DailyMedicineBilling';
 
 const FREQUENCIES = ['OD', 'BD', 'TD', 'QD', 'SOS', 'HS', 'AC', 'PC', 'STAT'];
 const ROUTES = ['oral', 'IV', 'IM', 'SC', 'topical', 'inhalation', 'sublingual'];
@@ -24,22 +28,6 @@ const emptyForm = () => ({
 const field = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400 bg-white';
 const label = 'block text-xs font-medium text-gray-500 mb-1';
 
-// Groups medication entries by calendar day so the ward can see
-// "what medicines did this patient get, day by day" at a glance.
-const groupByDay = (entries) => {
-  const groups = {};
-  [...entries]
-    .sort((a, b) => new Date(b.administeredAt) - new Date(a.administeredAt))
-    .forEach((entry) => {
-      const dayKey = new Date(entry.administeredAt).toLocaleDateString('en-IN', {
-        weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
-      });
-      if (!groups[dayKey]) groups[dayKey] = [];
-      groups[dayKey].push(entry);
-    });
-  return groups;
-};
-
 // Logs pharmacy medicines given to an admitted (IP) patient during their stay,
 // the same way OP prescriptions are dispensed - searches live medicine stock,
 // deducts it immediately, and keeps a running day-by-day history that stays on
@@ -52,7 +40,13 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
 
-  const isDischarged = admission?.status === 'discharged';
+  const { data: freshAdmission } = useQuery({
+    queryKey: ['ip-admission', admission?._id],
+    queryFn: () => api.get(`/ip/${admission._id}`).then((r) => r.data.data),
+    enabled: Boolean(isOpen && admission?._id),
+  });
+  const record = freshAdmission || admission;
+  const isDischarged = record?.status === 'discharged';
   const canDelete = hasPermission(user, 'MANAGE_IP_MEDICATION');
 
   useEffect(() => {
@@ -75,8 +69,10 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
     return () => clearTimeout(t);
   }, [query]);
 
-  const medications = admission?.medications || [];
-  const grouped = groupByDay(medications);
+  const medications = record?.medications || [];
+  const grouped = groupMedicationsByIstDay(
+    [...medications].sort((a, b) => new Date(b.administeredAt) - new Date(a.administeredAt)),
+  );
 
   const addMutation = useMutation({
     mutationFn: (payload) => api.post(`/ip/${admission._id}/medication`, payload),
@@ -86,6 +82,7 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
       setQuery('');
       setResults([]);
       queryClient.invalidateQueries({ queryKey: ['ip-admission', admission._id] });
+      queryClient.invalidateQueries({ queryKey: ['admission', admission._id] });
       queryClient.invalidateQueries({ queryKey: ['admissions'] });
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to log medicine'),
@@ -96,6 +93,7 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
     onSuccess: () => {
       toast.success('Entry removed, stock restored');
       queryClient.invalidateQueries({ queryKey: ['ip-admission', admission._id] });
+      queryClient.invalidateQueries({ queryKey: ['admission', admission._id] });
     },
     onError: (e) => toast.error(e.response?.data?.message || 'Failed to remove entry'),
   });
@@ -262,9 +260,9 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
               <Pill size={16} /> No medicines logged yet for this stay.
             </div>
           )}
-          {Object.entries(grouped).map(([day, entries]) => (
+          {grouped.map(([day, entries]) => (
             <div key={day}>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{day}</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{formatMedicineDay(day)}</p>
               <div className="space-y-2">
                 {entries.map((m) => (
                   <div key={m._id} className="flex items-start justify-between border border-gray-100 rounded-lg px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors">
@@ -278,17 +276,22 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
                         <span className="text-[11px] px-1.5 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
                           {m.route}
                         </span>
+                        {m.dailyBill && (
+                          <span className="text-[11px] px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
+                            Billed
+                          </span>
+                        )}
                       </div>
                       <div className="text-gray-600 mt-0.5">
                         Qty {m.quantity}{m.unitPrice ? ` × ₹${m.unitPrice} = ₹${(m.quantity * m.unitPrice).toFixed(2)}` : ''}
                       </div>
                       <div className="text-xs text-gray-400 mt-0.5">
                         {m.administeredBy?.name ? `By ${m.administeredBy.name} · ` : ''}
-                        {new Date(m.administeredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(m.administeredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                         {m.notes ? ` · ${m.notes}` : ''}
                       </div>
                     </div>
-                    {!isDischarged && canDelete && (
+                    {!isDischarged && canDelete && !m.dailyBill && (
                       <button
                         onClick={() => deleteMutation.mutate(m._id)}
                         className="text-gray-300 hover:text-red-600 transition-colors shrink-0 ml-2"
@@ -303,6 +306,8 @@ export default function MedicationLogModal({ admission, isOpen, onClose }) {
             </div>
           ))}
         </div>
+
+        <DailyMedicineBilling admission={record} />
       </div>
     </Modal>
   );

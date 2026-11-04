@@ -67,6 +67,11 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
     opRegistration: { type: mongoose.Schema.Types.ObjectId, ref: 'OPRegistration' },
     ipAdmission: { type: mongoose.Schema.Types.ObjectId, ref: 'IPAdmission' },
+    // One paid pharmacy bill for the medicines given to an IP patient on a single India calendar day.
+    ipDailyMedicine: { type: Boolean, default: false },
+    dailyMedicineDate: { type: Date },
+    // `${admissionId}:${yyyy-mm-dd}` while the bill is active. Cleared on cancel so the day can be billed again.
+    dailyMedicineKey: { type: String },
     items: [billItemSchema],
     subtotal: { type: Number, default: 0 },
     totalGST: { type: Number, default: 0 },
@@ -171,6 +176,14 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
   billSchema.index({ status: 1 });
   billSchema.index({ createdAt: -1 });
   billSchema.index({ billType: 1, createdAt: -1 });
+  billSchema.index(
+    { dailyMedicineKey: 1 },
+    {
+      unique: true,
+      partialFilterExpression: { dailyMedicineKey: { $type: 'string' } },
+      name: 'dailyMedicineKey_1',
+    },
+  );
 
   applyOrganizationScope(billSchema);
 

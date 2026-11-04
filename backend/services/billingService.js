@@ -313,8 +313,8 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
 
     // ── Pharmacy medicines given during this IP stay ──
     // Logged via ipController.addMedication (stock already deducted at that point).
-    // Same medicine at the same rate is combined later (Dolo 250 x 2), while each
-    // day's source id is kept so a later bill does not charge it again.
+    // IP bills drop these lines (filterChargesForBillType). They are charged on a
+    // separate daily pharmacy bill. Unified billing still sees any dose not already billed.
     for (const med of adm.medications || []) {
       if (isBilled(billedRefs, 'IPAdmission', med._id)) continue;
 

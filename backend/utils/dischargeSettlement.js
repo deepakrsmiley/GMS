@@ -61,6 +61,7 @@ const loadAdmissionBillState = async (admission) => {
       { items: { $elemMatch: { referenceId: admission._id, referenceModel: 'IPAdmission' } } },
     ],
     status: { $nin: ['cancelled', 'refunded'] },
+    ipDailyMedicine: { $ne: true },
   }).select('dueAmount status billNumber totalAmount paidAmount');
 
   const unpaidDue = bills.reduce((sum, b) => sum + Number(b.dueAmount || 0), 0);

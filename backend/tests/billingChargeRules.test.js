@@ -26,8 +26,20 @@ describe('filterChargesForBillType', () => {
     assert.equal(out[0].type, 'lab');
   });
 
-  it('keeps pharmacy lines for IP / unified billing', () => {
-    assert.equal(filterChargesForBillType(sample, 'ip').length, 3);
+  it('removes pharmacy lines from IP billing and keeps hospital charges', () => {
+    const withRoom = [
+      ...sample,
+      { id: 'room-1', category: 'Room', type: 'room', amount: 1500 },
+      { id: 'proc-1', category: 'Procedure', type: 'procedure', amount: 800 },
+    ];
+    const out = filterChargesForBillType(withRoom, 'ip');
+    assert.equal(out.length, 4);
+    assert.ok(out.every((c) => c.category !== 'Pharmacy' && c.type !== 'medicine'));
+    assert.ok(out.some((c) => c.type === 'room'));
+    assert.ok(out.some((c) => c.type === 'procedure'));
+  });
+
+  it('keeps pharmacy lines for unified billing', () => {
     assert.equal(filterChargesForBillType(sample, 'auto').length, 3);
   });
 });

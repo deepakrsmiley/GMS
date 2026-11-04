@@ -19,6 +19,32 @@ export const LAB_TYPES = [
   'Other',
 ];
 
+/** 22-parameter CBC used by Srinivasa CBC and the health screening hemogram. */
+export const CBC_22_TESTS = [
+  { testName: 'WBC', unit: '10³/mm³', normalRange: '4.1 – 11.1' },
+  { testName: 'LYM%', unit: '%', normalRange: '16.0 – 46.0' },
+  { testName: 'MON%', unit: '%', normalRange: '2.3 – 8.5' },
+  { testName: 'GRA%', unit: '%', normalRange: '48.7 – 81.2' },
+  { testName: 'LYM#', unit: '10³/mm³', normalRange: '1.20 – 3.70' },
+  { testName: 'MON#', unit: '10³/mm³', normalRange: '0.10 – 0.60' },
+  { testName: 'GRA#', unit: '10³/mm³', normalRange: '2.30 – 8.20' },
+  { testName: 'GLR', unit: '', normalRange: '' },
+  { testName: 'RBC', unit: '10⁶/mm³', normalRange: '3.90 – 5.20' },
+  { testName: 'HGB', unit: 'g/dl', normalRange: '12.0 – 15.1' },
+  { testName: 'HCT', unit: '%', normalRange: '36.4 – 46.0' },
+  { testName: 'MCV', unit: 'μm³', normalRange: '83 – 96' },
+  { testName: 'MCH', unit: 'pg', normalRange: '26.4 – 32.3' },
+  { testName: 'MCHC', unit: 'g/dl', normalRange: '31.8 – 34.2' },
+  { testName: 'RDW-CV', unit: '%', normalRange: '11.9 – 14.4' },
+  { testName: 'RDW-SD', unit: 'μm³', normalRange: '38 – 49' },
+  { testName: 'PLT', unit: '10³/mm³', normalRange: '168 – 418' },
+  { testName: 'MPV', unit: 'μm³', normalRange: '7.0 – 10.5' },
+  { testName: 'PCT', unit: 'L %', normalRange: '0.150 – 0.500' },
+  { testName: 'PDW', unit: '%', normalRange: '11.0 – 18.0' },
+  { testName: 'P-LCC', unit: '10³/mm³', normalRange: '44 – 140' },
+  { testName: 'P-LCR', unit: '%', normalRange: '18.0 – 50.0' },
+];
+
 /** @type {Record<string, { labType: string, sampleType?: string, tests: { testName: string, unit?: string, normalRange?: string }[] }>} */
 export const LAB_PROFILES = {
   'CBC (Complete Blood Count)': {
@@ -271,21 +297,7 @@ export const LAB_PROFILES = {
     sampleType: 'blood',
     tests: [
       { testName: 'Complete Hemogram', isSection: true },
-      ...[
-        ['Hemoglobin', 'g/dL', 'M:13–17; F:12–15; C:11–16'],
-        ['Total RBC Count', 'million/cumm', 'M:4.5–5.5; F:3.8–4.8; C:4.0–5.5'],
-        ['PCV', '%', 'M:40–50; F:36–46; C:35–45'],
-        ['MCV', 'fL', 'M:83–101; F:83–101; C:83–101'],
-        ['MCH', 'pg', 'M:27–32; F:27–32; C:27–32'],
-        ['MCHC', 'g/dL', 'M:31.5–34.5; F:31.5–34.5; C:31.5–34.5'],
-        ['Total WBC Count', 'cells/cumm', 'M:4000–11000; F:4000–11000; C:5000–15000'],
-        ['Neutrophils', '%', 'M:40–75; F:40–75; C:40–75'],
-        ['Lymphocytes', '%', 'M:20–45; F:20–45; C:20–45'],
-        ['Eosinophils', '%', 'M:1–6; F:1–6; C:1–6'],
-        ['Monocytes', '%', 'M:2–10; F:2–10; C:2–10'],
-        ['Basophils', '%', 'M:0–1; F:0–1; C:0–1'],
-        ['Platelet Count', 'lakhs/cumm', 'M:1.5–4.5; F:1.5–4.5; C:1.5–4.5'],
-      ].map(([testName, unit, normalRange]) => ({ testName, unit, normalRange })),
+      ...CBC_22_TESTS,
       { testName: 'ESR', isSection: true },
       { testName: 'ESR', unit: 'mm/hr', normalRange: 'M:0–15; F:0–20; C:0–10' },
       { testName: 'Sugar Profile', isSection: true },

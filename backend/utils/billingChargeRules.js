@@ -5,7 +5,7 @@ const filterChargesForBillType = (charges, billType) => {
   if (mode === 'lab') {
     return charges.filter((c) => c.category === 'Laboratory' || c.type === 'lab');
   }
-  if (mode === 'op') {
+  if (mode === 'op' || mode === 'ip') {
     return charges.filter((c) => c.category !== 'Pharmacy' && c.type !== 'medicine');
   }
   return charges;

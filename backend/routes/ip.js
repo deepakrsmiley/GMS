@@ -19,6 +19,7 @@ const {
   updateServiceUsage,
   deleteServiceUsage,
   addMedication,
+  createDailyMedicineBill,
   deleteMedication,
 } = require('../controllers/ipController');
 const { protect, authorizeAnyPermission } = require('../middleware/auth');
@@ -44,6 +45,7 @@ const DOCTOR_ORDERS = authorizeAnyPermission('MANAGE_DOCTOR_ORDERS', 'VIEW_NURSE
 const DOCTOR_ROUND = authorizeAnyPermission('CREATE_DOCTOR_ROUND');
 const SERVICE_USAGE = authorizeAnyPermission('CREATE_SERVICE_USAGE', 'VIEW_NURSE_STATION');
 const IP_MEDICATION = authorizeAnyPermission('MANAGE_IP_MEDICATION', 'VIEW_NURSE_STATION');
+const CREATE_BILLING = authorizeAnyPermission('CREATE_BILLING');
 const DISCHARGE_SUMMARY = authorizeAnyPermission('CREATE_DISCHARGE_SUMMARY', 'PROCESS_DISCHARGE');
 const DISCHARGE = authorizeAnyPermission('PROCESS_DISCHARGE');
 
@@ -75,6 +77,7 @@ router.post('/:id/service-usage', SERVICE_USAGE, addServiceUsage);
 router.put('/:id/service-usage/:usageId', SERVICE_USAGE, updateServiceUsage);
 router.delete('/:id/service-usage/:usageId', SERVICE_USAGE, deleteServiceUsage);
 router.post('/:id/medication', IP_MEDICATION, addMedication);
+router.post('/:id/daily-medicine-bill', CREATE_BILLING, createDailyMedicineBill);
 router.delete('/:id/medication/:medId', IP_MEDICATION, deleteMedication);
 router.put('/:id/discharge-summary', DISCHARGE_SUMMARY, saveDischargeSummary);
 router.put('/:id/discharge', DISCHARGE, dischargePatient);

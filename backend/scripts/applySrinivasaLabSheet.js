@@ -49,7 +49,7 @@ async function main() {
   const profilesUrl = pathToFileURL(
     path.resolve(__dirname, '../../frontend/src/constants/labProfiles.js'),
   ).href;
-  const { LAB_PROFILES } = await import(profilesUrl);
+  const { LAB_PROFILES, CBC_22_TESTS } = await import(profilesUrl);
 
   await mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI, { family: 4 });
   const orgs = await Organization.find().select('name code').lean();
@@ -63,7 +63,7 @@ async function main() {
   const rows = await TestMaster.find({ organizationId: srinivasa._id })
     .setOptions({ skipOrganizationFilter: true });
 
-  const hemogram = toItems(LAB_PROFILES['CBC (Complete Blood Count)'].tests);
+  const hemogram = toItems(CBC_22_TESTS);
   const lipid = toItems(LAB_PROFILES['Lipid Profile'].tests);
   const screening = toItems(LAB_PROFILES['Health Screening Package'].tests);
   const replaceItems = new Map([
