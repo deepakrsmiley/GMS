@@ -16,9 +16,10 @@ import { useBranding } from '../hooks/useBranding';
 import OPPaperTemplate from '../components/op/OPPaperTemplate';
 import OPConsultationReceipt from '../components/op/OPConsultationReceipt';
 import { istCalendarDate } from '../utils/istDate';
-import { isThangamHospital, usesStructuredDob } from '../utils/hospitalA';
+import { isThangamHospital, usesStructuredDob, usesYearMonthBirth } from '../utils/hospitalA';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
-import { dobPayloadFromParts, emptyDobParts, formatAgeLabel } from '../utils/dobAge';
+import YearMonthFields from '../components/patients/YearMonthFields';
+import { dobPayloadFromParts, emptyDobParts, formatAgeLabel, formatYearMonthAgeLabel, yearMonthPayloadFromParts } from '../utils/dobAge';
 import '../styles/opRegistration.css';
 
 const EMERGENCY_SURCHARGE = 300;
@@ -72,6 +73,8 @@ export default function OPRegistrationPage() {
   const organization = useSelector((s) => s.auth?.user?.organization);
   const { branding } = useBranding();
   const structuredDob = usesStructuredDob(organization, branding);
+  const yearMonthBirth = usesYearMonthBirth(organization);
+  const ageLabel = yearMonthBirth ? formatYearMonthAgeLabel : formatAgeLabel;
   const patientSearchTimer = useRef(null);
 
   const [patientSearch, setPatientSearch] = useState('');
@@ -429,7 +432,7 @@ export default function OPRegistrationPage() {
               <input type="hidden" {...register('patient', { required: true })} />
               {selectedPatient && (
                 <div className="opr-patient-chip">
-                  Selected: <strong>{selectedPatient.name}</strong> · {selectedPatient.patientId} · {formatAgeLabel(selectedPatient.dob, selectedPatient.age) || `${selectedPatient.age}Y`} / {selectedPatient.gender}
+                  Selected: <strong>{selectedPatient.name}</strong> · {selectedPatient.patientId} · {ageLabel(selectedPatient.dob, selectedPatient.age) || `${selectedPatient.age}Y`} / {selectedPatient.gender}
                 </div>
               )}
             </div>
@@ -678,6 +681,15 @@ export default function OPRegistrationPage() {
 
       <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Add New Patient" size="md">
         <form onSubmit={handleQuickSubmit((d) => {
+          if (yearMonthBirth) {
+            const born = yearMonthPayloadFromParts(quickDob);
+            if (!born) {
+              toast.error('Enter birth year and month');
+              return;
+            }
+            quickAddMut.mutate({ ...d, age: born.age, dob: born.dob });
+            return;
+          }
           if (!structuredDob) {
             quickAddMut.mutate(d);
             return;
@@ -707,6 +719,13 @@ export default function OPRegistrationPage() {
                   onChange={setQuickDob}
                 />
               </div>
+            ) : yearMonthBirth ? (
+              <YearMonthFields
+                month={quickDob.month}
+                year={quickDob.year}
+                onChange={setQuickDob}
+                labelClassName="block text-sm font-medium text-gray-700 mb-1"
+              />
             ) : (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Age *</label>

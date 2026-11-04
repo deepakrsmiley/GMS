@@ -11,9 +11,10 @@ import Modal from '../components/common/Modal';
 import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import { useBranding } from '../hooks/useBranding';
-import { usesStructuredDob } from '../utils/hospitalA';
+import { usesStructuredDob, usesYearMonthBirth } from '../utils/hospitalA';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
-import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
+import YearMonthFields from '../components/patients/YearMonthFields';
+import { dobPayloadFromParts, emptyDobParts, yearMonthPayloadFromParts } from '../utils/dobAge';
 
 const STATUS_STYLES = {
   scheduled: 'badge-blue',
@@ -49,6 +50,7 @@ export default function AppointmentsPage() {
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
   const structuredDob = usesStructuredDob(user?.organization, branding);
+  const yearMonthBirth = usesYearMonthBirth(user?.organization);
   const canBook = hasPermission(user, 'CREATE_APPOINTMENT');
   const qc = useQueryClient();
 
@@ -505,6 +507,15 @@ export default function AppointmentsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (yearMonthBirth) {
+              const born = yearMonthPayloadFromParts(apptDob);
+              if (!born) {
+                toast.error('Enter birth year and month');
+                return;
+              }
+              quickAddMut.mutate({ ...quickForm, age: born.age, dob: born.dob });
+              return;
+            }
             if (!structuredDob) {
               quickAddMut.mutate(quickForm);
               return;
@@ -536,6 +547,13 @@ export default function AppointmentsPage() {
                   onChange={setApptDob}
                 />
               </div>
+            ) : yearMonthBirth ? (
+              <YearMonthFields
+                month={apptDob.month}
+                year={apptDob.year}
+                onChange={setApptDob}
+                labelClassName="block text-sm font-medium mb-1"
+              />
             ) : (
             <div>
               <label className="block text-sm font-medium mb-1">Age *</label>

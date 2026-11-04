@@ -13,9 +13,10 @@ import ServiceUsageModal from '../components/ip/ServiceUsageModal';
 import MedicationLogModal from '../components/ip/MedicationLogModal';
 import IPAdmissionPaperTemplate from '../components/ip/IPAdmissionPaperTemplate';
 import { useBranding } from '../hooks/useBranding';
-import { usesStructuredDob } from '../utils/hospitalA';
+import { usesStructuredDob, usesYearMonthBirth } from '../utils/hospitalA';
 import ThangamDobFields from '../components/patients/ThangamDobFields';
-import { dobPayloadFromParts, emptyDobParts } from '../utils/dobAge';
+import YearMonthFields from '../components/patients/YearMonthFields';
+import { dobPayloadFromParts, emptyDobParts, yearMonthPayloadFromParts } from '../utils/dobAge';
 import { hasPermission } from '../constants/permissions';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 
@@ -63,6 +64,7 @@ export default function IPAdmissionsPage() {
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
   const structuredDob = usesStructuredDob(user?.organization, branding);
+  const yearMonthBirth = usesYearMonthBirth(user?.organization);
   const canAdmit = hasPermission(user, 'CREATE_IP_ADMISSION');
   const canSeeDischargeTab = hasPermission(user, 'CREATE_DISCHARGE_SUMMARY') || hasPermission(user, 'PROCESS_DISCHARGE');
   const viewOnly = hasPermission(user, 'VIEW_IP_ADMISSION') && !canAdmit;
@@ -789,6 +791,15 @@ export default function IPAdmissionsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (yearMonthBirth) {
+              const born = yearMonthPayloadFromParts(ipDob);
+              if (!born) {
+                toast.error('Enter birth year and month');
+                return;
+              }
+              quickAddMut.mutate({ ...quickForm, age: born.age, dob: born.dob });
+              return;
+            }
             if (!structuredDob) {
               quickAddMut.mutate(quickForm);
               return;
@@ -823,6 +834,13 @@ export default function IPAdmissionsPage() {
                   onChange={setIpDob}
                 />
               </div>
+            ) : yearMonthBirth ? (
+              <YearMonthFields
+                month={ipDob.month}
+                year={ipDob.year}
+                onChange={setIpDob}
+                labelClassName="block text-sm font-medium text-gray-700 mb-1"
+              />
             ) : (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Age *</label>
