@@ -21,7 +21,8 @@ router.use(requireHospitalModule('patients'));
 // real permission set (role default, or a per-user override set by Super
 // Admin on Staff -> Users & Access -> Feature permissions).
 const VIEW_PATIENT = authorizeAnyPermission('VIEW_PATIENT');
-const CREATE_PATIENT = authorizeAnyPermission('CREATE_PATIENT');
+// Pharmacy counter registers walk-in customers while billing.
+const CREATE_PATIENT = authorizeAnyPermission('CREATE_PATIENT', 'DISPENSE_PRESCRIPTION');
 const UPDATE_PATIENT = authorizeAnyPermission('UPDATE_PATIENT');
 const PATIENT_LOOKUP = authorizeAnyPermission(
   'VIEW_PATIENT',

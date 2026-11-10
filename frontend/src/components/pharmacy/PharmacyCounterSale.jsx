@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Search, Pill, Trash2, Receipt, User, ShoppingCart, Eraser, CreditCard,
+  Search, Pill, Trash2, Receipt, User, UserPlus, ShoppingCart, Eraser, CreditCard,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -15,6 +15,10 @@ const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const PAYMENT_MODES = ['cash', 'card', 'upi', 'cheque', 'online'];
+
+const EMPTY_CUSTOMER = {
+  name: '', phone: '', age: '', gender: '', address: '',
+};
 
 async function downloadBillPdf(id, thermal = false, size = 'A4') {
   try {
@@ -51,6 +55,34 @@ export default function PharmacyCounterSale({ canDispense }) {
   const [discount, setDiscount] = useState(0);
   const [paymentMode, setPaymentMode] = useState('cash');
   const [printBill, setPrintBill] = useState(null);
+  const [customerMode, setCustomerMode] = useState('existing');
+  const [customer, setCustomer] = useState(EMPTY_CUSTOMER);
+  const [phoneMatches, setPhoneMatches] = useState([]);
+  const [doctorName, setDoctorName] = useState('');
+  const [allowDuplicatePhone, setAllowDuplicatePhone] = useState(false);
+
+  const newCustomerReady = customerMode === 'new'
+    && customer.name.trim()
+    && customer.phone.trim().length >= 10
+    && Number(customer.age) > 0
+    && customer.gender;
+  const customerReady = customerMode === 'existing' ? Boolean(selectedPatient) : Boolean(newCustomerReady);
+
+  const updateCustomer = (patch) => {
+    setCustomer((prev) => ({ ...prev, ...patch }));
+    if ('phone' in patch) {
+      setPhoneMatches([]);
+      setAllowDuplicatePhone(false);
+    }
+  };
+
+  const pickPatient = (p) => {
+    setSelectedPatient(p);
+    setPatientSearch(`${p.name} (${p.patientId})`);
+    setPatients([]);
+    setPhoneMatches([]);
+    setCustomerMode('existing');
+  };
 
   useEffect(() => {
     if (patientSearch.length < 2 || selectedPatient) {
@@ -125,25 +157,60 @@ export default function PharmacyCounterSale({ canDispense }) {
     setMedQuery('');
     setMedResults([]);
     setPaymentMode('cash');
+    setDoctorName('');
   };
 
   const clearAll = () => {
-    if (!selectedPatient && !items.length) {
+    const customerTouched = Object.values(customer).some((v) => String(v).trim());
+    if (!selectedPatient && !customerTouched && !items.length) {
       toast('Sale is already empty');
       return;
     }
-    if (!window.confirm('Clear this counter sale (patient + medicines)?')) return;
+    if (!window.confirm('Clear this counter sale (customer + medicines)?')) return;
     setSelectedPatient(null);
     setPatientSearch('');
     setPatients([]);
+    setCustomer(EMPTY_CUSTOMER);
+    setPhoneMatches([]);
+    setAllowDuplicatePhone(false);
     resetSale();
     toast.success('Counter sale cleared');
   };
 
+  const registerCustomer = async () => {
+    const address = customer.address.trim();
+    try {
+      const res = await api.post('/patients', {
+        name: customer.name.trim(),
+        phone: customer.phone.trim(),
+        age: Number(customer.age),
+        gender: customer.gender,
+        ...(address ? { address: { street: address } } : {}),
+        allowDuplicatePhone,
+      });
+      return res.data.data;
+    } catch (err) {
+      if (err.response?.status === 409 && err.response?.data?.code === 'DUPLICATE_PHONE') {
+        setPhoneMatches(err.response.data.matches || []);
+        throw new Error('This phone is already registered — pick the customer below or register as new');
+      }
+      throw err;
+    }
+  };
+
   const billMut = useMutation({
     mutationFn: async ({ collectNow }) => {
-      if (!selectedPatient?._id) throw new Error('Select a patient (search UHID / name / phone)');
       if (!items.length) throw new Error('Add at least one medicine');
+      let patient = selectedPatient;
+      if (customerMode === 'new') {
+        if (!newCustomerReady) throw new Error('Enter customer name, 10-digit phone, age and gender');
+        patient = await registerCustomer();
+        // Keep the new UHID selected so a failed bill can be retried without re-registering.
+        pickPatient(patient);
+        setCustomer(EMPTY_CUSTOMER);
+        setAllowDuplicatePhone(false);
+      }
+      if (!patient?._id) throw new Error('Select a patient (search UHID / name / phone)');
 
       const billItems = items.map((item) => ({
         category: 'Pharmacy',
@@ -165,12 +232,13 @@ export default function PharmacyCounterSale({ canDispense }) {
 
       const payload = {
         billType: 'pharmacy',
-        patient: selectedPatient._id,
+        patient: patient._id,
         // No opRegistration — standalone medicine sale (no doctor visit)
         discount: Number(discount) || 0,
         paidAmount: collectNow ? Number(totals.total.toFixed(2)) : 0,
         paymentMode,
-        notes: 'Pharmacy counter sale — medicines only (no OP consultation)',
+        notes: `Pharmacy counter sale — medicines only (no OP consultation)${
+          doctorName.trim() ? ` · Prescribed by ${doctorName.trim()}` : ''}`,
         items: billItems,
       };
 
@@ -203,7 +271,7 @@ export default function PharmacyCounterSale({ canDispense }) {
         <ShoppingCart size={14} className="text-blue-600" />
         <span>Counter sale</span>
         <span className="text-slate-300">→</span>
-        <span>Search patient (UHID)</span>
+        <span>Search patient or enter new customer</span>
         <span className="text-slate-300">→</span>
         <span>Add medicines</span>
         <span className="text-slate-300">→</span>
@@ -214,14 +282,133 @@ export default function PharmacyCounterSale({ canDispense }) {
       </div>
 
       <div className="corp-card overflow-hidden">
-        {/* Patient */}
+        {/* Customer */}
         <div className="px-5 py-4 border-b border-blue-50 bg-gradient-to-r from-white via-blue-50/30 to-white">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex-1 min-w-[240px]">
-              <p className="text-[11px] font-medium text-slate-500 mb-1">
-                Patient <span className="text-red-500">*</span>
-              </p>
-              {selectedPatient ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <p className="text-[11px] font-medium text-slate-500">
+                  Customer <span className="text-red-500">*</span>
+                </p>
+                <div className="inline-flex rounded-lg border border-blue-100 bg-white p-0.5 text-xs font-medium">
+                  {[
+                    { id: 'existing', label: 'Existing patient', icon: Search },
+                    { id: 'new', label: 'New customer', icon: UserPlus },
+                  ].map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setCustomerMode(id);
+                        setPhoneMatches([]);
+                        if (id === 'new') {
+                          setSelectedPatient(null);
+                          setPatientSearch('');
+                          setPatients([]);
+                        }
+                      }}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-md ${
+                        customerMode === id ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-blue-50'
+                      }`}
+                    >
+                      <Icon size={13} /> {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {customerMode === 'new' ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                    <div className="col-span-2 sm:col-span-2">
+                      <label className="text-[11px] text-slate-500 block mb-1">Name <span className="text-red-500">*</span></label>
+                      <input
+                        value={customer.name}
+                        onChange={(e) => updateCustomer({ name: e.target.value })}
+                        className="input-field text-sm"
+                        placeholder="Customer name"
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-2">
+                      <label className="text-[11px] text-slate-500 block mb-1">Phone <span className="text-red-500">*</span></label>
+                      <input
+                        value={customer.phone}
+                        onChange={(e) => updateCustomer({ phone: e.target.value.replace(/[^\d+]/g, '').slice(0, 13) })}
+                        className="input-field text-sm"
+                        inputMode="tel"
+                        placeholder="10-digit mobile"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-500 block mb-1">Age <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="130"
+                        value={customer.age}
+                        onChange={(e) => updateCustomer({ age: e.target.value })}
+                        className="input-field text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-500 block mb-1">Gender <span className="text-red-500">*</span></label>
+                      <select
+                        value={customer.gender}
+                        onChange={(e) => updateCustomer({ gender: e.target.value })}
+                        className="input-field text-sm"
+                      >
+                        <option value="">Select</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2 sm:col-span-6">
+                      <label className="text-[11px] text-slate-500 block mb-1">Address</label>
+                      <input
+                        value={customer.address}
+                        onChange={(e) => updateCustomer({ address: e.target.value })}
+                        className="input-field text-sm"
+                        placeholder="Street / area / town (optional)"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    A UHID is created for this customer when the bill is saved, so they can be searched by phone next time.
+                  </p>
+                  {phoneMatches.length > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                      <p className="text-xs font-medium text-amber-800">
+                        This phone number is already registered. Use the existing customer:
+                      </p>
+                      {phoneMatches.map((p) => (
+                        <button
+                          key={p._id}
+                          type="button"
+                          onClick={() => pickPatient(p)}
+                          className="w-full text-left px-3 py-2 rounded-lg bg-white border border-amber-100 hover:bg-amber-100 text-sm"
+                        >
+                          <span className="font-medium">{p.name}</span>
+                          <span className="ml-2 font-mono text-xs text-blue-700">{p.patientId}</span>
+                          <span className="ml-2 text-slate-500 text-xs">
+                            {p.age != null ? `${p.age}yr` : ''}{p.gender ? ` · ${p.gender}` : ''}
+                          </span>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAllowDuplicatePhone(true);
+                          setPhoneMatches([]);
+                          toast('Will register as a new customer — now collect or send the bill');
+                        }}
+                        className="text-xs text-amber-800 font-medium hover:underline"
+                      >
+                        Different person with same phone — register as new
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : selectedPatient ? (
                 <div className="flex items-center gap-3 corp-card p-3 border-l-4 border-l-blue-600">
                   <div className="w-10 h-10 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center">
                     {(selectedPatient.name || '?').charAt(0)}
@@ -261,11 +448,7 @@ export default function PharmacyCounterSale({ canDispense }) {
                         <button
                           key={p._id}
                           type="button"
-                          onClick={() => {
-                            setSelectedPatient(p);
-                            setPatientSearch(`${p.name} (${p.patientId})`);
-                            setPatients([]);
-                          }}
+                          onClick={() => pickPatient(p)}
                           className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm border-b border-slate-50 last:border-0"
                         >
                           <span className="font-medium">{p.name}</span>
@@ -303,9 +486,9 @@ export default function PharmacyCounterSale({ canDispense }) {
             <input
               value={medQuery}
               onChange={(e) => setMedQuery(e.target.value)}
-              disabled={!selectedPatient}
+              disabled={!customerReady}
               className="input-field pl-9 text-sm disabled:opacity-50"
-              placeholder={selectedPatient ? 'Search medicine…' : 'Select patient first'}
+              placeholder={customerReady ? 'Search medicine…' : 'Select patient or fill customer details first'}
             />
             {medResults.length > 0 && (
               <div className="absolute z-30 mt-1 w-full border border-blue-100 rounded-xl shadow-xl max-h-60 overflow-y-auto bg-white">
@@ -341,7 +524,7 @@ export default function PharmacyCounterSale({ canDispense }) {
             <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-slate-400">
               <User size={28} className="mx-auto mb-2 text-slate-300" />
               <p className="text-sm font-medium">No medicines added</p>
-              <p className="text-xs mt-1">Select patient, then search and add medicines</p>
+              <p className="text-xs mt-1">Select a patient or enter customer details, then search and add medicines</p>
             </div>
           ) : (
             <div className="corp-card overflow-hidden border border-blue-50">
@@ -390,7 +573,16 @@ export default function PharmacyCounterSale({ canDispense }) {
         </div>
 
         <div className="px-5 py-4 border-t border-blue-100 bg-slate-50/80 space-y-3">
-          <div className="grid sm:grid-cols-3 gap-3">
+          <div className="grid sm:grid-cols-4 gap-3">
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1">Prescribed by (doctor)</label>
+              <input
+                value={doctorName}
+                onChange={(e) => setDoctorName(e.target.value)}
+                className="input-field text-sm"
+                placeholder="Optional"
+              />
+            </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1">Discount %</label>
               <input type="number" min="0" max="100" value={discount} onChange={(e) => setDiscount(e.target.value)} className="input-field text-sm" />
@@ -415,7 +607,7 @@ export default function PharmacyCounterSale({ canDispense }) {
             <button
               type="button"
               onClick={() => billMut.mutate({ collectNow: false })}
-              disabled={!canDispense || billMut.isPending || !selectedPatient || !items.length}
+              disabled={!canDispense || billMut.isPending || !customerReady || !items.length}
               className="btn-secondary justify-center disabled:opacity-50"
             >
               <Receipt size={15} />
@@ -424,7 +616,7 @@ export default function PharmacyCounterSale({ canDispense }) {
             <button
               type="button"
               onClick={() => billMut.mutate({ collectNow: true })}
-              disabled={!canDispense || billMut.isPending || !selectedPatient || !items.length}
+              disabled={!canDispense || billMut.isPending || !customerReady || !items.length}
               className="btn-primary justify-center disabled:opacity-50 min-w-[200px]"
             >
               <CreditCard size={15} />
