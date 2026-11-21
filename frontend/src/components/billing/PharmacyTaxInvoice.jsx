@@ -1,6 +1,8 @@
 import React from 'react';
+import { useSelector } from 'react-redux';
 import { Printer, X } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
+import { isThangamHospital } from '../../utils/hospitalA';
 
 const fmt2 = (n) => Number(n || 0).toFixed(2);
 const fmtINR = (n) => `₹ ${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -42,6 +44,11 @@ function numberToWords(num) {
 
 export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
   const { branding } = useBranding();
+  const organization = useSelector((s) => s.auth?.user?.organization);
+  const thangam = isThangamHospital(organization, branding);
+  const hospitalName = (branding.hospitalName && branding.hospitalName !== 'Your Hospital Name')
+    ? branding.hospitalName
+    : (organization?.name || branding.hospitalName || 'Hospital');
   const brandColor = branding.primaryColor || '#4338ca';
   const data = sale || bill;
 
@@ -125,7 +132,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
               )}
               <div>
                 <div style={{fontSize:30,fontWeight:900,color:branding.primaryColor || '#4338ca',lineHeight:1.1}}>
-                  {branding.hospitalName || 'MediCare'}
+                  {hospitalName}
                 </div>
                 {branding.tagline && (
                   <div style={{fontSize:13,fontWeight:700,color:branding.primaryColor || '#4338ca'}}>{branding.tagline}</div>
@@ -176,7 +183,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
               )}
             </div>
             <div style={{fontSize:17,fontWeight:900,color:brandColor,letterSpacing:'0.06em',textAlign:'center',padding:'0 24px'}}>
-              TAX INVOICE
+              {thangam ? 'BILL' : 'TAX INVOICE'}
             </div>
             <div style={{fontSize:11,fontWeight:700,textAlign:'right'}}>
               ORIGINAL FOR RECIPIENT
@@ -438,7 +445,7 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
               </div>
               <div>
                 <div style={{fontWeight:800,fontSize:12,color:brandColor,marginTop:16}}>
-                  For {branding.hospitalName || 'Medicare Wholesale Pharmacy'}
+                  For {hospitalName}
                 </div>
                 <div style={{fontSize:10,color:'#555',marginTop:32,borderTop:'1px solid #aaa',paddingTop:4}}>
                   Authorised Signatory

@@ -61,6 +61,8 @@ const LAYOUTS = {
   },
 };
 
+const isThangamName = (name) => /thangam/i.test(String(name || ''));
+
 const resolveLayout = (size) => {
   const key = String(size || 'A4').toUpperCase() === 'A5' ? 'A5' : 'A4';
   const L = LAYOUTS[key];
@@ -148,7 +150,7 @@ const ensureSpace = (doc, L, needed, onNewPage) => {
 const renderContinuationHeader = (doc, L, ctx, rgb) => {
   doc.y = L.margin;
   doc.fontSize(L.fonts.section).font('Times-Bold').fillColor(rgb)
-    .text('TAX INVOICE — CONTINUED', L.margin, doc.y, { width: L.contentWidth });
+    .text(ctx.heading || 'TAX INVOICE — CONTINUED', L.margin, doc.y, { width: L.contentWidth });
   doc.moveDown(0.2);
   doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_DARK)
     .text(`Bill No: ${ctx.billNumber}`, L.margin, doc.y, { width: L.contentWidth * 0.48 });
@@ -243,8 +245,11 @@ const renderCorporateHeader = async (doc, L, branding, rgb) => {
   doc.moveTo(L.margin, doc.y).lineTo(L.width - L.margin, doc.y).lineWidth(2).strokeColor(rgb).stroke();
   doc.moveDown(0.4);
 
+  const billHeading = isThangamName(branding.hospitalName)
+    ? 'BILL'
+    : 'TAX INVOICE / BILL OF SUPPLY';
   doc.fontSize(L.fonts.title).font('Times-Bold').fillColor(rgb)
-    .text('TAX INVOICE / BILL OF SUPPLY', L.margin, doc.y, { width: L.contentWidth, align: 'center' });
+    .text(billHeading, L.margin, doc.y, { width: L.contentWidth, align: 'center' });
   doc.moveDown(0.35);
   doc.fillColor('black');
 };
@@ -443,6 +448,9 @@ const generatePremiumInvoicePDF = async (bill, res, branding, options = {}) => {
     uhid: bill.patient?.patientId || 'N/A',
     phone: bill.patient?.phone || 'N/A',
     dateTime: fmtDateTime(bill.createdAt),
+    heading: isThangamName(b.hospitalName)
+      ? 'BILL — CONTINUED'
+      : 'TAX INVOICE — CONTINUED',
   };
   const onContinuePage = () => {
     renderWatermark(doc, L, watermark, rgb);

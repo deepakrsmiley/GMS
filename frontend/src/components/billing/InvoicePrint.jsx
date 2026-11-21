@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useSelector } from 'react-redux';
 import { Printer, X } from 'lucide-react';
 import { useBranding } from '../../hooks/useBranding';
+import { isThangamHospital } from '../../utils/hospitalA';
 
 /* ─── formatters ─────────────────────────────────────── */
 const fmt2 = (n) => Number(n || 0).toFixed(2);
@@ -134,6 +136,11 @@ function getContrastColor(hexColor) {
 /* ─── MAIN COMPONENT ─────────────────────────────────── */
 export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadPdfA5, onDownloadThermal }) {
   const { branding } = useBranding();
+  const organization = useSelector((s) => s.auth?.user?.organization);
+  const thangam = isThangamHospital(organization, branding);
+  const hospitalName = (branding.hospitalName && branding.hospitalName !== 'Your Hospital Name')
+    ? branding.hospitalName
+    : (organization?.name || branding.hospitalName || 'Hospital');
   const data = normalise(bill);
   const [paperSize, setPaperSize] = useState('A4'); // A4 | A5
 
@@ -256,13 +263,13 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
                     fontWeight:400, fontSize:11, color:primaryColor, textAlign:'center',
                     fontFamily:"'Segoe UI', sans-serif",
                   }}>
-                    {branding.hospitalName?.split(' ').slice(0, 2).join('\n') || 'MEDI\nCARE'}
+                    {hospitalName?.split(' ').slice(0, 2).join('\n') || 'MEDI\nCARE'}
                   </div>
                 )
               }
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:28, fontWeight:600, color:primaryColor, lineHeight:1.1, letterSpacing:'-0.5px' }}>
-                  {branding.hospitalName || 'Healthcare Center'}
+                  {hospitalName}
                 </div>
                 <div style={{ fontSize:12, color:'#374151', marginTop:4, fontWeight:400 }}>
                   📍 {branding.address || '13 Health Street, Mumbai, Maharashtra, India'}
@@ -287,16 +294,16 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
             </div>
           </div>
 
-          {/* ══ TAX INVOICE BAND ══ */}
+          {/* ══ BILL HEADING ══ */}
           <div style={{
             textAlign:'center', padding:'8px 12px',
             borderBottom:'1px solid #d1d5db', background:'#fafbfc',
           }}>
             <div style={{
-              fontSize:15, fontWeight:500, color:primaryColor,
+              fontSize: thangam ? 18 : 15, fontWeight: thangam ? 700 : 500, color:primaryColor,
               letterSpacing:'1px', textTransform:'uppercase',
             }}>
-              TAX INVOICE
+              {thangam ? 'BILL' : 'TAX INVOICE'}
             </div>
           </div>
 
@@ -505,7 +512,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
               </div>
               <div>
                 <div style={{ fontWeight:400, fontSize:'12.5px', color:primaryColor, marginTop:10, letterSpacing:'0.2px' }}>
-                  For {branding.hospitalName || 'Healthcare Center'}
+                  For {hospitalName}
                 </div>
                 <div style={{
                   fontSize:'12px', color:'#374151', marginTop:38,
