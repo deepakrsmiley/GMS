@@ -270,7 +270,6 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                 <th style={TH}>Expiry Date</th>
                 <th style={TH}>HSN / SAC</th>
                 <th style={TH}>Qty</th>
-                <th style={TH}>MRP</th>
                 <th style={TH}>Rate</th>
                 <th style={TH} colSpan={2}>Disc.<br/>(%)</th>
                 <th style={{...TH,textAlign:'right'}}>Taxable Value</th>
@@ -295,7 +294,6 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                     <td style={TD_C}>{item.expiryDate ? fmtMonthYear(item.expiryDate) : '-'}</td>
                     <td style={TD_C}>{item.hsnCode || '-'}</td>
                     <td style={TD_C}>{item.quantity} {item.unitOfMeasure || 'Nos'}</td>
-                    <td style={TD_R}>{item.mrp ? fmt2(item.mrp) : fmt2(item.unitPrice)}</td>
                     <td style={TD_R}>{fmt2(item.unitPrice)}</td>
                     <td style={TD_C} colSpan={2}>{fmt2(item.discountPercent || 0)}</td>
                     <td style={TD_R}>{fmt2(taxable)}</td>
@@ -305,15 +303,15 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
 
               {/* IGST row */}
               <tr>
-                <td colSpan={11} style={{...TD,textAlign:'right',fontWeight:600,fontSize:10,paddingRight:10}}>
+                <td colSpan={10} style={{...TD,textAlign:'right',fontWeight:600,fontSize:10,paddingRight:10}}>
                   IGST ({Object.keys(gstMap).join('/')} %)
                 </td>
                 <td style={TD_R}>{fmt2(totalGst)}</td>
               </tr>
 
               {/* Empty spacing rows like the image */}
-              <tr style={{height:18}}><td colSpan={12} style={{borderBottom:'1px solid #ddd'}}></td></tr>
-              <tr style={{height:18}}><td colSpan={12} style={{borderBottom:'1px solid #ddd'}}></td></tr>
+              <tr style={{height:18}}><td colSpan={11} style={{borderBottom:'1px solid #ddd'}}></td></tr>
+              <tr style={{height:18}}><td colSpan={11} style={{borderBottom:'1px solid #ddd'}}></td></tr>
             </tbody>
             <tfoot>
               <tr style={{borderTop:'2px solid #888',fontWeight:700,background:'#f9f9f9'}}>
@@ -321,7 +319,6 @@ export default function PharmacyTaxInvoice({ sale, bill, onClose }) {
                 <td style={TD_C}></td>
                 <td style={TD_C}></td>
                 <td style={TD_C}><b>{totalQty}</b></td>
-                <td style={TD_C}></td>
                 <td style={TD_R}><b>{fmt2(taxableValue - totalGst > 0 ? taxableValue - totalGst : taxableValue)}</b></td>
                 <td style={TD_C} colSpan={2}></td>
                 <td style={{...TD_R,fontSize:13,fontWeight:900,color:brandColor}}>

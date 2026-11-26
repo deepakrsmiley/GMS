@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -16,6 +16,7 @@ import LabCollectPaymentModal from '../components/lab/LabCollectPaymentModal';
 import LabDayReport, { LabDateRangeBar, labRangeFromPreset } from '../components/lab/LabDayReport';
 import WorkflowStrip from '../components/workflow/WorkflowStrip';
 import {
+  LAB_PROFILES,
   getProfileTests,
   getTestMeta,
   STATUS_LABELS,
@@ -23,6 +24,7 @@ import {
 } from '../constants/labProfiles';
 import { analyzeResult, FLAG_STYLES, labSectionRank, tidyTestName } from '../utils/labResultAnalyzer';
 import { istCalendarDate } from '../utils/istDate';
+import { labCatalogFromMaster } from '../utils/labCatalog';
 import { isThangamHospital } from '../utils/hospitalA';
 import '../styles/labOrder.css';
 
@@ -111,7 +113,7 @@ const formatDoctorOption = (d) => {
 };
 
 /** Build result rows grouped by CBC / LFT / RFT profile order */
-const buildResultFields = (labOrder) => {
+const buildResultFields = (labOrder, catalog = LAB_PROFILES) => {
   const profileNames = (labOrder.profiles?.length
     ? labOrder.profiles
     : String(labOrder.testProfile || '').split(/\s*\+\s*/))
@@ -141,7 +143,7 @@ const buildResultFields = (labOrder) => {
   };
 
   profileNames.forEach((profileName) => {
-    const metaRows = rowsWithSections(getProfileTests(profileName), profileName);
+    const metaRows = rowsWithSections(getProfileTests(profileName, catalog), profileName);
     const parameterRows = metaRows.filter((meta) => !meta.isSection);
     const owned = orderTests
       .map((t, i) => ({ t, i }))
@@ -183,8 +185,8 @@ const buildResultFields = (labOrder) => {
 
   orderTests.forEach((t, idx) => {
     if (usedIdx.has(idx)) return;
-    const profileName = t.profileName || profileNames.find((p) => getProfileTests(p).some((m) => m.testName === t.testName && !m.isSection)) || profileNames[0] || 'Other';
-    const meta = getTestMeta(t.testName, getProfileTests(profileName));
+    const profileName = t.profileName || profileNames.find((p) => getProfileTests(p, catalog).some((m) => m.testName === t.testName && !m.isSection)) || profileNames[0] || 'Other';
+    const meta = getTestMeta(t.testName, getProfileTests(profileName, catalog));
     pushRow(t, profileName, {
       unit: t.unit || meta.unit,
       normalRange: t.normalRange || meta.normalRange,
@@ -289,6 +291,14 @@ export default function LabPage() {
   const [orderSearch, setOrderSearch] = useState('');
   const [orderQ, setOrderQ] = useState('');
   const qc = useQueryClient();
+  const testMasterQ = useQuery({
+    queryKey: ['test-master'],
+    queryFn: () => api.get('/test-master').then((r) => r.data.data || []),
+  });
+  const labCatalog = useMemo(
+    () => labCatalogFromMaster(testMasterQ.data || []).catalog,
+    [testMasterQ.data],
+  );
 
   const { register: resReg, handleSubmit: resSubmit, reset: resReset, getValues: getResValues } = useForm();
   const [resultFields, setResultFields] = useState([]);
@@ -483,13 +493,21 @@ export default function LabPage() {
     };
   }, [printData]);
 
-  const openResultsEditor = (row) => {
-    setResultFields(buildResultFields(row));
-    setShowReportEnteredTime(row.showReportEnteredTime !== false);
-    setReportEnteredAt(toDatetimeLocal(row.reportGeneratedAt));
-    setReferringDoctorId(asDoctorId(row.doctor));
-    resReset({ remarks: row.remarks || '' });
-    setShowResults(row);
+  const openResultsEditor = async (row) => {
+    let source = row;
+    if (row?._id) {
+      try {
+        source = await api.get(`/lab/${row._id}`).then((r) => r.data.data);
+      } catch {
+        source = row;
+      }
+    }
+    setResultFields(buildResultFields(source, labCatalog));
+    setShowReportEnteredTime(source.showReportEnteredTime !== false);
+    setReportEnteredAt(toDatetimeLocal(source.reportGeneratedAt));
+    setReferringDoctorId(asDoctorId(source.doctor));
+    resReset({ remarks: source.remarks || '' });
+    setShowResults(source);
   };
 
   const patchResultField = (index, patch) => {
@@ -1102,6 +1120,9 @@ export default function LabPage() {
               <span className="col-span-2">Flag</span>
             </div>
             <div className="max-h-[32rem] overflow-y-auto">
+              {!resultFields.length && (
+                <p className="px-3 py-6 text-sm text-slate-500">No parameters on this order yet. Add one below.</p>
+              )}
               {resultFields.map((r, i) => {
                 const prev = resultFields[i - 1];
                 const showHeading = !prev || prev.profileName !== r.profileName || prev.section !== r.section;

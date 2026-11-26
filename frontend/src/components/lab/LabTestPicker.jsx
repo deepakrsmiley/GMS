@@ -108,6 +108,11 @@ export default function LabTestPicker({
                       {childCount > 1 ? `${childCount} parameters` : (row.kind === 'group' ? 'Group · 1 test' : 'Single')}
                       {row.category ? ` · ${row.category}` : ''}
                     </div>
+                    {childCount > 1 && (
+                      <div className="ltp-meta">
+                        {(row.tests || []).filter((t) => !t.isSection).map((t) => t.testName).join(', ')}
+                      </div>
+                    )}
                   </td>
                   <td className="ltp-rate">₹{Number(row.price || 0).toFixed(0)}</td>
                   <td>

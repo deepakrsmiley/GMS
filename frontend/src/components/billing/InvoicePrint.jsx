@@ -78,7 +78,6 @@ function normalise(bill) {
     hsnCode      : it.hsnCode || '',
     quantity     : Number(it.quantity) || 1,
     unitOfMeasure: it.unitOfMeasure || 'Nos',
-    mrp          : Number(it.mrp || it.unitPrice) || 0,
     unitPrice    : Number(it.unitPrice) || 0,
     discountPercent: Number(it.discountPercent) || 0,
     discountAmount : Number(it.discountAmount) || 0,
@@ -389,14 +388,13 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
             <thead>
               <tr style={{ background:primaryColor, color:textColor }}>
                 <th style={{ ...TH, width:'4%'  }}>Sr.</th>
-                <th style={{ ...TH, width:'26%', textAlign:'left' }}>Medicine Name</th>
-                <th style={{ ...TH, width:'8%'  }}>Batch No</th>
-                <th style={{ ...TH, width:'7%'  }}>MFG Date</th>
-                <th style={{ ...TH, width:'7%'  }}>Expiry</th>
-                <th style={{ ...TH, width:'6%'  }}>HSN/SAC</th>
+                <th style={{ ...TH, width:'28%', textAlign:'left' }}>Medicine Name</th>
+                <th style={{ ...TH, width:'9%'  }}>Batch No</th>
+                <th style={{ ...TH, width:'8%'  }}>MFG Date</th>
+                <th style={{ ...TH, width:'8%'  }}>Expiry</th>
+                <th style={{ ...TH, width:'7%'  }}>HSN/SAC</th>
                 <th style={{ ...TH, width:'7%'  }}>Qty</th>
-                <th style={{ ...TH, width:'7%'  }}>MRP</th>
-                <th style={{ ...TH, width:'7%'  }}>Rate</th>
+                <th style={{ ...TH, width:'8%'  }}>Rate</th>
                 <th style={{ ...TH, width:'5%'  }}>GST%</th>
                 <th style={{ ...TH, width:'5%'  }}>Disc%</th>
                 <th style={{ ...TH, width:'11%', textAlign:'right' }}>Amount</th>
@@ -422,7 +420,6 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
                     <td style={TDc}>{item.expiryDate ? fmtMonthYear(item.expiryDate) : '-'}</td>
                     <td style={TDc}>{item.hsnCode || '-'}</td>
                     <td style={TDc}>{item.quantity} {item.unitOfMeasure}</td>
-                    <td style={TDr}>{fmt2(item.mrp)}</td>
                     <td style={TDr}>{fmt2(item.unitPrice)}</td>
                     <td style={TDc}>{fmt2(item.gstPercent)}</td>
                     <td style={TDc}>{fmt2(item.discountPercent)}</td>
@@ -434,7 +431,7 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
             <tfoot>
               <tr style={{ borderTop:`2px solid ${primaryColor}`, fontWeight:400, background:'#f9fafb' }}>
                 <td colSpan={6} style={{ ...TD, textAlign:'right', fontWeight:400, color:'#111827' }}>TOTAL</td>
-                <td style={TDc} colSpan={5}></td>
+                <td style={TDc} colSpan={4}></td>
                 <td style={{ ...TDr, fontSize:12, fontWeight:400, color:primaryColor, background:lightColor }}>
                   {fmtINR(data.grandTotal)}
                 </td>

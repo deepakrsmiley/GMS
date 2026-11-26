@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, X, Check, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
-import { LAB_TYPES as CATEGORIES } from '../constants/labProfiles';
+import { LAB_PROFILES, LAB_TYPES as CATEGORIES } from '../constants/labProfiles';
 import '../styles/labOrder.css';
 
 const SAMPLE_TYPES = ['blood', 'urine', 'stool', 'swab', 'sputum', 'tissue', 'other'];
@@ -29,6 +29,20 @@ const emptyForm = (kind = 'single') => ({
   items: kind === 'group' ? [emptyItem()] : [],
 });
 
+const builtinParameters = (name) => {
+  const want = String(name || '').trim().toLowerCase();
+  if (!want) return [];
+  const key = Object.keys(LAB_PROFILES).find((n) => n.toLowerCase() === want);
+  const profile = key ? LAB_PROFILES[key] : null;
+  if (!profile || Array.isArray(profile)) return [];
+  return (profile.tests || []).filter((row) => row && row.testName);
+};
+
+const parameterItems = (test) => {
+  const stored = (test?.items || []).filter((item) => item && item.testName);
+  return stored.length ? stored : builtinParameters(test?.name);
+};
+
 const toForm = (t) => ({
   kind: t.kind === 'group' ? 'group' : 'single',
   name: t.name || '',
@@ -40,7 +54,7 @@ const toForm = (t) => ({
   method: t.method || '',
   sampleType: t.sampleType || 'blood',
   items: t.kind === 'group'
-    ? (t.items?.length ? t.items.map((i) => ({
+    ? (parameterItems(t).length ? parameterItems(t).map((i) => ({
       testName: i.testName || '',
       unit: i.unit || '',
       normalRange: i.normalRange || '',
@@ -439,7 +453,11 @@ export default function LabTestMasterPage() {
         {!isLoading && tests.length > 0 && visible.length === 0 && (
           <p className="text-sm text-slate-400 text-center py-8">No matches.</p>
         )}
-        {visible.map((t) => (
+        {visible.map((t) => {
+          const params = parameterItems(t);
+          const paramCount = params.filter((item) => !item.isSection).length;
+          const showParams = t.kind === 'group' || paramCount > 1;
+          return (
           <div
             key={t._id}
             className={`px-2 py-2 rounded-sm text-sm ${
@@ -477,7 +495,7 @@ export default function LabTestMasterPage() {
                     {t.testCode ? <span className="mr-2 font-mono text-[11px] text-indigo-600">{t.testCode}</span> : null}
                     {t.name}
                     <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
-                      {t.kind === 'group' ? `Group · ${(t.items || []).filter((i) => !i.isSection).length} tests` : 'Single'}
+                      {showParams ? `Group · ${paramCount} parameters` : 'Single'}
                     </span>
                   </span>
                   <span className="col-span-4 text-slate-500">{t.category}</span>
@@ -491,21 +509,22 @@ export default function LabTestMasterPage() {
                     )}
                   </div>
                 </div>
-                {t.kind === 'group' && (t.items || []).length > 0 && (
+                {showParams && params.length > 0 && (
                   <ul className="mt-1 pl-1 text-[11px] text-slate-500">
-                    {(t.items || []).slice(0, 8).map((i, idx) => (
+                    {params.slice(0, 8).map((i, idx) => (
                       <li key={`${i.testName}-${idx}`} className={i.isSection ? 'font-semibold uppercase text-indigo-600' : ''}>
                         {i.testName}
                         {(i.unit || i.normalRange) ? ` · ${[i.unit, i.normalRange].filter(Boolean).join(' · ')}` : ''}
                       </li>
                     ))}
-                    {(t.items || []).length > 8 && <li>+{(t.items || []).length - 8} more</li>}
+                    {params.length > 8 && <li>+{params.length - 8} more</li>}
                   </ul>
                 )}
               </>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
