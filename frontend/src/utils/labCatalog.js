@@ -2,6 +2,8 @@ import {
   LAB_PROFILES,
   LAB_TYPES,
   OTHER_PROFILE,
+  SANJEEVI_CBC_TESTS,
+  isCbcPackageName,
   expandProfilesToTests,
   getProfileMeta,
   findMatchingProfile,
@@ -9,6 +11,7 @@ import {
   profilesForTypeWithOther,
   LAB_PROFILE_OPTIONS,
 } from '../constants/labProfiles';
+import { isSriSanjeeviHospital } from './hospitalA';
 
 const mapParameter = (item) => ({
   testName: item.testName,
@@ -19,7 +22,10 @@ const mapParameter = (item) => ({
 });
 
 /** Built-in package rows when Test Master has a price but no child list. */
-const builtinTests = (name) => {
+const builtinTests = (name, organization) => {
+  if (isSriSanjeeviHospital(organization) && isCbcPackageName(name)) {
+    return SANJEEVI_CBC_TESTS.map(mapParameter);
+  }
   const want = String(name || '').trim().toLowerCase();
   if (!want) return [];
   const key = Object.keys(LAB_PROFILES).find((n) => n.toLowerCase() === want);
@@ -30,7 +36,7 @@ const builtinTests = (name) => {
 
 const parameterCount = (tests = []) => tests.filter((row) => row?.testName && !row.isSection).length;
 
-export function catalogMapFromTestMaster(testMaster = []) {
+export function catalogMapFromTestMaster(testMaster = [], organization) {
   const imported = (testMaster || []).some(
     (t) => t.kind === 'group' || (Array.isArray(t.items) && t.items.length),
   );
@@ -45,7 +51,7 @@ export function catalogMapFromTestMaster(testMaster = []) {
         .map(mapParameter)
         .filter((item) => item.testName)
       : [];
-    const fallback = stored.length ? [] : builtinTests(t.name);
+    const fallback = stored.length ? [] : builtinTests(t.name, organization);
     const tests = stored.length
       ? stored
       : (fallback.length
@@ -66,8 +72,8 @@ export function catalogMapFromTestMaster(testMaster = []) {
   return map;
 }
 
-export function labCatalogFromMaster(testMaster = []) {
-  const hospital = catalogMapFromTestMaster(testMaster);
+export function labCatalogFromMaster(testMaster = [], organization) {
+  const hospital = catalogMapFromTestMaster(testMaster, organization);
   const catalog = hospital || LAB_PROFILES;
   const usingHospitalCatalog = !!hospital;
 

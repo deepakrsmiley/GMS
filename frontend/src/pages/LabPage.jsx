@@ -296,8 +296,8 @@ export default function LabPage() {
     queryFn: () => api.get('/test-master').then((r) => r.data.data || []),
   });
   const labCatalog = useMemo(
-    () => labCatalogFromMaster(testMasterQ.data || []).catalog,
-    [testMasterQ.data],
+    () => labCatalogFromMaster(testMasterQ.data || [], user?.organization).catalog,
+    [testMasterQ.data, user?.organization],
   );
 
   const { register: resReg, handleSubmit: resSubmit, reset: resReset, getValues: getResValues } = useForm();

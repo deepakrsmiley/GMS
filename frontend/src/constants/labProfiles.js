@@ -45,6 +45,36 @@ export const CBC_22_TESTS = [
   { testName: 'P-LCR', unit: '%', normalRange: '18.0 – 50.0' },
 ];
 
+/**
+ * 3-part CBC from the Sri Sanjeevi hematology analyzer.
+ * Other hospitals keep their own CBC lists.
+ * Absolute and percent are separate rows because the machine prints both.
+ */
+export const SANJEEVI_CBC_TESTS = [
+  { testName: 'WBC', unit: '10³/mm³', normalRange: '3.5 – 10.0' },
+  { testName: 'LYM', unit: '10³/mm³', normalRange: '0.9 – 5.0' },
+  { testName: 'LYM%', unit: '%', normalRange: '' },
+  { testName: 'MID', unit: '10³/mm³', normalRange: '0.1 – 1.5' },
+  { testName: 'MID%', unit: '%', normalRange: '' },
+  { testName: 'GRA', unit: '10³/mm³', normalRange: '1.2 – 8.0' },
+  { testName: 'GRA%', unit: '%', normalRange: '' },
+  { testName: 'HGB', unit: 'g/dL', normalRange: '11.5 – 16.5' },
+  { testName: 'MCH', unit: 'pg', normalRange: '25.0 – 35.0' },
+  { testName: 'MCHC', unit: 'g/dL', normalRange: '31.0 – 38.0' },
+  { testName: 'RBC', unit: '10⁶/mm³', normalRange: '3.50 – 5.50' },
+  { testName: 'MCV', unit: 'fL', normalRange: '75.0 – 100.0' },
+  { testName: 'HCT', unit: '%', normalRange: '35.0 – 55.0' },
+  { testName: 'RDW', unit: '%', normalRange: '11.0 – 16.0' },
+  { testName: 'PLT', unit: '10³/mm³', normalRange: '130 – 400' },
+  { testName: 'MPV', unit: 'fL', normalRange: '6.5 – 11.0' },
+  { testName: 'PDW', unit: '%', normalRange: '0.1 – 99.9' },
+  { testName: 'PCT', unit: '%', normalRange: '0.01 – 0.99' },
+  { testName: 'P-LCR', unit: '%', normalRange: '0.1 – 99.9' },
+];
+
+export const isCbcPackageName = (name) => /^(cbc|cbc \(complete blood count\)|complete blood count)$/i
+  .test(String(name || '').trim());
+
 /** @type {Record<string, { labType: string, sampleType?: string, tests: { testName: string, unit?: string, normalRange?: string }[] }>} */
 export const LAB_PROFILES = {
   'CBC (Complete Blood Count)': {

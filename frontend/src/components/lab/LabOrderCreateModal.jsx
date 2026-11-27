@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Search } from 'lucide-react';
@@ -42,6 +43,7 @@ export default function LabOrderCreateModal({
   onCreated,
 }) {
   const qc = useQueryClient();
+  const { user } = useSelector((s) => s.auth);
   const isAppend = !!appendTo;
 
   const [labType, setLabType] = useState('');
@@ -72,7 +74,10 @@ export default function LabOrderCreateModal({
     enabled: isOpen,
   });
 
-  const catalog = useMemo(() => labCatalogFromMaster(priceList), [priceList]);
+  const catalog = useMemo(
+    () => labCatalogFromMaster(priceList, user?.organization),
+    [priceList, user?.organization],
+  );
   const priceMap = catalog.priceMap;
 
   useEffect(() => {

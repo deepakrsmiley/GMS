@@ -101,8 +101,8 @@ const buildResultGroups = (results = []) => {
   }
   const resultMap = new Map(results.map((result) => [normalizeLabName(result.testName), result]));
   const groupDefinitions = [
-    { title: 'WBC', tests: ['WBC', 'LYM%', 'MON%', 'GRA%', 'LYM#', 'MON#', 'GRA#', 'GLR'] },
-    { title: 'RBC', tests: ['RBC', 'HGB', 'HCT', 'MCV', 'MCH', 'MCHC', 'RDW-CV', 'RDW-SD'] },
+    { title: 'WBC', tests: ['WBC', 'LYM%', 'MON%', 'GRA%', 'LYM#', 'MON#', 'GRA#', 'GLR', 'LYM', 'MID', 'MID%', 'GRA'] },
+    { title: 'RBC', tests: ['RBC', 'HGB', 'HCT', 'MCV', 'MCH', 'MCHC', 'RDW-CV', 'RDW-SD', 'RDW'] },
     { title: 'PLT', tests: ['PLT', 'MPV', 'PCT', 'PDW', 'P-LCC', 'P-LCR'] },
   ];
 

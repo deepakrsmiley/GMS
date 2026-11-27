@@ -110,7 +110,10 @@ export default function DoctorConsultationPage() {
     enabled: canLogServices,
   });
 
-  const catalog = useMemo(() => labCatalogFromMaster(priceList), [priceList]);
+  const catalog = useMemo(
+    () => labCatalogFromMaster(priceList, user?.organization),
+    [priceList, user?.organization],
+  );
   const priceMap = catalog.priceMap;
 
   useEffect(() => {

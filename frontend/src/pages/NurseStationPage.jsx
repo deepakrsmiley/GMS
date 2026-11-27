@@ -123,7 +123,10 @@ export default function NurseStationPage() {
     queryFn: async () => (await api.get('/test-master')).data.data || [],
     staleTime: 5 * 60 * 1000,
   });
-  const catalog = useMemo(() => labCatalogFromMaster(testMasterQ.data || []), [testMasterQ.data]);
+  const catalog = useMemo(
+    () => labCatalogFromMaster(testMasterQ.data || [], user?.organization),
+    [testMasterQ.data, user?.organization],
+  );
   const priceMap = catalog.priceMap;
 
   const toggleLabProfile = (name) => {

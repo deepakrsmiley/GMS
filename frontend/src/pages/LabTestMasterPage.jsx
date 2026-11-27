@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, X, Check, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
-import { LAB_PROFILES, LAB_TYPES as CATEGORIES } from '../constants/labProfiles';
+import { LAB_PROFILES, LAB_TYPES as CATEGORIES, SANJEEVI_CBC_TESTS, isCbcPackageName } from '../constants/labProfiles';
+import { isSriSanjeeviHospital } from '../utils/hospitalA';
 import '../styles/labOrder.css';
 
 const SAMPLE_TYPES = ['blood', 'urine', 'stool', 'swab', 'sputum', 'tissue', 'other'];
@@ -29,7 +31,10 @@ const emptyForm = (kind = 'single') => ({
   items: kind === 'group' ? [emptyItem()] : [],
 });
 
-const builtinParameters = (name) => {
+const builtinParameters = (name, organization) => {
+  if (isSriSanjeeviHospital(organization) && isCbcPackageName(name)) {
+    return SANJEEVI_CBC_TESTS.filter((row) => row && row.testName);
+  }
   const want = String(name || '').trim().toLowerCase();
   if (!want) return [];
   const key = Object.keys(LAB_PROFILES).find((n) => n.toLowerCase() === want);
@@ -38,12 +43,12 @@ const builtinParameters = (name) => {
   return (profile.tests || []).filter((row) => row && row.testName);
 };
 
-const parameterItems = (test) => {
+const parameterItems = (test, organization) => {
   const stored = (test?.items || []).filter((item) => item && item.testName);
-  return stored.length ? stored : builtinParameters(test?.name);
+  return stored.length ? stored : builtinParameters(test?.name, organization);
 };
 
-const toForm = (t) => ({
+const toForm = (t, organization) => ({
   kind: t.kind === 'group' ? 'group' : 'single',
   name: t.name || '',
   testCode: t.testCode || '',
@@ -54,7 +59,7 @@ const toForm = (t) => ({
   method: t.method || '',
   sampleType: t.sampleType || 'blood',
   items: t.kind === 'group'
-    ? (parameterItems(t).length ? parameterItems(t).map((i) => ({
+    ? (parameterItems(t, organization).length ? parameterItems(t, organization).map((i) => ({
       testName: i.testName || '',
       unit: i.unit || '',
       normalRange: i.normalRange || '',
@@ -94,6 +99,7 @@ const toPayload = (form) => {
 /** Full-page Lab Test Master (used inside Masters hub). */
 export default function LabTestMasterPage() {
   const queryClient = useQueryClient();
+  const organization = useSelector((s) => s.auth?.user?.organization);
   const [form, setForm] = useState(emptyForm('single'));
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyForm('single'));
@@ -188,7 +194,7 @@ export default function LabTestMasterPage() {
 
   const startEdit = (t) => {
     setEditingId(t._id);
-    setEditForm(toForm(t));
+    setEditForm(toForm(t, organization));
   };
 
   const saveEdit = (id) => {
@@ -454,7 +460,7 @@ export default function LabTestMasterPage() {
           <p className="text-sm text-slate-400 text-center py-8">No matches.</p>
         )}
         {visible.map((t) => {
-          const params = parameterItems(t);
+          const params = parameterItems(t, organization);
           const paramCount = params.filter((item) => !item.isSection).length;
           const showParams = t.kind === 'group' || paramCount > 1;
           return (
