@@ -313,16 +313,25 @@ const renderChargesTable = (doc, L, items, rgb, onNewPage) => {
 };
 
 const renderSummary = (doc, L, bill, subtotal, totalGST, rgb, onNewPage) => {
+  const { advanceDisplayLines, sumLines, balanceAfterAdvance } = require('./ipAdvance');
+  const advances = advanceDisplayLines(bill);
+  const advanceTotal = sumLines(advances);
+  const balance = balanceAfterAdvance(bill, advances);
   const boxW = L.summaryW;
   const boxX = L.width - L.margin - boxW;
   const rows = [
     ['Subtotal', fmt(subtotal)],
     ['Discount', bill.discount > 0 ? `-${fmt(bill.discountAmount)} (${bill.discount}%)` : fmt(0)],
     ['Tax / GST', fmt(totalGST)],
-    ['Advance Paid', fmt(bill.advanceAmount)],
-    ['Amount Paid', fmt(bill.paidAmount)],
-    ['Balance Due', fmt(bill.dueAmount)],
+    ['Bill Total', fmt(bill.totalAmount)],
   ];
+  advances.forEach((line) => {
+    const when = line.paidAt ? fmtDate(line.paidAt) : '';
+    rows.push([`Advance${when ? ` (${when})` : ''}`, `-${fmt(line.amount)}`]);
+  });
+  if (advances.length > 1) rows.push(['Advance Paid', `-${fmt(advanceTotal)}`]);
+  if (Number(bill.paidAmount) > 0) rows.push(['Amount Paid', fmt(bill.paidAmount)]);
+  if (!(advanceTotal > 0)) rows.push(['Balance Due', fmt(balance)]);
   const lineH = L.rowH;
   const boxH = 14 + rows.length * lineH + 26;
 
@@ -336,15 +345,17 @@ const renderSummary = (doc, L, bill, subtotal, totalGST, rgb, onNewPage) => {
 
   let rowY = boxY + 10;
   rows.forEach(([label, value]) => {
-    doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_MUTED).text(label, boxX + 10, rowY, { width: 90 });
+    doc.fontSize(L.fonts.body).font('Times-Roman').fillColor(TEXT_MUTED).text(label, boxX + 10, rowY, { width: boxW * 0.62 });
     doc.font('Times-Roman').fillColor(TEXT_DARK).text(value, boxX + 10, rowY, { width: boxW - 20, align: 'right' });
     rowY += lineH;
   });
 
   doc.moveTo(boxX + 8, rowY + 2).lineTo(boxX + boxW - 8, rowY + 2).strokeColor(rgb).lineWidth(1).stroke();
   rowY += 8;
-  doc.fontSize(L.fonts.total).font('Times-Bold').fillColor(rgb).text('Grand Total', boxX + 10, rowY);
-  doc.text(fmt(bill.totalAmount), boxX + 10, rowY, { width: boxW - 20, align: 'right' });
+  const headline = advanceTotal > 0 ? 'Balance Due' : 'Grand Total';
+  const headlineAmount = advanceTotal > 0 ? balance : bill.totalAmount;
+  doc.fontSize(L.fonts.total).font('Times-Bold').fillColor(rgb).text(headline, boxX + 10, rowY);
+  doc.text(fmt(headlineAmount), boxX + 10, rowY, { width: boxW - 20, align: 'right' });
   doc.fillColor('black');
   doc.y = boxY + boxH + 10;
 };
@@ -529,9 +540,18 @@ const generatePremiumThermalPrint = async (bill, res, branding) => {
   doc.text(`Subtotal: ${fmt(subtotal)}`);
   doc.text(`GST: ${fmt(totalGST)}`);
   if (bill.discount > 0) doc.text(`Discount: -${fmt(bill.discountAmount)}`);
-  doc.fontSize(12).font('Times-Bold').fillColor(rgb).text(`TOTAL: ${fmt(bill.totalAmount)}`);
+  const { advanceDisplayLines, sumLines, balanceAfterAdvance } = require('./ipAdvance');
+  const thermalAdvances = advanceDisplayLines(bill);
+  const thermalAdvance = sumLines(thermalAdvances);
+  const thermalBalance = balanceAfterAdvance(bill, thermalAdvances);
+  doc.fontSize(12).font('Times-Bold').fillColor(rgb).text(`BILL TOTAL: ${fmt(bill.totalAmount)}`);
   doc.fontSize(9).font('Times-Roman').fillColor(TEXT_DARK);
-  doc.text(`Paid: ${fmt(bill.paidAmount)} | Due: ${fmt(bill.dueAmount)}`);
+  thermalAdvances.forEach((line) => {
+    const when = line.paidAt ? fmtDate(line.paidAt) : '';
+    doc.text(`Advance${when ? ` ${when}` : ''}: -${fmt(line.amount)}`);
+  });
+  if (thermalAdvance > 0 && thermalAdvances.length > 1) doc.text(`Advance Paid: -${fmt(thermalAdvance)}`);
+  doc.text(`Paid: ${fmt(bill.paidAmount)} | Balance Due: ${fmt(thermalBalance)}`);
   doc.text(`Mode: ${formatPaymentBreakdown(bill)}`);
   doc.moveDown(0.4);
   doc.fontSize(8).fillColor(TEXT_MUTED).text(b.footerNote || 'Thank you!', { align: 'center' });

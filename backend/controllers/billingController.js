@@ -30,6 +30,7 @@ const {
   isPharmacyScopeBill,
   pharmacistBillScopeError,
 } = require("../utils/billingAccess");
+const { linesFromAdmission, sumLines } = require("../utils/ipAdvance");
 const {
   asObjectId,
   asMoney,
@@ -94,18 +95,52 @@ const resolveIpAdmissionId = async (patientId, items, currentId) => {
   return latest?._id;
 };
 
+/** Older IP bills stored the advance only on the admission. Copy it onto the bill once. */
+const repairMissingIpAdvance = async (bill) => {
+  if (!bill || bill.billType !== "ip" || bill.ipDailyMedicine) return bill;
+  if (asMoney(bill.advanceAmount) > 0 || (bill.advanceLines || []).length) return bill;
+  const admId = bill.ipAdmission?._id || bill.ipAdmission;
+  if (!admId) return bill;
+  const already = await Bill.exists({
+    _id: { $ne: bill._id },
+    ipAdmission: admId,
+    status: { $nin: ["cancelled", "refunded"] },
+    ipDailyMedicine: { $ne: true },
+    advanceAmount: { $gt: 0 },
+  });
+  if (already) return bill;
+  let adm = bill.ipAdmission;
+  if (!adm || (adm.advanceAmount == null && !adm.advances)) {
+    adm = await IPAdmission.findById(admId)
+      .select("advanceAmount advances admissionDate advancePaymentMode");
+  }
+  const lines = linesFromAdmission(adm);
+  const adv = sumLines(lines);
+  if (adv <= 0) return bill;
+  bill.advanceLines = lines;
+  bill.advanceAmount = adv;
+  await bill.save();
+  return bill;
+};
+
 const applyIpAdvance = async (payload) => {
-  if (payload.billType !== "ip" || !payload.ipAdmission) return payload;
+  if (payload.billType !== "ip" || !payload.ipAdmission || payload.ipDailyMedicine) return payload;
   if (asMoney(payload.advanceAmount) > 0) return payload;
-  const adm = await IPAdmission.findById(payload.ipAdmission).select("advanceAmount");
-  const adv = asMoney(adm?.advanceAmount);
+  const adm = await IPAdmission.findById(payload.ipAdmission)
+    .select("advanceAmount advances admissionDate advancePaymentMode");
+  const lines = linesFromAdmission(adm);
+  const adv = sumLines(lines);
   if (adv <= 0) return payload;
   const already = await Bill.exists({
     ipAdmission: payload.ipAdmission,
     status: { $nin: ["cancelled", "refunded"] },
+    ipDailyMedicine: { $ne: true },
     advanceAmount: { $gt: 0 },
   });
-  if (!already) payload.advanceAmount = adv;
+  if (!already) {
+    payload.advanceLines = lines;
+    payload.advanceAmount = adv;
+  }
   return payload;
 };
 
@@ -319,7 +354,7 @@ const billPrintPopulate = [
   { path: "opRegistration", select: "tokenNumber tokenDate" },
   {
     path: "ipAdmission",
-    select: "admissionNumber admissionDate dischargeDate dischargeSummary",
+    select: "admissionNumber admissionDate dischargeDate dischargeSummary advanceAmount advancePaymentMode advances",
   },
 ];
 
@@ -418,6 +453,7 @@ exports.getBills = asyncHandler(async (req, res) => {
 
 exports.getBill = asyncHandler(async (req, res, next) => {
   const bill = await Bill.findById(req.params.id).populate(billPrintPopulate);
+  if (bill) await repairMissingIpAdvance(bill);
   if (!bill) return next(new ErrorResponse("Bill not found", 404));
 
   // Enforce Patient ownership
@@ -856,6 +892,7 @@ exports.recordPayment = asyncHandler(async (req, res, next) => {
 
   const populated = await Bill.findById(bill._id)
     .populate("patient", "patientId name phone")
+    .populate("ipAdmission", "admissionNumber")
     .populate("items.medicine", "name");
 
   try {
@@ -878,6 +915,7 @@ exports.recordPayment = asyncHandler(async (req, res, next) => {
 exports.printInvoice = asyncHandler(async (req, res, next) => {
   const bill = await Bill.findById(req.params.id).populate(billPrintPopulate);
   if (!bill) return next(new ErrorResponse("Bill not found", 404));
+  await repairMissingIpAdvance(bill);
   bill.printCount = (bill.printCount || 0) + 1;
   bill.printHistory.push({
     printCount: bill.printCount,
@@ -898,6 +936,7 @@ exports.printInvoice = asyncHandler(async (req, res, next) => {
 exports.printThermal = asyncHandler(async (req, res, next) => {
   const bill = await Bill.findById(req.params.id).populate(billPrintPopulate);
   if (!bill) return next(new ErrorResponse("Bill not found", 404));
+  await repairMissingIpAdvance(bill);
   bill.printCount = (bill.printCount || 0) + 1;
   bill.printHistory.push({
     printCount: bill.printCount,

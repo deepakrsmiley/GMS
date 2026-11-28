@@ -70,6 +70,9 @@ export default function IPAdmissionsPage() {
   const [tab, setTab] = useState(searchParams.get('tab') === 'discharge' ? 'discharge' : 'admitted');
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
+  const [dateEdit, setDateEdit] = useState(null);
+  const [dateDraft, setDateDraft] = useState('');
+  const [dateReason, setDateReason] = useState('');
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [step, setStep] = useState(1);
   const [patientSearch, setPatientSearch] = useState('');
@@ -102,6 +105,19 @@ export default function IPAdmissionsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admissions', page, statusFilter],
     queryFn: () => api.get(`/ip?page=${page}&limit=20&status=${statusFilter}`).then((r) => r.data),
+  });
+
+  const dateMut = useMutation({
+    mutationFn: () => api.put(`/ip/${dateEdit._id}/admission-date`, {
+      admissionDate: new Date(dateDraft).toISOString(),
+      reason: dateReason,
+    }).then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Admission date updated');
+      setDateEdit(null);
+      qc.invalidateQueries({ queryKey: ['admissions'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Could not change the admission date'),
   });
 
   const { data: availableRooms } = useQuery({
@@ -316,7 +332,22 @@ export default function IPAdmissionsPage() {
     { key: 'doctor', header: 'Doctor', render: (r) => <span>Dr. {r.doctor?.name}</span> },
     { key: 'department', header: 'Dept', render: (r) => r.department?.name },
     { key: 'bed', header: 'Room/Bed', render: (r) => r.room?.roomNumber || r.bed?.roomNumber || r.bed?.bedNumber || 'N/A' },
-    { key: 'admissionDate', header: 'Admitted', render: (r) => new Date(r.admissionDate).toLocaleDateString('en-IN') },
+    { key: 'admissionDate', header: 'Admitted', render: (r) => (
+      <div>
+        <p>{new Date(r.admissionDate).toLocaleString('en-IN')}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setDateEdit(r);
+            setDateDraft(toLocalDateTimeValue(new Date(r.admissionDate)));
+            setDateReason('');
+          }}
+          className="mt-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-200"
+        >
+          Change admission date
+        </button>
+      </div>
+    ) },
     { key: 'status', header: 'Status', render: (r) => <span className="badge-blue">{r.status}</span> },
     { key: 'actions', header: '', render: (r) => (
       <div className="flex gap-2 flex-wrap">
@@ -783,6 +814,38 @@ export default function IPAdmissionsPage() {
         )}
       </AnimatePresence>
       )}
+
+      <Modal isOpen={!!dateEdit} onClose={() => setDateEdit(null)} title="Change admission date" size="sm">
+        <form
+          className="p-6 space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!dateDraft) {
+              toast.error('Choose the admission date');
+              return;
+            }
+            dateMut.mutate();
+          }}
+        >
+          <p className="text-sm text-gray-600">
+            {dateEdit?.patient?.name} · {dateEdit?.admissionNumber}
+          </p>
+          <div>
+            <label className="block text-sm font-medium mb-1">New admission date</label>
+            <input type="datetime-local" className="input-field" value={dateDraft} onChange={(e) => setDateDraft(e.target.value)} required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Reason</label>
+            <input className="input-field" value={dateReason} onChange={(e) => setDateReason(e.target.value)} placeholder="Why this date is being corrected" />
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setDateEdit(null)} className="btn-secondary flex-1 justify-center">Cancel</button>
+            <button type="submit" disabled={dateMut.isPending} className="btn-primary flex-1 justify-center">
+              {dateMut.isPending ? 'Saving...' : 'Save date'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* New Patient for IP admission — creates UHID then selects for admit */}
       <Modal isOpen={showQuickAdd} onClose={() => setShowQuickAdd(false)} title="Register New Patient for IP" size="lg">

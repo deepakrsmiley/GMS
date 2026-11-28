@@ -9,6 +9,7 @@ const Bed = require('../models/Bed');
 const { EMERGENCY_SURCHARGE, resolveOpConsultationFee, resolveBilledConsultationFee } = require('../utils/opConsultationFee');
 const { filterChargesForBillType, labBillableTestLines } = require('../utils/billingChargeRules');
 const { mergeSameMedicineLines } = require('../utils/mergeMedicineLines');
+const { linesFromAdmission, sumLines, round2 } = require('../utils/ipAdvance');
 
 const ADMISSION_FEE = 500;
 const NURSING_CHARGE_PER_NOTE = 200;
@@ -19,6 +20,8 @@ const daysBetween = (start, end) => {
   const ms = Math.max(new Date(end) - new Date(start), 0);
   return Math.max(Math.ceil(ms / (1000 * 60 * 60 * 24)), 1);
 };
+
+exports.daysBetween = daysBetween;
 
 const makeCharge = ({
   id, category, type, description, quantity, unitPrice, gstPercent = 0,
@@ -444,6 +447,11 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
   }, {});
 
   const categoriesUsed = [...new Set(filteredCharges.map((c) => c.category))];
+  let advanceLines = [];
+  if (!opOnly) {
+    const carrier = admissions.find((adm) => !isBilled(billedRefs, 'IPAdmission', adm._id) && sumLines(linesFromAdmission(adm)) > 0);
+    advanceLines = linesFromAdmission(carrier);
+  }
 
   return {
     patient,
@@ -454,6 +462,8 @@ exports.getPatientBillableCharges = async (patientId, options = {}) => {
     chargeCount: filteredCharges.length,
     patientType: opOnly ? 'op' : 'ip',
     categoriesUsed,
+    advanceLines,
+    advanceTotal: sumLines(advanceLines),
   };
 };
 
@@ -469,6 +479,23 @@ exports.getPendingDischargeBilling = async () => {
     .sort('-admissionDate')
     .limit(100);
 
+  const admissionIds = admissions.map((adm) => adm._id);
+  const ipBills = admissionIds.length
+    ? await Bill.find({
+      ipAdmission: { $in: admissionIds },
+      billType: 'ip',
+      ipDailyMedicine: { $ne: true },
+      status: { $nin: ['cancelled', 'refunded'] },
+    }).select('ipAdmission billNumber totalAmount paidAmount advanceAmount dueAmount status createdAt')
+      .sort('createdAt')
+    : [];
+  const billsByAdmission = new Map();
+  ipBills.forEach((bill) => {
+    const key = String(bill.ipAdmission);
+    if (!billsByAdmission.has(key)) billsByAdmission.set(key, []);
+    billsByAdmission.get(key).push(bill);
+  });
+
   const results = [];
   for (const adm of admissions) {
     // Broken / deleted patient refs must not crash the whole list
@@ -476,10 +503,32 @@ exports.getPendingDischargeBilling = async () => {
 
     const billedRefs = await getBilledReferenceIds(adm.patient._id);
     const admissionAlreadyBilled = isBilled(billedRefs, 'IPAdmission', adm._id);
+    const relatedBills = billsByAdmission.get(String(adm._id)) || [];
+    const advanceLines = linesFromAdmission(adm);
+    const advanceTotal = sumLines(advanceLines);
+    const advanceAlreadyOnBill = relatedBills.some((bill) => round2(bill.advanceAmount) > 0);
+    let openBill = relatedBills.find((bill) => round2(bill.dueAmount) > 0.009) || null;
 
-    // Discharged: only show if this admission is not yet billed
-    // Admitted: always show so staff can preview usage & amount during stay
-    if (adm.status === 'discharged' && admissionAlreadyBilled) continue;
+    // The first unpaid invoice should carry the admission advance if it was missed.
+    if (openBill && !advanceAlreadyOnBill && advanceTotal > 0) {
+      const fullBill = await Bill.findById(openBill._id);
+      if (fullBill && round2(fullBill.advanceAmount) <= 0) {
+        fullBill.advanceLines = advanceLines;
+        fullBill.advanceAmount = advanceTotal;
+        await fullBill.save();
+        openBill.advanceAmount = fullBill.advanceAmount;
+        openBill.dueAmount = fullBill.dueAmount;
+        openBill.totalAmount = fullBill.totalAmount;
+        openBill.paidAmount = fullBill.paidAmount;
+        openBill.status = fullBill.status;
+      }
+    }
+    if (openBill && round2(openBill.dueAmount) <= 0.009) openBill = null;
+    const advanceSettled = relatedBills.some((bill) => round2(bill.advanceAmount) > 0);
+
+    // Discharged patients leave this list only after the invoice balance is zero.
+    // Admitted patients stay so remaining charges can still be billed.
+    if (adm.status === 'discharged' && admissionAlreadyBilled && !openBill) continue;
 
     const endDate = adm.dischargeDate || new Date();
     const stayDays = daysBetween(adm.admissionDate, endDate);
@@ -491,6 +540,10 @@ exports.getPendingDischargeBilling = async () => {
       if (isBilled(billedRefs, 'IPAdmission', u._id)) return sum;
       return sum + (Number(u.quantity) || 0) * (Number(u.unitPrice) || 0);
     }, 0);
+
+    const grossEstimate = estimatedRoomCharges + (admissionAlreadyBilled ? 0 : ADMISSION_FEE) + serviceEstimate;
+    const netEstimate = round2(Math.max(grossEstimate - (advanceSettled ? 0 : advanceTotal), 0));
+    const openingAmount = openBill ? round2(openBill.dueAmount) : null;
 
     results.push({
       admissionId: adm._id,
@@ -504,7 +557,20 @@ exports.getPendingDischargeBilling = async () => {
       stayDays,
       estimatedRoomCharges,
       estimatedServiceCharges: serviceEstimate,
-      estimatedTotal: estimatedRoomCharges + (admissionAlreadyBilled ? 0 : ADMISSION_FEE) + serviceEstimate,
+      estimatedTotal: openBill ? openingAmount : netEstimate,
+      openingAmount,
+      invoiceGenerated: Boolean(openBill),
+      advances: advanceLines,
+      advanceAmount: advanceTotal,
+      openBill: openBill ? {
+        _id: openBill._id,
+        billNumber: openBill.billNumber,
+        totalAmount: openBill.totalAmount,
+        paidAmount: openBill.paidAmount,
+        advanceAmount: openBill.advanceAmount,
+        dueAmount: openBill.dueAmount,
+        status: openBill.status,
+      } : null,
       admissionBilled: admissionAlreadyBilled,
       status: adm.status === 'admitted' ? 'admitted' : 'pending_billing',
       admissionStatus: adm.status,

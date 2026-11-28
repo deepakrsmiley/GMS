@@ -81,6 +81,11 @@ const { applyOrganizationScope } = require('../plugins/organizationScope');
     paidAmount: { type: Number, default: 0, min: [0, 'Paid amount cannot be negative'] },
     dueAmount: { type: Number, default: 0 },
     advanceAmount: { type: Number, default: 0 },
+    advanceLines: [{
+      amount: { type: Number, default: 0 },
+      paidAt: Date,
+      mode: String,
+    }],
     status: { type: String, enum: ['draft', 'pending', 'partial', 'paid', 'cancelled', 'refunded'], default: 'pending' },
     paymentMode: { type: String, enum: ['cash', 'card', 'upi', 'cheque', 'insurance', 'online', 'multiple'] },
     payments: [paymentSchema],

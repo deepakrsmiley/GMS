@@ -13,6 +13,7 @@ const {
   updateDoctorOrder,
   saveDischargeSummary,
   dischargePatient,
+  updateAdmissionDate,
   printDischargeSummary,
   transferBed,
   addServiceUsage,
@@ -64,6 +65,7 @@ router.route('/').get(
 // Must be before /:id so "nurse-station" is not treated as an id
 router.get('/nurse-station', NURSE_STATION, getNurseStationBoard);
 
+router.put('/:id/admission-date', authorizeAnyPermission('UPDATE_IP_ADMISSION', 'CREATE_IP_ADMISSION', 'VIEW_IP_ADMISSION'), updateAdmissionDate);
 router.get('/:id/discharge-print', VIEW_IP, printDischargeSummary);
 router.post('/:id/discharge-print', VIEW_IP, printDischargeSummary);
 router.route('/:id').get(VIEW_IP, getAdmission);

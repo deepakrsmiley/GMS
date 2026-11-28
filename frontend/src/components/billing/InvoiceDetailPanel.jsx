@@ -206,9 +206,35 @@ export default function InvoiceDetailPanel({
               </div>
             )}
             <div className="inv-detail__tot-line is-grand">
-              <span>Grand Total</span>
+              <span>{Number(detailData.advanceAmount) > 0 ? 'Bill Total' : 'Grand Total'}</span>
               <span>{fmt(detailData.totalAmount)}</span>
             </div>
+            {((detailData.advanceLines && detailData.advanceLines.length)
+              ? detailData.advanceLines
+              : (Number(detailData.advanceAmount) > 0
+                ? [{ amount: detailData.advanceAmount, paidAt: detailData.ipAdmission?.admissionDate }]
+                : [])
+            ).filter((row) => Number(row.amount) > 0).map((row, idx) => (
+              <div key={`adv-${idx}`} className="inv-detail__tot-line is-paid">
+                <span>
+                  Advance{row.paidAt ? ` · ${new Date(row.paidAt).toLocaleDateString('en-IN')}` : ''}
+                </span>
+                <span>-{fmt(row.amount)}</span>
+              </div>
+            ))}
+            {Number(detailData.advanceAmount) > 0 && (
+              <div className="inv-detail__tot-line is-grand">
+                <span>Balance (Bill − Advance)</span>
+                <span>
+                  {fmt(Math.max(
+                    Number(detailData.totalAmount || 0)
+                    - Number(detailData.paidAmount || 0)
+                    - Number(detailData.advanceAmount || 0),
+                    0,
+                  ))}
+                </span>
+              </div>
+            )}
             <div className="inv-detail__tot-line is-paid">
               <span>Paid</span>
               <span>{fmt(detailData.paidAmount)}</span>

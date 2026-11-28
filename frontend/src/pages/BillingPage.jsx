@@ -13,6 +13,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
   import { hasPermission } from '../constants/permissions';
   import Modal from '../components/common/Modal';
   import InvoicePrint from '../components/billing/InvoicePrint';
+  import PaymentReceipt from '../components/billing/PaymentReceipt';
   import InvoiceDetailPanel from '../components/billing/InvoiceDetailPanel';
   import SplitPaymentBox, {
     emptySplitParts,
@@ -227,6 +228,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
     const [showCreate, setShowCreate] = useState(false);
     const [showDetail, setShowDetail] = useState(null);
     const [showPayment, setShowPayment] = useState(null);
+    const [paymentReceipt, setPaymentReceipt] = useState(null);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [patientSearch, setPatientSearch] = useState('');
@@ -324,7 +326,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       });
     }, [pendingDischarge, search]);
 
-    const [chargeMeta, setChargeMeta] = useState({ doctor: null, department: null, patientType: null });
+    const [chargeMeta, setChargeMeta] = useState({ doctor: null, department: null, patientType: null, advanceLines: [], advanceTotal: 0 });
 
     const loadPatientCharges = useCallback(async (patientId, billType = 'ip') => {
       setLoadingCharges(true);
@@ -332,7 +334,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
         const { data } = await api.get(`/billing/patient/${patientId}/charges?billType=${billType}`);
         const rawCharges = (data.data.charges || []).map((c) => ({ ...c, included: c.included !== false }));
         setCharges(mergeConsultationCharges(rawCharges, data.data.doctor));
-        setChargeMeta({ doctor: data.data.doctor, department: data.data.department, patientType: data.data.patientType });
+        setChargeMeta({
+          doctor: data.data.doctor,
+          department: data.data.department,
+          patientType: data.data.patientType,
+          advanceLines: data.data.advanceLines || [],
+          advanceTotal: Number(data.data.advanceTotal) || 0,
+        });
       } catch (err) {
         toast.error(err.response?.data?.message || 'Failed to load charges');
         setCharges([]);
@@ -463,8 +471,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       const discountAmount = (subtotal + gst) * ((Number(discount) || 0) / 100);
       const total = subtotal + gst - discountAmount;
       const due = Math.max(total - (Number(paidAmount) || 0), 0);
-      return { subtotal, gst, discountAmount, total, due, itemCount: included.length };
-    }, [charges, discount, paidAmount]);
+      const advanceTotal = (chargeMeta.patientType === 'ip' || mainTab === 'ip' || mainTab === 'discharge')
+        ? (Number(chargeMeta.advanceTotal) || 0)
+        : 0;
+      const balanceAfterAdvance = Math.max(total - advanceTotal - (Number(paidAmount) || 0), 0);
+      return { subtotal, gst, discountAmount, total, due, advanceTotal, balanceAfterAdvance, itemCount: included.length };
+    }, [charges, discount, paidAmount, chargeMeta, mainTab]);
 
     const categorySummary = useMemo(() => {
       const summary = {};
@@ -483,7 +495,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       setPaymentMode('cash');
       setSplitPay(false);
       setPaymentParts(emptySplitParts());
-      setChargeMeta({ doctor: null, department: null, patientType: null });
+      setChargeMeta({ doctor: null, department: null, patientType: null, advanceLines: [], advanceTotal: 0 });
       setShowConsultForm(false);
       setConsultForm({ description: 'Consultation Fee', doctorName: '', fee: '', gstPercent: 0 });
       setCreateMedQuery('');
@@ -528,10 +540,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
       onSuccess: (res) => {
         const created = res.data?.data;
         toast.success(res.data?.message || 'Bill created!');
-        if (created?.billType === 'ip') {
-          setMainTab('ip');
-          setTableTab('today');
-          setDatePreset('today');
+        if (created?.billType === 'ip' && !created?.ipDailyMedicine) {
+          setMainTab('discharge');
         }
         qc.invalidateQueries({ queryKey: ['bills'] });
         qc.invalidateQueries({ queryKey: ['billStats'] });
@@ -544,12 +554,24 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
     const paymentMut = useMutation({
       mutationFn: ({ id, amount, mode, payments }) => api.post(`/billing/${id}/payment`, { amount, mode, payments }),
-      onSuccess: () => {
+      onSuccess: (res, variables) => {
         toast.success('Payment recorded');
         qc.invalidateQueries({ queryKey: ['bills'] });
         qc.invalidateQueries({ queryKey: ['billStats'] });
+        qc.invalidateQueries({ queryKey: ['pendingDischarge'] });
         setShowPayment(null);
         setShowDetail(null);
+        setPaymentReceipt({
+          bill: res.data?.data,
+          paidNow: variables.amount,
+          mode: variables.mode,
+          payments: variables.payments,
+          openingAmount: variables.openingAmount,
+          admissionNumber: variables.admissionNumber,
+          patientName: variables.patientName,
+          uhid: variables.uhid,
+          billNumber: variables.billNumber,
+        });
       },
       onError: (err) => toast.error(err.response?.data?.message || 'Payment failed'),
     });
@@ -1303,7 +1325,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                           <td>{d.department?.name || '—'}</td>
                           <td>{formatDoctor(d.doctor?.name)}</td>
                           <td>{fmtTime(d.admissionDate)}</td>
-                          <td><span className="bl-due bl-due--warn">{fmt(d.estimatedTotal)}</span></td>
+                          <td>
+                            <span className="bl-due bl-due--warn">{fmt(d.invoiceGenerated ? d.openingAmount : d.estimatedTotal)}</span>
+                            <span className="bl-date">{d.invoiceGenerated ? `Opening · ${d.openBill?.billNumber || 'Invoice'}` : 'Estimate'}</span>
+                          </td>
                           <td>
                             <span className={`bl-status ${d.admissionStatus === 'admitted' ? 'bl-status--paid' : 'bl-status--pending'}`}>
                               {d.admissionStatus === 'admitted' ? 'Admitted' : 'Pending'}
@@ -1314,6 +1339,24 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                               <button type="button" className="bl-icon-btn" title="View" onClick={() => { setShowDischarge(true); openDischargePatientDetail(d); }}>
                                 <Eye size={14} />
                               </button>
+                              {canPay && d.invoiceGenerated && Number(d.openingAmount) > 0 && (
+                                <button
+                                  type="button"
+                                  className="bl-tool"
+                                  title="Record payment and print receipt"
+                                  onClick={() => setShowPayment({
+                                    _id: d.openBill._id,
+                                    billNumber: d.openBill.billNumber,
+                                    dueAmount: d.openingAmount,
+                                    totalAmount: d.openBill.totalAmount,
+                                    advanceAmount: d.openBill.advanceAmount,
+                                    patient: d.patient,
+                                    admissionNumber: d.admissionNumber,
+                                  })}
+                                >
+                                  Paid
+                                </button>
+                              )}
                               <div>
                                 <button
                                   type="button"
@@ -1329,7 +1372,23 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                                     </button>
                                     {canCreate && (
                                       <button type="button" onClick={() => { setOpenMenuId(null); generateIpBill(d); }}>
-                                        <FileText size={14} /> Generate bill
+                                        <FileText size={14} /> {d.invoiceGenerated ? 'Generate another bill' : 'Generate bill'}
+                                      </button>
+                                    )}
+                                    {canPay && d.invoiceGenerated && Number(d.openingAmount) > 0 && (
+                                      <button type="button" onClick={() => {
+                                        setOpenMenuId(null);
+                                        setShowPayment({
+                                          _id: d.openBill._id,
+                                          billNumber: d.openBill.billNumber,
+                                          dueAmount: d.openingAmount,
+                                          totalAmount: d.openBill.totalAmount,
+                                          advanceAmount: d.openBill.advanceAmount,
+                                          patient: d.patient,
+                                          admissionNumber: d.admissionNumber,
+                                        });
+                                      }}>
+                                        <Wallet size={14} /> Paid
                                       </button>
                                     )}
                                   </div>
@@ -2024,9 +2083,21 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                     <span className="text-red-500">-{fmt(totals.discountAmount)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-lg border-t border-gray-200 dark:border-gray-600 pt-3 mt-2">
-                    <span>Grand Total</span>
+                    <span>Bill Total</span>
                     <span className="text-blue-600">{fmt(totals.total)}</span>
                   </div>
+                  {totals.advanceTotal > 0 && (chargeMeta.advanceLines || []).map((row, idx) => (
+                    <div key={`adv-${idx}`} className="flex justify-between text-emerald-700">
+                      <span>Advance{row.paidAt ? ` · ${new Date(row.paidAt).toLocaleDateString('en-IN')}` : ''}</span>
+                      <span>-{fmt(row.amount)}</span>
+                    </div>
+                  ))}
+                  {totals.advanceTotal > 0 && (
+                    <div className="flex justify-between font-semibold text-emerald-800">
+                      <span>Balance (Bill − Advance)</span>
+                      <span>{fmt(totals.balanceAfterAdvance)}</span>
+                    </div>
+                  )}
                   {totals.due > 0 && paidAmount > 0 && (
                     <div className="flex justify-between text-amber-600 font-medium">
                       <span>Due Amount</span><span>{fmt(totals.due)}</span>
@@ -2173,22 +2244,54 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                         )}
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-gray-500 uppercase tracking-wide">Exact amount due</p>
-                        <p className="text-xl font-semibold text-blue-700 dark:text-blue-300 tabular-nums">
-                          {fmt(
-                            dischargeChargeSummary?.total
-                            ?? dischargeCharges.reduce((s, c) => s + (Number(c.amount) || ((Number(c.quantity) || 0) * (Number(c.unitPrice) || 0) + (Number(c.gstAmount) || 0))), 0)
-                          )}
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">
+                          {dischargeDetail.invoiceGenerated ? 'Opening amount' : 'Exact amount due'}
                         </p>
+                        <p className="text-xl font-semibold text-blue-700 dark:text-blue-300 tabular-nums">
+                          {fmt(dischargeDetail.invoiceGenerated
+                            ? dischargeDetail.openingAmount
+                            : Math.max(0, (
+                              (dischargeChargeSummary?.total
+                              ?? dischargeCharges.reduce((s, c) => s + (Number(c.amount) || ((Number(c.quantity) || 0) * (Number(c.unitPrice) || 0) + (Number(c.gstAmount) || 0))), 0))
+                              - (Number(dischargeDetail.advanceAmount) || 0)
+                            )))}
+                        </p>
+                        {!dischargeDetail.invoiceGenerated && Number(dischargeDetail.advanceAmount) > 0 && (
+                          <p className="text-xs text-emerald-700 mt-1">
+                            Includes advance {fmt(dischargeDetail.advanceAmount)} already paid
+                          </p>
+                        )}
                       </div>
                     </div>
                   </>
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                  <button type="button" onClick={billFromDischargeDetail} className="btn-primary flex-1 justify-center" disabled={!canCreate}>
-                    Open IP Billing with these charges
-                  </button>
+                  {canPay && dischargeDetail.invoiceGenerated && Number(dischargeDetail.openingAmount) > 0 && (
+                    <button
+                      type="button"
+                      className="btn-primary flex-1 justify-center"
+                      onClick={() => {
+                        setShowPayment({
+                          _id: dischargeDetail.openBill._id,
+                          billNumber: dischargeDetail.openBill.billNumber,
+                          dueAmount: dischargeDetail.openingAmount,
+                          totalAmount: dischargeDetail.openBill.totalAmount,
+                          advanceAmount: dischargeDetail.openBill.advanceAmount,
+                          patient: dischargeDetail.patient,
+                          admissionNumber: dischargeDetail.admissionNumber,
+                        });
+                        closeDischargeModals();
+                      }}
+                    >
+                      Paid
+                    </button>
+                  )}
+                  {!dischargeDetail.invoiceGenerated && (
+                    <button type="button" onClick={billFromDischargeDetail} className="btn-primary flex-1 justify-center" disabled={!canCreate}>
+                      Open IP Billing with these charges
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => { setDischargeDetail(null); setDischargeCharges([]); setDischargeChargeSummary(null); }}
@@ -2457,6 +2560,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
           </div>
         )}
 
+        {paymentReceipt && (
+          <PaymentReceipt receipt={paymentReceipt} onClose={() => setPaymentReceipt(null)} />
+        )}
+
         {/* PAYMENT MODAL */}
         <Modal isOpen={!!showPayment} onClose={() => setShowPayment(null)} title="Record Payment" size="sm">
           {showPayment && (
@@ -2473,7 +2580,15 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
                   toast.error('Payment cannot be more than the amount due');
                   return;
                 }
-                paymentMut.mutate({ id: showPayment._id, ...body });
+                paymentMut.mutate({
+                  id: showPayment._id,
+                  ...body,
+                  openingAmount: showPayment.dueAmount,
+                  admissionNumber: showPayment.admissionNumber || showPayment.ipAdmission?.admissionNumber,
+                  patientName: showPayment.patient?.name,
+                  uhid: showPayment.patient?.patientId,
+                  billNumber: showPayment.billNumber,
+                });
               }}
             />
           )}

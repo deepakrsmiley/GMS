@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -400,6 +400,7 @@ function SimpleTable({ rows, columns, emptyText = 'No records found.' }) {
 export default function IPAdmissionDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useSelector((s) => s.auth);
   const { branding } = useBranding();
   const qc = useQueryClient();
@@ -407,6 +408,9 @@ export default function IPAdmissionDetailPage() {
   const [section, setSection] = useState('discharge');
   const [form, setForm] = useState(EMPTY_FORM);
   const [showDischargeConfirm, setShowDischargeConfirm] = useState(false);
+  const [showDateEdit, setShowDateEdit] = useState(false);
+  const [dateDraft, setDateDraft] = useState('');
+  const [dateReason, setDateReason] = useState('');
   const [printAdmission, setPrintAdmission] = useState(false);
   const [editReason, setEditReason] = useState('');
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null);
@@ -463,6 +467,30 @@ export default function IPAdmissionDetailPage() {
       setForm(buildFormFromAdmission(admission));
     }
   }, [admission?._id, admission?.updatedAt]);
+
+  useEffect(() => {
+    if (!admission || searchParams.get('editDate') !== '1') return;
+    setDateDraft(toDateTimeInputValue(admission.admissionDate));
+    setDateReason('');
+    setShowDateEdit(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('editDate');
+    setSearchParams(next, { replace: true });
+  }, [admission?._id, searchParams, user]);
+
+  const admissionDateMut = useMutation({
+    mutationFn: () => api.put(`/ip/${id}/admission-date`, {
+      admissionDate: istDateTimeToIso(dateDraft),
+      reason: dateReason,
+    }).then((r) => r.data),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Admission date updated');
+      setShowDateEdit(false);
+      qc.invalidateQueries({ queryKey: ['admission', id] });
+      qc.invalidateQueries({ queryKey: ['pendingDischarge'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Could not change the admission date'),
+  });
 
   const saveDraftMut = useMutation({
     mutationFn: (payload) => api.put(`/ip/${id}/discharge-summary`, payload).then((r) => r.data),
@@ -785,7 +813,20 @@ export default function IPAdmissionDetailPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 flex-1 lg:px-6">
             <InfoPill label="UHID" value={patient.patientId} />
             <InfoPill label="Admission No" value={admission.admissionNumber} />
-            <InfoPill label="Admission Date" value={fmtDateTime(admission.admissionDate)} />
+            <div>
+              <InfoPill label="Admission Date" value={fmtDateTime(admission.admissionDate)} />
+              <button
+                type="button"
+                className="mt-1 inline-flex items-center rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-200"
+                onClick={() => {
+                  setDateDraft(toDateTimeInputValue(admission.admissionDate));
+                  setDateReason('');
+                  setShowDateEdit(true);
+                }}
+              >
+                Change admission date
+              </button>
+            </div>
             <InfoPill label="Doctor" value={`Dr. ${admission.doctor?.name || '—'}`} />
             <InfoPill label="Department" value={admission.department?.name} />
             <InfoPill label="Room / Bed" value={`${admission.room?.roomNumber || admission.bed?.roomNumber || '—'} ${admission.bed?.bedNumber ? `/ ${admission.bed.bedNumber}` : ''}`} />
@@ -1456,6 +1497,62 @@ export default function IPAdmissionDetailPage() {
 
         </div>
       </div>
+
+      <Modal isOpen={showDateEdit} onClose={() => setShowDateEdit(false)} title="Change admission date" size="sm">
+        <form
+          className="p-6 space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!dateDraft) {
+              toast.error('Choose the admission date');
+              return;
+            }
+            admissionDateMut.mutate();
+          }}
+        >
+          <p className="text-sm text-gray-600">
+            Current date: <strong>{fmtDateTime(admission?.admissionDate)}</strong>.
+            Room and ICU charges that use stay days are recalculated on bills already created.
+          </p>
+          <div>
+            <label className="block text-sm font-medium mb-1">New admission date</label>
+            <input
+              type="datetime-local"
+              className="input-field"
+              value={dateDraft}
+              onChange={(e) => setDateDraft(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Reason</label>
+            <input
+              className="input-field"
+              value={dateReason}
+              onChange={(e) => setDateReason(e.target.value)}
+              placeholder="Why this date is being corrected"
+            />
+          </div>
+          {(admission?.admissionDateHistory || []).length > 0 && (
+            <div className="text-xs text-gray-500 space-y-1">
+              <p className="font-medium text-gray-700">Previous changes</p>
+              {[...admission.admissionDateHistory].reverse().slice(0, 5).map((row, idx) => (
+                <p key={row._id || idx}>
+                  {fmtDateTime(row.previousDate)} → {fmtDateTime(row.newDate)}
+                  {row.changedByName ? ` · ${row.changedByName}` : ''}
+                  {row.reason ? ` · ${row.reason}` : ''}
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setShowDateEdit(false)} className="btn-secondary flex-1 justify-center">Cancel</button>
+            <button type="submit" disabled={admissionDateMut.isPending} className="btn-primary flex-1 justify-center">
+              {admissionDateMut.isPending ? 'Saving...' : 'Save date'}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Confirm discharge modal */}
       <Modal isOpen={showDischargeConfirm} onClose={() => setShowDischargeConfirm(false)} title="Confirm Discharge" size="sm">

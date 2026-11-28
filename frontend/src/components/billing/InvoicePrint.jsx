@@ -141,6 +141,23 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
     ? branding.hospitalName
     : (organization?.name || branding.hospitalName || 'Hospital');
   const data = normalise(bill);
+  const advanceList = (() => {
+    const saved = Array.isArray(bill?.advanceLines)
+      ? bill.advanceLines.filter((row) => Number(row.amount) > 0)
+      : [];
+    if (saved.length) return saved;
+    if (Number(bill?.advanceAmount) > 0) {
+      return [{
+        amount: Number(bill.advanceAmount),
+        paidAt: bill?.ipAdmission?.admissionDate || bill?.createdAt,
+        mode: bill?.ipAdmission?.advancePaymentMode || '',
+      }];
+    }
+    return [];
+  })();
+  const advanceTotal = advanceList.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const collectedNow = Number(bill?.paidAmount) || 0;
+  const balanceDue = Math.max((Number(bill?.totalAmount) || data?.grandTotal || 0) - collectedNow - advanceTotal, 0);
   const [paperSize, setPaperSize] = useState('A4'); // A4 | A5
 
   if (!data) return null;
@@ -485,11 +502,32 @@ export default function InvoicePrint({ bill, onClose, onDownloadPdf, onDownloadP
                 <td style={{ ...TD2, textAlign:'right', color:'#111827', fontWeight:400 }}>{fmt2(data.totalGst)}</td>
               </tr>
               <tr style={{ fontWeight:400, background:primaryColor, color:textColor }}>
-                <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'left', fontWeight:400 }}>GRAND TOTAL</td>
+                <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'left', fontWeight:400 }}>{advanceTotal > 0 ? 'BILL TOTAL' : 'GRAND TOTAL'}</td>
                 <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'right' }}>—</td>
                 <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'center' }}>—</td>
                 <td style={{ ...TD2, background:primaryColor, color:textColor, textAlign:'right', fontWeight:400, fontSize:'12px' }}>{fmt2(data.grandTotal)}</td>
               </tr>
+              {advanceList.map((row, idx) => (
+                <tr key={`adv-${idx}`} style={{ background:'#ecfdf5' }}>
+                  <td style={{ ...TD2, textAlign:'left', color:'#047857', fontWeight:400 }}>
+                    Advance paid{row.paidAt ? ` (${fmtDate(row.paidAt)})` : ''}
+                    {row.mode ? ` · ${String(row.mode).replace(/_/g, ' ')}` : ''}
+                  </td>
+                  <td style={{ ...TD2, textAlign:'right', color:'#047857' }}>−{fmt2(row.amount)}</td>
+                  <td style={{ ...TD2, textAlign:'center', color:'#047857' }}>—</td>
+                  <td style={{ ...TD2, textAlign:'right', color:'#047857', fontWeight:400 }}>−{fmt2(row.amount)}</td>
+                </tr>
+              ))}
+              {advanceTotal > 0 && (
+                <tr style={{ background:'#f0fdf4' }}>
+                  <td style={{ ...TD2, textAlign:'left', fontWeight:600, color:'#065f46' }}>
+                    Balance due (Bill total − Advance paid{collectedNow > 0 ? ' − Amount paid' : ''})
+                  </td>
+                  <td style={{ ...TD2, textAlign:'right', color:'#065f46' }}>{fmt2(data.grandTotal)}</td>
+                  <td style={{ ...TD2, textAlign:'center', color:'#065f46' }}>− {fmt2(advanceTotal)}</td>
+                  <td style={{ ...TD2, textAlign:'right', fontWeight:700, color:'#065f46', fontSize:'13px' }}>{fmt2(balanceDue)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
 

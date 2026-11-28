@@ -225,14 +225,42 @@ const ipAdmissionSchema = new mongoose.Schema({
   admittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   estimatedStay: Number,
   totalCharges: { type: Number, default: 0 },
-  // Collected at admission time; shown on the printed IP admission slip
+  // Collected at admission time; shown on the printed IP admission slip and the IP bill
   advanceAmount: { type: Number, default: 0 },
   advancePaymentMode: {
     type: String,
     enum: ['cash', 'card', 'upi', 'cheque', 'bank_transfer', 'other', ''],
     default: '',
   },
+  advances: [{
+    amount: { type: Number, required: true, min: 0 },
+    mode: {
+      type: String,
+      enum: ['cash', 'card', 'upi', 'cheque', 'bank_transfer', 'other', ''],
+      default: '',
+    },
+    paidAt: { type: Date, default: Date.now },
+    receivedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  }],
+  admissionDateHistory: [{
+    previousDate: Date,
+    newDate: Date,
+    changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    changedByName: String,
+    reason: String,
+    changedAt: { type: Date, default: Date.now },
+  }],
 }, { timestamps: true });
+
+ipAdmissionSchema.pre('save', function (next) {
+  if (Array.isArray(this.advances) && this.advances.length) {
+    this.advanceAmount = this.advances.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    if (!this.advancePaymentMode && this.advances[0]?.mode) {
+      this.advancePaymentMode = this.advances[0].mode;
+    }
+  }
+  next();
+});
 
 ipAdmissionSchema.index({ patient: 1 });
 ipAdmissionSchema.index({ doctor: 1 });

@@ -38,6 +38,8 @@ const isDischargeSummaryComplete = (admission) => {
   const d = admission.dischargeDetails || {};
   return DISCHARGE_REQUIRED_FIELDS.every((f) => d[f] && String(d[f]).trim());
 };
+const Bill = require('../models/Bill');
+const { daysBetween } = require('../services/billingService');
 const Bed = require('../models/Bed');
 const Room = require('../models/Room');
 const Patient = require('../models/Patient');
@@ -308,6 +310,18 @@ exports.createAdmission = asyncHandler(async (req, res, next) => {
   req.body.admissionNumber = await allocateAdmissionNumber();
   req.body.admittedBy = req.user._id;
 
+  const advancePaid = Number(req.body.advanceAmount) || 0;
+  if (advancePaid > 0 && !(Array.isArray(req.body.advances) && req.body.advances.length)) {
+    const allowedModes = ['cash', 'card', 'upi', 'cheque', 'bank_transfer', 'other', ''];
+    const mode = allowedModes.includes(req.body.advancePaymentMode) ? req.body.advancePaymentMode : 'cash';
+    req.body.advances = [{
+      amount: advancePaid,
+      mode: mode || 'cash',
+      paidAt: req.body.admissionDate ? new Date(req.body.admissionDate) : new Date(),
+      receivedBy: req.user._id,
+    }];
+  }
+
   const admission = await IPAdmission.create(req.body);
 
   await occupyBedAndRoom({
@@ -362,6 +376,109 @@ exports.createAdmission = asyncHandler(async (req, res, next) => {
   } catch (_) { /* ignore */ }
 
   res.status(201).json({ success: true, data: populated });
+});
+
+const replaceStayDays = (text, stayDays) => {
+  const source = String(text || '');
+  if (/×\s*\d+\s*day/i.test(source)) {
+    return source.replace(/×\s*\d+\s*day(?:\(s\))?/i, `× ${stayDays} day(s)`);
+  }
+  return source;
+};
+
+/** Room and ICU lines are priced per stay day. Other charges keep the quantity staff entered. */
+const recalculateStayCharges = async (admission, user, reason) => {
+  const endDate = admission.dischargeDate || new Date();
+  const stayDays = daysBetween(admission.admissionDate, endDate);
+  const bills = await Bill.find({
+    ipAdmission: admission._id,
+    ipDailyMedicine: { $ne: true },
+    status: { $nin: ['cancelled', 'refunded'] },
+  });
+  const updated = [];
+  for (const bill of bills) {
+    let changed = false;
+    for (const item of bill.items || []) {
+      if (String(item.referenceId || '') !== String(admission._id)) continue;
+      const isRoom = item.type === 'room' || item.category === 'Room';
+      const isIcu = /ICU monitoring/i.test(item.description || '');
+      if (!isRoom && !isIcu) continue;
+      if (Number(item.quantity) === stayDays && replaceStayDays(item.description, stayDays) === item.description) {
+        continue;
+      }
+      const price = Number(item.unitPrice) || 0;
+      const gstPercent = Number(item.gstPercent) || 0;
+      const base = stayDays * price;
+      item.quantity = stayDays;
+      item.gstAmount = Number((base * (gstPercent / 100)).toFixed(2));
+      item.totalAmount = Number((base + item.gstAmount).toFixed(2));
+      item.description = replaceStayDays(item.description, stayDays);
+      changed = true;
+    }
+    if (!changed) continue;
+    bill.editHistory.push({
+      billNumber: bill.billNumber,
+      user: user?._id,
+      userName: user?.name,
+      actionType: 'Stay days recalculated',
+      field: 'items',
+      previousValue: { admissionDate: admission.admissionDateHistory?.at?.(-1)?.previousDate },
+      newValue: { admissionDate: admission.admissionDate, stayDays },
+      reason: reason || 'Admission date changed',
+    });
+    await bill.save();
+    updated.push(bill.billNumber);
+  }
+  return { stayDays, bills: updated };
+};
+
+exports.updateAdmissionDate = asyncHandler(async (req, res, next) => {
+  const admission = await IPAdmission.findById(req.params.id).populate('bed', 'bedNumber type dailyRate');
+  if (!admission) return next(new ErrorResponse('Admission not found', 404));
+
+  const nextDate = new Date(req.body.admissionDate);
+  if (Number.isNaN(nextDate.getTime())) {
+    return next(new ErrorResponse('Enter a valid admission date', 400));
+  }
+  if (nextDate.getTime() > Date.now() + 60 * 1000) {
+    return next(new ErrorResponse('Admission date cannot be in the future', 400));
+  }
+  if (admission.dischargeDate && nextDate > new Date(admission.dischargeDate)) {
+    return next(new ErrorResponse('Admission date cannot be after the discharge date', 400));
+  }
+
+  const previousDate = admission.admissionDate ? new Date(admission.admissionDate) : null;
+  if (previousDate && Math.abs(nextDate.getTime() - previousDate.getTime()) < 60 * 1000) {
+    return next(new ErrorResponse('That is already the admission date', 400));
+  }
+
+  const reason = String(req.body.reason || 'Admission date corrected').trim().slice(0, 200);
+  admission.admissionDateHistory.push({
+    previousDate,
+    newDate: nextDate,
+    changedBy: req.user._id,
+    changedByName: req.user.name,
+    reason,
+    changedAt: new Date(),
+  });
+  admission.admissionDate = nextDate;
+  await admission.save();
+
+  const recalc = await recalculateStayCharges(admission, req.user, reason);
+  const populated = await IPAdmission.findById(admission._id)
+    .populate('patient', 'patientId name')
+    .populate('doctor', 'name')
+    .populate('bed', 'bedNumber type dailyRate');
+
+  res.status(200).json({
+    success: true,
+    data: populated,
+    stayDays: recalc.stayDays,
+    recalculatedBills: recalc.bills,
+    message: recalc.bills.length
+      ? `Admission date updated. Room stay recalculated on ${recalc.bills.join(', ')} (${recalc.stayDays} day(s)).`
+      : `Admission date updated. Stay is ${recalc.stayDays} day(s). The next IP bill will use this date.`,
+  });
 });
 
 exports.addNursingNote = asyncHandler(async (req, res, next) => {
